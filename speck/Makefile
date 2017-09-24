@@ -1,5 +1,5 @@
 .POSIX:
-CC     = c99
+CC     = cc -std=c99
 CFLAGS = -Wall -Wextra -O3 -march=native -g3
 all: tests speckcrypt
 speckcrypt: speckcrypt.c speck.h
