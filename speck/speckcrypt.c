@@ -465,12 +465,14 @@ main(int argc, char **argv)
     if (!keyfile) {
         fputs("speckcrypt: requires a keyfile (-k)\n", stderr);
         usage(stderr);
+        exit(EXIT_FAILURE);
     }
 
     infile = argv[optind];
     if (!infile) {
         fputs("speckcrypt: requires an input file\n", stderr);
         usage(stderr);
+        exit(EXIT_FAILURE);
     }
     outfile = argv[optind + 1];
 
