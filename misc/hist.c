@@ -187,16 +187,29 @@ ht_inc(struct ht *ht, const void *ptr, size_t len)
 /* Used by ht_sort().
  */
 static int
-ht_cmp(const void *a, const void *b)
+ht_cmp(const void *pa, const void *pb)
 {
-    const struct ht_entry *ea = a;
-    const struct ht_entry *eb = b;
+    const struct ht_entry *a = pa;
+    const struct ht_entry *b = pb;
 
     /* Sort empty slots to the end */
-    if (!ea->ptr && !eb->ptr) return 0;
-    if (!ea->ptr) return +1;
-    if (!eb->ptr) return -1;
-    return (eb->count > ea->count) - (eb->count < ea->count);
+    if (!a->ptr && !b->ptr) return 0;
+    if (!a->ptr) return +1;
+    if (!b->ptr) return -1;
+
+    /* Sort second by line contents */
+    if (a->count == b->count) {
+        size_t len = b->len < a->len ? b->len : a->len;
+        int r = memcmp(a->ptr, b->ptr, len);
+        if (!r && a->len < b->len)
+            return -1;
+        if (!r && a->len > b->len)
+            return +1;
+        return r;
+    }
+
+    /* Sort first by count */
+    return (b->count > a->count) - (b->count < a->count);
 }
 
 /* Sort the hash table entries putting NULLs at the end.
