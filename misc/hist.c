@@ -73,12 +73,12 @@ hash64(const void *buf, size_t len)
 
     uint64_t rest = 0;
     switch (len % 8) {
-        case 7: rest |= (uint64_t)tail[6] << 48;
-        case 6: rest |= (uint64_t)tail[5] << 40;
-        case 5: rest |= (uint64_t)tail[4] << 32;
-        case 4: rest |= (uint64_t)tail[3] << 24;
-        case 3: rest |= (uint64_t)tail[2] << 16;
-        case 2: rest |= (uint64_t)tail[1] <<  8;
+        case 7: rest |= (uint64_t)tail[6] << 48; /* FALLTHROUGH */
+        case 6: rest |= (uint64_t)tail[5] << 40; /* FALLTHROUGH */
+        case 5: rest |= (uint64_t)tail[4] << 32; /* FALLTHROUGH */
+        case 4: rest |= (uint64_t)tail[3] << 24; /* FALLTHROUGH */
+        case 3: rest |= (uint64_t)tail[2] << 16; /* FALLTHROUGH */
+        case 2: rest |= (uint64_t)tail[1] <<  8; /* FALLTHROUGH */
         case 1: rest |= (uint64_t)tail[0] <<  0;
                 h += rest;
                 h ^= h >> 32;
@@ -92,10 +92,9 @@ hash64(const void *buf, size_t len)
 }
 
 struct ht_entry {
-    uint64_t hash;
-    uint64_t count;
-    size_t len;
     const void *ptr;
+    uint32_t count;
+    uint32_t len;
 };
 
 struct ht {
@@ -131,19 +130,14 @@ ht_find(struct ht *ht, const void *ptr, size_t len)
         if (!e->ptr) {
             e->ptr = ptr;
             e->len = len;
-            e->hash = hash;
+            if (e->len != len)
+                dies("line too long");
             e->count = 0;
             ht->fill++;
             return e;
         }
-#ifdef FUZZY
-        /* Hope there are no hash collisions! */
-        if (e->hash == hash && e->len == len)
+        if (e->len == len && !memcmp(e->ptr, ptr, len))
             return e;
-#else
-        if (e->hash == hash && e->len == len && !memcmp(e->ptr, ptr, len))
-            return e;
-#endif
         i = (i + 1) & mask;
     }
 }
@@ -161,7 +155,7 @@ ht_grow(struct ht *ht)
     for (size_t i = 0; i < ht->cap; i++) {
         struct ht_entry *e = ht->entries + i;
         if (e->ptr) {
-            size_t ni = e->hash & mask;
+            size_t ni = hash64(e->ptr, e->len) & mask;
             for (;;) {
                 struct ht_entry *n = new.entries + ni;
                 if (!n->ptr) {
@@ -184,7 +178,8 @@ static void
 ht_inc(struct ht *ht, const void *ptr, size_t len)
 {
     struct ht_entry *e = ht_find(ht, ptr, len);
-    e->count++;
+    if (!++e->count)
+        dies("counter overflow");
     if (ht->fill > ht->max)
         ht_grow(ht);
 }
@@ -197,18 +192,11 @@ ht_cmp(const void *a, const void *b)
     const struct ht_entry *ea = a;
     const struct ht_entry *eb = b;
 
-    /* Sort NULL to the end */
+    /* Sort empty slots to the end */
     if (!ea->ptr && !eb->ptr) return 0;
     if (!ea->ptr) return +1;
     if (!eb->ptr) return -1;
-
-    size_t len = eb->len < ea->len ? eb->len : ea->len;
-    int r = memcmp(ea->ptr, eb->ptr, len);
-    if (!r && ea->len < eb->len)
-        return -1;
-    else if (!r && ea->len > eb->len)
-        return +1;
-    return r;
+    return (eb->count > ea->count) - (eb->count < ea->count);
 }
 
 /* Sort the hash table entries putting NULLs at the end.
@@ -253,7 +241,6 @@ main(void)
         ht_inc(ht, ptr, end - ptr);
         rem -= end - ptr + 1;
         ptr = end + 1;
-        (void)ht_inc;
     }
 
     ht_sort(ht);
