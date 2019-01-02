@@ -235,6 +235,8 @@ main(void)
     len = stat.st_size;
     if (stat.st_size != (off_t)len)
         dies("input too large");
+    if (!len)
+        exit(EXIT_SUCCESS);
 
     buf = mmap(0, len, PROT_READ, MAP_PRIVATE, 0, 0);
     if (buf == MAP_FAILED)
