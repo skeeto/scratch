@@ -48,5 +48,11 @@ isn't seriously intended for securing messages but rather for testing.
     $ echo 9j#akdcp3fb | ./lc4 -D $(cat key)
     hello_world
 
+## Other implementations
+
+* <https://github.com/dstein64/LC4> (Python)
+* <https://github.com/Gavin-Song/elsie-four-cipher> (JavaScript)
+* <https://github.com/tonetheman/golang_lc4> (Go)
+* <https://gitea.blesmrt.net/exa/ls47> (LS47 in Python)
 
 [pdf]: https://eprint.iacr.org/2017/339.pdf
