@@ -321,6 +321,9 @@ flood(struct maze *m, int scale, long base)
             draw_mask(im, m, F_QUEUED, scale, 0xff7f00);
             draw_walls(im, m, scale, 0x000000);
             image_write(im);
+            draw_mask(im, m, F_QUEUED, scale, 0xff0000);
+            draw_walls(im, m, scale, 0x000000);
+            image_write(im);
             lastd = d;
         }
     }
