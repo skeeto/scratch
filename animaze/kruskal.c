@@ -66,11 +66,13 @@ image_set(struct image *im, int x, int y, long color)
     im->buf[y*im->width*3 + x*3 + 2] = color >>  0;
 }
 
-static int
+static void
 image_write(const struct image *im)
 {
-    printf("P6\n%d %d\n255\n", im->width, im->height);
-    return fwrite(im->buf, im->height*im->width*3, 1, stdout);
+    if (printf("P6\n%d %d\n255\n", im->width, im->height) < 0)
+        exit(EXIT_FAILURE);
+    if (!fwrite(im->buf, im->height*im->width*3, 1, stdout))
+        exit(EXIT_FAILURE);
 }
 
 static void
