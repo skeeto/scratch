@@ -275,15 +275,17 @@ kruskal(struct maze *m, int scale)
     return final;
 }
 
-static void
+struct coord {
+    int x;
+    int y;
+    long d;
+};
+
+static struct coord
 flood(struct maze *m, int scale, long base)
 {
     long qlen = m->width * m->height;
-    struct {
-        int x;
-        int y;
-        int d;
-    } *queue = malloc(qlen*sizeof(*queue));
+    struct coord *queue = malloc(qlen*sizeof(*queue));
     long head = 1;
     long tail = 0;
     queue[0].x = 0;
@@ -297,7 +299,7 @@ flood(struct maze *m, int scale, long base)
     while (head != tail) {
         int x = queue[tail].x;
         int y = queue[tail].y;
-        int d = queue[tail].d;
+        long d = queue[tail].d;
         tail++;
         int w = *maze_get(m, x, y);
         *maze_get(m, x, y) &= ~F_QUEUED;
@@ -340,8 +342,12 @@ flood(struct maze *m, int scale, long base)
         }
     }
 
+    struct coord end = queue[tail - 1];
+
     free(im);
     free(queue);
+
+    return end;
 }
 
 static int optind = 1;
@@ -527,29 +533,53 @@ main(int argc, char *argv[])
 
     r32s(seed ? seed : genseed());
 
+    unsigned long long best_seed = 0;
+    long best_dist = 0;
+
     for (;;) {
+        long save = s;
         struct maze *m = maze_create(width, height);
-
         long final = kruskal(m, animate ? scale : 0);
+        struct coord end = flood(m, animate ? scale : 0, final);
+        if (end.d > best_dist) {
+            best_seed = save;
+            best_dist = end.d;
+            if (!animate) {
+                fprintf(stderr, "distance = %ld (%d left)\n", end.d, runs);
+            }
+        }
 
-        flood(m, animate ? scale : 0, final);
-
-        struct image *im = image_create(width*scale + 2, height*scale + 2);
-        image_fill(im, 0, 0, im->width, im->height, 0xffffff);
-        draw_walls(im, m, scale, 0x000000);
         if (animate) {
+            struct image *im = image_create(width*scale + 2, height*scale + 2);
+            image_fill(im, 0, 0, im->width, im->height, 0xffffff);
+            draw_walls(im, m, scale, 0x000000);
             for (int i = 0; i < 3*60; i++) {
                 image_write(im);
             }
-        } else {
-            image_write(im);
+            free(im);
         }
-        free(im);
 
         free(m);
 
         if (runs > 0 && !--runs) {
             break;
         }
+    }
+
+    if (!animate) {
+        r32s(best_seed);
+        struct maze *m = maze_create(width, height);
+        kruskal(m, 0);
+        struct coord end = flood(m, 0, 0);
+
+        struct image *im = image_create(width*scale + 2, height*scale + 2);
+        image_fill(im, 0, 0, im->width, im->height, 0xffffff);
+        image_fill(im, 1, 1, 1 + scale, 1 + scale, 0x00ffff);
+        int px = 1 + end.x*scale;
+        int py = 1 + end.y*scale;
+        image_fill(im, px, py, px + scale, py + scale, 0x00ffff);
+        draw_walls(im, m, scale, 0x000000);
+        image_write(im);
+        free(im);
     }
 }
