@@ -12,34 +12,26 @@
 #include <string.h>
 #include <time.h>
 
-static unsigned long long s = 0;
-
-static void
-r32s(unsigned long long seed)
-{
-    s = seed;
-}
-
 static unsigned long
-r32(void)
+r32(unsigned long long *s)
 {
-    s = s*0x7c3c3267d015ceb5ULL + 0x24bd2d95276253a9ULL;
-    unsigned long r = s>>32 & 0xffffffffUL;
+    *s = *s*0x7c3c3267d015ceb5ULL + 0x24bd2d95276253a9ULL;
+    unsigned long r = *s>>32 & 0xffffffffUL;
     r ^= r>>16;
     r *= 0x60857ba9UL;
     return r & 0xffffffff;
 }
 
 static unsigned long
-randint(unsigned long r)
+randint(unsigned long long *s, unsigned long r)
 {
-    unsigned long long x = r32();
+    unsigned long long x = r32(s);
     unsigned long long m = x * r;
     unsigned long y = m & 0xffffffffUL;
     if (y < r) {
         unsigned long t = -r % r;
         while (y < t) {
-            x = r32();
+            x = r32(s);
             m = x * r;
             y = m & 0xffffffffUL;
         }
@@ -190,14 +182,14 @@ set_find(struct set *s)
 }
 
 static long
-kruskal(struct maze *m, int scale)
+kruskal(struct maze *m, unsigned long long *rng, int scale)
 {
     struct set *sets = malloc(sizeof(*sets)*m->width*m->height);
     for (int y = 0; y < m->height; y++) {
         for (int x = 0; x < m->width; x++) {
             struct set *s = sets + y*m->width + x;
             s->parent = s;
-            s->color = (r32() & 0xffffffUL) | 0x404040UL;
+            s->color = (r32(rng) & 0xffffffUL) | 0x404040UL;
             s->size = 1;
         }
     }
@@ -227,7 +219,7 @@ kruskal(struct maze *m, int scale)
     }
 
     while (nwalls) {
-        long i = randint(nwalls);
+        long i = randint(rng, nwalls);
         int x = walls[i].x;
         int y = walls[i].y;
         int w = walls[i].which;
@@ -282,16 +274,22 @@ struct coord {
 };
 
 static struct coord
-flood(struct maze *m, int scale, long base)
+flood(struct maze *m, int x, int y, int scale, long base)
 {
+    for (int y = 0; y < m->height; y++) {
+        for (int x = 0; x < m->width; x++) {
+            *maze_get(m, x, y) &= ~(F_VISITED | F_QUEUED);
+        }
+    }
+
     long qlen = m->width * m->height;
     struct coord *queue = malloc(qlen*sizeof(*queue));
     long head = 1;
     long tail = 0;
-    queue[0].x = 0;
-    queue[0].y = 0;
+    queue[0].x = x;
+    queue[0].y = y;
     queue[0].d = 0;
-    *maze_get(m, 0, 0) |= F_VISITED | F_QUEUED;
+    *maze_get(m, x, y) |= F_VISITED | F_QUEUED;
 
     struct image *im = image_create(m->width*scale + 2, m->height*scale + 2);
 
@@ -531,16 +529,21 @@ main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    r32s(seed ? seed : genseed());
+    if (!seed) {
+        seed = genseed();
+    }
 
     unsigned long long best_seed = 0;
     long best_dist = 0;
 
     for (;;) {
-        long save = s;
+        long save = seed;
         struct maze *m = maze_create(width, height);
-        long final = kruskal(m, animate ? scale : 0);
-        struct coord end = flood(m, animate ? scale : 0, final);
+        long final = kruskal(m, &seed, animate ? scale : 0);
+
+        struct coord beg = flood(m, 0, 0, 0, 0);
+        struct coord end = flood(m, beg.x, beg.y, animate ? scale : 0, final);
+
         if (end.d > best_dist) {
             best_seed = save;
             best_dist = end.d;
@@ -550,7 +553,9 @@ main(int argc, char *argv[])
         }
 
         if (animate) {
-            struct image *im = image_create(width*scale + 2, height*scale + 2);
+            int pw = width*scale + 2;
+            int ph = height*scale + 2;
+            struct image *im = image_create(pw, ph);
             image_fill(im, 0, 0, im->width, im->height, 0xffffff);
             draw_walls(im, m, scale, 0x000000);
             for (int i = 0; i < 3*60; i++) {
@@ -567,17 +572,23 @@ main(int argc, char *argv[])
     }
 
     if (!animate) {
-        r32s(best_seed);
         struct maze *m = maze_create(width, height);
-        kruskal(m, 0);
-        struct coord end = flood(m, 0, 0);
+        kruskal(m, &best_seed, 0);
+        struct coord beg = flood(m, 0, 0, 0, 0);
+        struct coord end = flood(m, beg.x, beg.y, 0, 0);
 
         struct image *im = image_create(width*scale + 2, height*scale + 2);
         image_fill(im, 0, 0, im->width, im->height, 0xffffff);
-        image_fill(im, 1, 1, 1 + scale, 1 + scale, 0x00ffff);
-        int px = 1 + end.x*scale;
-        int py = 1 + end.y*scale;
-        image_fill(im, px, py, px + scale, py + scale, 0x00ffff);
+        {
+            int px = 1 + beg.x*scale;
+            int py = 1 + beg.y*scale;
+            image_fill(im, px, py, px + scale, py + scale, 0x00ffff);
+        }
+        {
+            int px = 1 + end.x*scale;
+            int py = 1 + end.y*scale;
+            image_fill(im, px, py, px + scale, py + scale, 0x00ffff);
+        }
         draw_walls(im, m, scale, 0x000000);
         image_write(im);
         free(im);
