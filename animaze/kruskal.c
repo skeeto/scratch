@@ -4,9 +4,13 @@
  *   $ ./a.out | mpv --no-correct-pts --fps=60 --fs -
  *   $ ./a.out | x264 --fps=60 -o maze.mp4 /dev/stdin
  */
-#include <time.h>
+#include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 static unsigned long long s = 0;
 
@@ -70,9 +74,13 @@ static void
 image_write(const struct image *im)
 {
     if (printf("P6\n%d %d\n255\n", im->width, im->height) < 0)
-        exit(EXIT_FAILURE);
+        goto fail;
     if (!fwrite(im->buf, im->height*im->width*3, 1, stdout))
-        exit(EXIT_FAILURE);
+        goto fail;
+    return;
+fail:
+    fprintf(stderr, "animaze: output error\n");
+    exit(EXIT_FAILURE);
 }
 
 static void
@@ -334,19 +342,176 @@ flood(struct maze *m, int scale, long base)
     free(queue);
 }
 
-int
-main(void)
+static int optind = 1;
+static int opterr = 1;
+static int optopt;
+static char *optarg;
+
+static int
+getopt(int argc, char * const argv[], const char *optstring)
 {
+    static int optpos = 1;
+    const char *arg;
+    (void)argc;
+
+    /* Reset? */
+    if (optind == 0) {
+        optind = 1;
+        optpos = 1;
+    }
+
+    arg = argv[optind];
+    if (arg && strcmp(arg, "--") == 0) {
+        optind++;
+        return -1;
+    } else if (!arg || arg[0] != '-' || !isalnum(arg[1])) {
+        return -1;
+    } else {
+        const char *opt = strchr(optstring, arg[optpos]);
+        optopt = arg[optpos];
+        if (!opt) {
+            if (opterr && *optstring != ':')
+                fprintf(stderr, "%s: illegal option: %c\n", argv[0], optopt);
+            return '?';
+        } else if (opt[1] == ':') {
+            if (arg[optpos + 1]) {
+                optarg = (char *)arg + optpos + 1;
+                optind++;
+                optpos = 1;
+                return optopt;
+            } else if (argv[optind + 1]) {
+                optarg = (char *)argv[optind + 1];
+                optind += 2;
+                optpos = 1;
+                return optopt;
+            } else {
+                if (opterr && *optstring != ':')
+                    fprintf(stderr,
+                            "%s: option requires an argument: %c\n",
+                            argv[0], optopt);
+                return *optstring == ':' ? ':' : '?';
+            }
+        } else {
+            if (!arg[++optpos]) {
+                optind++;
+                optpos = 1;
+            }
+            return optopt;
+        }
+    }
+}
+
+static int
+parseint(char *s, const char *name)
+{
+    char *end;
+    errno = 0;
+    long v = strtol(s, &end, 10);
+    if (errno || v < 1 || v > INT_MAX || *end != 0) {
+        fprintf(stderr, "animaze: invalid %s: %s\n", name, optarg);
+        exit(EXIT_FAILURE);
+    }
+    return v;
+}
+
+static unsigned long long
+hash(void *buf, size_t len, unsigned long long key)
+{
+    unsigned char *p = buf;
+    unsigned long long h = key;
+    for (size_t i = 0; i < len; i++) {
+        h ^= p[i];
+        h *= 0x25b751109e05be63ULL;
+    }
+    h &= 0xffffffffffffffffULL;
+    h >>= 32;
+    h *= 0x2330e1453ed4b9b9ULL;
+    return h;
+}
+
+static void
+usage(FILE *f)
+{
+    fprintf(f, "usage: animaze [OPTIONS] | ...\n");
+    fprintf(f, "  -h INT     maze height in cells\n");
+    fprintf(f, "  -n INT     number of mazes (default: infinite)\n");
+    fprintf(f, "  -s INT     cell size in pixels\n");
+    fprintf(f, "  -w INT     maze width in cells\n");
+    fprintf(f, "  -x STRING  generation seed\n");
+}
+
+int
+main(int argc, char *argv[])
+{
+    int scale = 14;
+    int width = 1920/scale;
+    int height = 1080/scale;
+    int runs = 0;
+    unsigned long long seed = 0;
+
 #ifdef _WIN32
     int _setmode(int, int);
     _setmode(_fileno(stdout), 0x8000);
 #endif
 
-    r32s(time(0));
+    int option;
+    while ((option = getopt(argc, argv, "h:n:s:w:x:")) != -1) {
+        switch (option) {
+        case 'h':
+            height = parseint(optarg, "height");
+            break;
+        case 'n':
+            runs = parseint(optarg, "runs");
+            break;
+        case 's':
+            scale = parseint(optarg, "scale");
+            break;
+        case 'w':
+            width = parseint(optarg, "width");
+            break;
+        case 'x':
+            seed = hash(optarg, strlen(optarg), 0x4a3fe5e49100be41ULL);
+            break;
+        default:
+            usage(stderr);
+            exit(EXIT_FAILURE);
+        }
+    }
 
-    int scale = 14;
-    int width = 1920/scale;
-    int height = 1080/scale;
+    if (argv[optind]) {
+        fprintf(stderr, "animaze: too many arguments\n");
+        usage(stderr);
+        exit(EXIT_FAILURE);
+    }
+
+    if (!seed) {
+        time_t timeptr = time(0);
+        seed = hash(&timeptr, sizeof(timeptr), 0);
+
+        /* PIE */
+        int (*mainptr)() = main;
+        seed = hash(&mainptr, sizeof(mainptr), seed);
+
+        /* ASLR */
+        void *(*mallocptr)() = malloc;
+        seed = hash(&mallocptr, sizeof(mallocptr), seed);
+
+        /* Random stack gap */
+        void *ptr = &ptr;
+        seed = hash(&ptr, sizeof(ptr), seed);
+
+        /* Jitter */
+        for (int i = 0; i < 1000; i++) {
+            unsigned long counter = 0;
+            clock_t start = clock();
+            while (clock() == start) {
+                counter++;
+            }
+            seed = hash(&start, sizeof(start), seed);
+            seed = hash(&counter, sizeof(counter), seed);
+        }
+    }
+    r32s(seed);
 
     for (;;) {
         struct maze *m = maze_create(width, height);
@@ -364,5 +529,9 @@ main(void)
         free(im);
 
         free(m);
+
+        if (runs > 0 && !--runs) {
+            break;
+        }
     }
 }
