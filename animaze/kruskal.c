@@ -335,6 +335,11 @@ flood(struct maze *m, int scale, long base)
 int
 main(void)
 {
+#ifdef _WIN32
+    int _setmode(int, int);
+    _setmode(_fileno(stdout), 0x8000);
+#endif
+
     r32s(time(0));
 
     int scale = 14;
