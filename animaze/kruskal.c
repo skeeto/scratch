@@ -251,17 +251,19 @@ kruskal(struct maze *m, int scale)
             }
             *maze_get(m, x, y) &= ~w;
 
-            for (int y = 0; y < m->height; y++) {
-                for (int x = 0; x < m->width; x++) {
-                    struct set *s = sets + y*m->width + x;
-                    long c = set_find(s)->color;
-                    int x0 = 1 + x*scale;
-                    int y0 = 1 + y*scale;
-                    image_fill(im, x0, y0, x0 + scale, y0 + scale, c);
+            if (scale) {
+                for (int y = 0; y < m->height; y++) {
+                    for (int x = 0; x < m->width; x++) {
+                        struct set *s = sets + y*m->width + x;
+                        long c = set_find(s)->color;
+                        int x0 = 1 + x*scale;
+                        int y0 = 1 + y*scale;
+                        image_fill(im, x0, y0, x0 + scale, y0 + scale, c);
+                    }
                 }
+                draw_walls(im, m, scale, 0x000000);
+                image_write(im);
             }
-            draw_walls(im, m, scale, 0x000000);
-            image_write(im);
         }
     }
     long final = set_find(sets)->color;
@@ -325,7 +327,7 @@ flood(struct maze *m, int scale, long base)
             }
         }
 
-        if (d > lastd) {
+        if (scale && d > lastd) {
             image_fill(im, 0, 0, im->width, im->height, base);
             draw_mask(im, m, F_VISITED, scale, 0xffffff);
             draw_mask(im, m, F_QUEUED, scale, 0xff7f00);
@@ -402,12 +404,12 @@ getopt(int argc, char * const argv[], const char *optstring)
 }
 
 static int
-parseint(char *s, const char *name)
+parseint(char *s, int min, const char *name)
 {
     char *end;
     errno = 0;
     long v = strtol(s, &end, 10);
-    if (errno || v < 1 || v > INT_MAX || *end != 0) {
+    if (errno || v < min || v > INT_MAX || *end != 0) {
         fprintf(stderr, "animaze: invalid %s: %s\n", name, optarg);
         exit(EXIT_FAILURE);
     }
@@ -429,12 +431,47 @@ hash(void *buf, size_t len, unsigned long long key)
     return h;
 }
 
+static unsigned long long
+genseed(void)
+{
+    unsigned long long seed = 0;
+
+    time_t timeptr = time(0);
+    seed = hash(&timeptr, sizeof(timeptr), seed);
+
+    /* PIE */
+    unsigned long long (*self)(void) = genseed;
+    seed = hash(&self, sizeof(self), seed);
+
+    /* ASLR */
+    void *(*mallocptr)() = malloc;
+    seed = hash(&mallocptr, sizeof(mallocptr), seed);
+
+    /* Random stack gap */
+    void *ptr = &ptr;
+    seed = hash(&ptr, sizeof(ptr), seed);
+
+    /* Jitter */
+    for (int i = 0; i < 1000; i++) {
+        unsigned long counter = 0;
+        clock_t start = clock();
+        while (clock() == start) {
+            counter++;
+        }
+        seed = hash(&start, sizeof(start), seed);
+        seed = hash(&counter, sizeof(counter), seed);
+    }
+
+    return seed;
+}
+
 static void
 usage(FILE *f)
 {
     fprintf(f, "usage: animaze [OPTIONS] | ...\n");
     fprintf(f, "  -h INT     maze height in cells\n");
     fprintf(f, "  -n INT     number of mazes (default: infinite)\n");
+    fprintf(f, "  -q         disable animation\n");
     fprintf(f, "  -s INT     cell size in pixels\n");
     fprintf(f, "  -w INT     maze width in cells\n");
     fprintf(f, "  -x STRING  generation seed\n");
@@ -447,6 +484,7 @@ main(int argc, char *argv[])
     int width = 1920/scale;
     int height = 1080/scale;
     int runs = 0;
+    int animate = 1;
     unsigned long long seed = 0;
 
 #ifdef _WIN32
@@ -455,19 +493,22 @@ main(int argc, char *argv[])
 #endif
 
     int option;
-    while ((option = getopt(argc, argv, "h:n:s:w:x:")) != -1) {
+    while ((option = getopt(argc, argv, "h:n:qs:w:x:")) != -1) {
         switch (option) {
         case 'h':
-            height = parseint(optarg, "height");
+            height = parseint(optarg, 1, "height");
             break;
         case 'n':
-            runs = parseint(optarg, "runs");
+            runs = parseint(optarg, 0, "runs");
+            break;
+        case 'q':
+            animate = 0;
             break;
         case 's':
-            scale = parseint(optarg, "scale");
+            scale = parseint(optarg, 1, "scale");
             break;
         case 'w':
-            width = parseint(optarg, "width");
+            width = parseint(optarg, 1, "width");
             break;
         case 'x':
             seed = hash(optarg, strlen(optarg), 0x4a3fe5e49100be41ULL);
@@ -484,46 +525,23 @@ main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    if (!seed) {
-        time_t timeptr = time(0);
-        seed = hash(&timeptr, sizeof(timeptr), 0);
-
-        /* PIE */
-        int (*mainptr)() = main;
-        seed = hash(&mainptr, sizeof(mainptr), seed);
-
-        /* ASLR */
-        void *(*mallocptr)() = malloc;
-        seed = hash(&mallocptr, sizeof(mallocptr), seed);
-
-        /* Random stack gap */
-        void *ptr = &ptr;
-        seed = hash(&ptr, sizeof(ptr), seed);
-
-        /* Jitter */
-        for (int i = 0; i < 1000; i++) {
-            unsigned long counter = 0;
-            clock_t start = clock();
-            while (clock() == start) {
-                counter++;
-            }
-            seed = hash(&start, sizeof(start), seed);
-            seed = hash(&counter, sizeof(counter), seed);
-        }
-    }
-    r32s(seed);
+    r32s(seed ? seed : genseed());
 
     for (;;) {
         struct maze *m = maze_create(width, height);
 
-        long final = kruskal(m, scale);
+        long final = kruskal(m, animate ? scale : 0);
 
-        flood(m, scale, final);
+        flood(m, animate ? scale : 0, final);
 
         struct image *im = image_create(width*scale + 2, height*scale + 2);
         image_fill(im, 0, 0, im->width, im->height, 0xffffff);
         draw_walls(im, m, scale, 0x000000);
-        for (int i = 0; i < 3*60; i++) {
+        if (animate) {
+            for (int i = 0; i < 3*60; i++) {
+                image_write(im);
+            }
+        } else {
             image_write(im);
         }
         free(im);
