@@ -29,7 +29,7 @@ r32(void)
 static unsigned long
 randint(unsigned long r)
 {
-    unsigned long x = r32();
+    unsigned long long x = r32();
     unsigned long long m = x * r;
     unsigned long y = m & 0xffffffffUL;
     if (y < r) {
