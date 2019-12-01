@@ -498,6 +498,22 @@ parseint(char *s, int min, const char *name)
     return v;
 }
 
+static int
+validhex(const char *s)
+{
+    int valid = 1;
+    if (strlen(s) == 18 && s[0] == '0' && s[1] == 'x') {
+        for (int i = 2; i < 18; i++) {
+            if (!strchr("0123456789abcdef", s[i])) {
+                valid = 0;
+            }
+        }
+    } else {
+        valid = 0;
+    }
+    return valid;
+}
+
 static unsigned long long
 hash(void *buf, size_t len, unsigned long long key)
 {
@@ -602,7 +618,11 @@ main(int argc, char *argv[])
             width = parseint(optarg, 1, "width");
             break;
         case 'x':
-            seed = hash(optarg, strlen(optarg), 0x4a3fe5e49100be41ULL);
+            if (validhex(optarg)) {
+                seed = strtoull(optarg + 2, 0, 16);
+            } else {
+                seed = hash(optarg, strlen(optarg), 0x4a3fe5e49100be41ULL);
+            }
             break;
         default:
             usage(stderr);
@@ -624,7 +644,7 @@ main(int argc, char *argv[])
     long best_dist = 0;
 
     for (;;) {
-        long save = seed;
+        unsigned long long save = seed;
         struct maze *m = maze_create(width, height);
         long final = generator(m, &seed, animate ? scale : 0);
 
@@ -635,7 +655,8 @@ main(int argc, char *argv[])
             best_seed = save;
             best_dist = end.d;
             if (!animate) {
-                fprintf(stderr, "distance = %ld (%d left)\n", end.d, runs);
+                fprintf(stderr, "seed=0x%016llx, dist=%ld, remain=%d\n",
+                        save, end.d, runs);
             }
         }
 
@@ -669,12 +690,12 @@ main(int argc, char *argv[])
         {
             int px = 1 + beg.x*scale;
             int py = 1 + beg.y*scale;
-            image_fill(im, px, py, px + scale, py + scale, 0x00ffff);
+            image_fill(im, px, py, px + scale, py + scale, 0xff7fff);
         }
         {
             int px = 1 + end.x*scale;
             int py = 1 + end.y*scale;
-            image_fill(im, px, py, px + scale, py + scale, 0x00ffff);
+            image_fill(im, px, py, px + scale, py + scale, 0xff7fff);
         }
         draw_walls(im, m, scale, 0x000000);
         image_write(im);
