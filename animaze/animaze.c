@@ -19,7 +19,7 @@ r32(unsigned long long *s)
     unsigned long r = *s>>32 & 0xffffffffUL;
     r ^= r>>16;
     r *= 0x60857ba9UL;
-    return r & 0xffffffff;
+    return r & 0xffffffffUL;
 }
 
 static unsigned long
