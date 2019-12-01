@@ -267,6 +267,84 @@ kruskal(struct maze *m, unsigned long long *rng, int scale)
     return final;
 }
 
+static long
+depthfirst(struct maze *m, unsigned long long *rng, int scale)
+{
+    struct {
+        int x;
+        int y;
+    } *stack = malloc(m->width*m->height*sizeof(*stack));
+    stack[0].x = randint(rng, m->width);
+    stack[0].y = randint(rng, m->height);
+    *maze_get(m, stack[0].x, stack[0].y) |= F_VISITED;
+    long nstack = 1;
+
+    struct image *im = image_create(m->width*scale + 2, m->height*scale + 2);
+
+    static const int dir[] = {+0, -1, +1, +0, +0, +1, -1, +0};
+    while (nstack) {
+        int x = stack[nstack - 1].x;
+        int y = stack[nstack - 1].y;
+
+        int dirs[4];
+        int ndirs = 0;
+        for (int i = 0; i < 4; i++) {
+            int tx = x + dir[i*2 + 0];
+            int ty = y + dir[i*2 + 1];
+            if (maze_valid(m, tx, ty) && !(*maze_get(m, tx, ty) & F_VISITED)) {
+                dirs[ndirs++] = i;
+            }
+        }
+
+        int tx, ty, r = 0;
+        switch (ndirs) {
+        case 4:
+        case 3:
+        case 2:
+            r = randint(rng, ndirs); /* fallthrough */
+        case 1:
+            tx = stack[nstack].x = x + dir[dirs[r]*2 + 0];
+            ty = stack[nstack].y = y + dir[dirs[r]*2 + 1];
+            nstack++;
+            *maze_get(m, tx, ty) |= F_VISITED;
+            switch (dirs[r]) {
+            case 0: *maze_get(m, tx, ty) &= ~F_SOUTH; break;
+            case 1: *maze_get(m,  x,  y) &= ~F_EAST;  break;
+            case 2: *maze_get(m,  x,  y) &= ~F_SOUTH; break;
+            case 3: *maze_get(m, tx, ty) &= ~F_EAST;  break;
+            }
+            break;
+        case 0:
+            nstack--;
+            break;
+        }
+
+        if (scale) {
+            for (int y = 0; y < m->height; y++) {
+                for (int x = 0; x < m->width; x++) {
+                    int px = 1 + x*scale;
+                    int py = 1 + y*scale;
+                    int visited = !!(*maze_get(m, x, y) & F_VISITED);
+                    long color = visited ? 0xafafaf : 0xffffff;
+                    image_fill(im, px, py, px + scale, py + scale, color);
+                }
+            }
+            for (long i = 0; i < nstack; i++) {
+                int px = 1 + stack[i].x*scale;
+                int py = 1 + stack[i].y*scale;
+                image_fill(im, px, py, px + scale, py + scale, 0x007fff);
+            }
+            draw_walls(im, m, scale, 0x000000);
+            image_write(im);
+        }
+    }
+
+    free(im);
+    free(stack);
+
+    return 0xafafaf;
+}
+
 struct coord {
     int x;
     int y;
@@ -473,6 +551,8 @@ static void
 usage(FILE *f)
 {
     fprintf(f, "usage: animaze [OPTIONS] | ...\n");
+    fprintf(f, "  -D         generate with depth first traversal \n");
+    fprintf(f, "  -K         generate with Kruskal's algorithm [default]\n");
     fprintf(f, "  -h INT     maze height in cells\n");
     fprintf(f, "  -n INT     number of mazes (default: infinite)\n");
     fprintf(f, "  -q         disable animation\n");
@@ -489,6 +569,7 @@ main(int argc, char *argv[])
     int height = 1080/scale;
     int runs = 0;
     int animate = 1;
+    long (*generator)(struct maze *, unsigned long long *, int) = kruskal;
     unsigned long long seed = 0;
 
 #ifdef _WIN32
@@ -497,8 +578,14 @@ main(int argc, char *argv[])
 #endif
 
     int option;
-    while ((option = getopt(argc, argv, "h:n:qs:w:x:")) != -1) {
+    while ((option = getopt(argc, argv, "DKh:n:qs:w:x:")) != -1) {
         switch (option) {
+        case 'D':
+            generator = depthfirst;
+            break;
+        case 'K':
+            generator = kruskal;
+            break;
         case 'h':
             height = parseint(optarg, 1, "height");
             break;
@@ -539,7 +626,7 @@ main(int argc, char *argv[])
     for (;;) {
         long save = seed;
         struct maze *m = maze_create(width, height);
-        long final = kruskal(m, &seed, animate ? scale : 0);
+        long final = generator(m, &seed, animate ? scale : 0);
 
         struct coord beg = flood(m, 0, 0, 0, 0);
         struct coord end = flood(m, beg.x, beg.y, animate ? scale : 0, final);
@@ -573,7 +660,7 @@ main(int argc, char *argv[])
 
     if (!animate) {
         struct maze *m = maze_create(width, height);
-        kruskal(m, &best_seed, 0);
+        generator(m, &best_seed, 0);
         struct coord beg = flood(m, 0, 0, 0, 0);
         struct coord end = flood(m, beg.x, beg.y, 0, 0);
 
