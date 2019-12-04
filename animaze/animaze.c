@@ -1,7 +1,7 @@
 /* Animated Kruskal maze generator and solver.
  * Usage:
  *   $ cc -O3 animaze.c
- *   $ ./a.out | mpv --no-correct-pts --fps=60 --fs -
+ *   $ ./a.out | mpv --no-correct-pts --fps=60 -
  *   $ ./a.out -n1 | x264 --fps=60 -o maze.mp4 /dev/stdin
  *   $ ./a.out -q -n1000 -w100 -h50 | convert ppm:- maze.png
  */
@@ -919,9 +919,9 @@ usage(FILE *f)
 int
 main(int argc, char *argv[])
 {
-    int scale = 14;
-    int width = 1920/scale;
-    int height = 1080/scale;
+    int scale = 18;
+    int width = 75;
+    int height = 40;
     int runs = 0;
     int animate = 1;
     int seeded = 0;
