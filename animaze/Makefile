@@ -1,5 +1,5 @@
 CC      = cc
-CFLAGS  = -std=c99 -Wall -Wextra -O3 -march=native
+CFLAGS  = -std=c11 -Wall -Wextra -O3 -march=native
 LDFLAGS =
 LDLIBS  =
 

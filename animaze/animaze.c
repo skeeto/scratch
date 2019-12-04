@@ -12,32 +12,96 @@
 #include <string.h>
 #include <time.h>
 
-static unsigned long
-r32(unsigned long long *s)
+/* rng */
+
+static unsigned long long
+hash(const void *buf, size_t len, unsigned long long key)
 {
-    *s = *s*0x7c3c3267d015ceb5ULL + 0x24bd2d95276253a9ULL;
-    unsigned long r = *s>>32 & 0xffffffffUL;
+    const unsigned char *p = buf;
+    unsigned long long h = key;
+    for (size_t i = 0; i < len; i++) {
+        h ^= p[i];
+        h *= 0x25b751109e05be63ULL;
+    }
+    h &= 0xffffffffffffffffULL;
+    h >>= 32;
+    h *= 0x2330e1453ed4b9b9ULL;
+    return h;
+}
+
+struct rng {
+    unsigned long long s;
+};
+
+static struct rng
+rng_create(void)
+{
+    unsigned long long seed = 0;
+
+    time_t timeptr = time(0);
+    seed = hash(&timeptr, sizeof(timeptr), seed);
+
+    /* PIE */
+    struct rng (*self)(void) = rng_create;
+    seed = hash(&self, sizeof(self), seed);
+
+    /* ASLR */
+    void *(*mallocptr)() = malloc;
+    seed = hash(&mallocptr, sizeof(mallocptr), seed);
+
+    /* Random stack gap */
+    void *ptr = &ptr;
+    seed = hash(&ptr, sizeof(ptr), seed);
+
+    /* Jitter */
+    for (int i = 0; i < 1000; i++) {
+        unsigned long counter = 0;
+        clock_t start = clock();
+        while (clock() == start) {
+            counter++;
+        }
+        seed = hash(&start, sizeof(start), seed);
+        seed = hash(&counter, sizeof(counter), seed);
+    }
+
+    return (struct rng){seed};
+}
+
+static struct rng
+rng_seed(const char *str)
+{
+    unsigned long long seed = hash(str, strlen(str), 0x4a3fe5e49100be41ULL);
+    return (struct rng){seed};
+}
+
+static unsigned long
+rng_u32(struct rng *rng)
+{
+    rng->s = rng->s*0x7c3c3267d015ceb5ULL + 0x24bd2d95276253a9ULL;
+    unsigned long r = rng->s>>32 & 0xffffffffUL;
     r ^= r>>16;
     r *= 0x60857ba9UL;
     return r & 0xffffffffUL;
 }
 
 static unsigned long
-randint(unsigned long long *s, unsigned long r)
+rng_range(struct rng *rng, unsigned long r)
 {
-    unsigned long long x = r32(s);
+    unsigned long long x = rng_u32(rng);
     unsigned long long m = x * r;
     unsigned long y = m & 0xffffffffUL;
     if (y < r) {
         unsigned long t = -r % r;
         while (y < t) {
-            x = r32(s);
+            x = rng_u32(rng);
             m = x * r;
             y = m & 0xffffffffUL;
         }
     }
     return m >> 32;
 }
+
+/* image */
 
 struct image {
     int width;
@@ -85,6 +149,8 @@ image_fill(struct image *im, int x0, int y0, int x1, int y1, long color)
     }
 }
 
+/* maze */
+
 #define F_SOUTH   (1<<0)
 #define F_EAST    (1<<1)
 #define F_VISITED (1<<2)
@@ -109,10 +175,20 @@ maze_create(int width, int height)
     m->height = height;
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-             *maze_get(m, x, y) = F_SOUTH | F_EAST;
+            *maze_get(m, x, y) = F_SOUTH | F_EAST;
         }
     }
     return m;
+}
+
+static void
+maze_reset(struct maze *m)
+{
+    for (int y = 0; y < m->height; y++) {
+        for (int x = 0; x < m->width; x++) {
+            *maze_get(m, x, y) = F_SOUTH | F_EAST;
+        }
+    }
 }
 
 static int
@@ -121,8 +197,74 @@ maze_valid(struct maze *m, int x, int y)
     return x >= 0 && x < m->width && y >= 0 && y < m->height;
 }
 
+/* maze renderer */
+
+struct render {
+    struct maze *maze;
+    enum {RENDER_NULL, RENDER_PPM} type;
+    union {
+        struct {
+            int scale;
+            struct image *image;
+        } ppm;
+    };
+};
+
+static struct render render_null = {0};
+
 static void
-draw_walls(struct image *im, struct maze *m, int scale, long color)
+render_ppm(struct render *r, struct maze *m, int scale)
+{
+    r->maze = m;
+    r->type = RENDER_PPM;
+    r->ppm.scale = scale;
+    r->ppm.image = image_create(m->width*scale + 2, m->height*scale + 2);
+}
+
+static void
+render_free(struct render *r)
+{
+    switch (r->type) {
+    case RENDER_NULL:
+        break;
+    case RENDER_PPM:
+        free(r->ppm.image);
+        r->ppm.image = 0;
+        break;
+    }
+}
+
+static void
+render_cell(struct render *r, int x, int y, long color)
+{
+    int scale, px, py;
+    switch (r->type) {
+    case RENDER_NULL:
+        break;
+    case RENDER_PPM:
+        scale = r->ppm.scale;
+        px = 1 + x*scale;
+        py = 1 + y*scale;
+        image_fill(r->ppm.image, px, py, px + scale, py + scale, color);
+        break;
+    }
+}
+
+static void
+render_clear(struct render *r, long color)
+{
+    struct maze *m = r->maze;
+    if (m) {
+        for (int y = 0; y < m->height; y++) {
+            for (int x = 0; x < m->width; x++) {
+                render_cell(r, x, y, color);
+            }
+        }
+    }
+}
+
+static void
+render_walls_ppm(struct image *im, struct maze *m, int scale, long color)
 {
     for (int y = 0; y < im->height; y++) {
         image_set(im, 0, y, color);
@@ -154,18 +296,30 @@ draw_walls(struct image *im, struct maze *m, int scale, long color)
 }
 
 static void
-draw_mask(struct image *im, struct maze *m, int mask, int scale, long color)
+render_walls(struct render *r, long color)
 {
-    for (int y = 0; y < m->height; y++) {
-        for (int x = 0; x < m->width; x++) {
-            if (*maze_get(m, x, y) & mask) {
-                int px = x*scale + 1;
-                int py = y*scale + 1;
-                image_fill(im, px, py, px + scale, py + scale, color);
-            }
-        }
+    switch (r->type) {
+    case RENDER_NULL:
+        break;
+    case RENDER_PPM:
+        render_walls_ppm(r->ppm.image, r->maze, r->ppm.scale, color);
+        break;
     }
 }
+
+static void
+render_flush(struct render *r)
+{
+    switch (r->type) {
+    case RENDER_NULL:
+        break;
+    case RENDER_PPM:
+        image_write(r->ppm.image);
+        break;
+    }
+}
+
+/* disjoint forest */
 
 struct set {
     struct set *parent;
@@ -181,15 +335,17 @@ set_find(struct set *s)
     return s->parent;
 }
 
+/* maze generators */
+
 static long
-kruskal(struct maze *m, unsigned long long *rng, int scale)
+kruskal(struct maze *m, struct render *r, struct rng *rng)
 {
     struct set *sets = malloc(sizeof(*sets)*m->width*m->height);
     for (int y = 0; y < m->height; y++) {
         for (int x = 0; x < m->width; x++) {
             struct set *s = sets + y*m->width + x;
             s->parent = s;
-            s->color = (r32(rng) & 0xffffffUL) | 0x404040UL;
+            s->color = (rng_u32(rng) & 0xffffffUL) | 0x404040UL;
             s->size = 1;
         }
     }
@@ -200,8 +356,6 @@ kruskal(struct maze *m, unsigned long long *rng, int scale)
         int which;
     } *walls = malloc(sizeof(*walls)*m->width*m->height*2);
     long nwalls = 0;
-
-    struct image *im = image_create(m->width*scale + 2, m->height*scale + 2);
 
     for (int y = 0; y < m->height; y++) {
         for (int x = 0; x < m->width; x++) {
@@ -219,7 +373,7 @@ kruskal(struct maze *m, unsigned long long *rng, int scale)
     }
 
     while (nwalls) {
-        long i = randint(rng, nwalls);
+        long i = rng_range(rng, nwalls);
         int x = walls[i].x;
         int y = walls[i].y;
         int w = walls[i].which;
@@ -243,24 +397,18 @@ kruskal(struct maze *m, unsigned long long *rng, int scale)
             }
             *maze_get(m, x, y) &= ~w;
 
-            if (scale) {
-                for (int y = 0; y < m->height; y++) {
-                    for (int x = 0; x < m->width; x++) {
-                        struct set *s = sets + y*m->width + x;
-                        long c = set_find(s)->color;
-                        int x0 = 1 + x*scale;
-                        int y0 = 1 + y*scale;
-                        image_fill(im, x0, y0, x0 + scale, y0 + scale, c);
-                    }
+            for (int y = 0; y < m->height; y++) {
+                for (int x = 0; x < m->width; x++) {
+                    struct set *s = sets + y*m->width + x;
+                    render_cell(r, x, y, set_find(s)->color);
                 }
-                draw_walls(im, m, scale, 0x000000);
-                image_write(im);
             }
+            render_walls(r, 0x000000);
+            render_flush(r);
         }
     }
     long final = set_find(sets)->color;
 
-    free(im);
     free(walls);
     free(sets);
 
@@ -268,18 +416,16 @@ kruskal(struct maze *m, unsigned long long *rng, int scale)
 }
 
 static long
-depthfirst(struct maze *m, unsigned long long *rng, int scale)
+depthfirst(struct maze *m, struct render *r, struct rng *rng)
 {
     struct {
         int x;
         int y;
     } *stack = malloc(m->width*m->height*sizeof(*stack));
-    stack[0].x = randint(rng, m->width);
-    stack[0].y = randint(rng, m->height);
+    stack[0].x = rng_range(rng, m->width);
+    stack[0].y = rng_range(rng, m->height);
     *maze_get(m, stack[0].x, stack[0].y) |= F_VISITED;
     long nstack = 1;
-
-    struct image *im = image_create(m->width*scale + 2, m->height*scale + 2);
 
     static const int dir[] = {+0, -1, +1, +0, +0, +1, -1, +0};
     while (nstack) {
@@ -296,18 +442,18 @@ depthfirst(struct maze *m, unsigned long long *rng, int scale)
             }
         }
 
-        int tx, ty, r = 0;
+        int tx, ty, roll = 0;
         switch (ndirs) {
         case 4:
         case 3:
         case 2:
-            r = randint(rng, ndirs); /* fallthrough */
+            roll = rng_range(rng, ndirs); /* fallthrough */
         case 1:
-            tx = stack[nstack].x = x + dir[dirs[r]*2 + 0];
-            ty = stack[nstack].y = y + dir[dirs[r]*2 + 1];
+            tx = stack[nstack].x = x + dir[dirs[roll]*2 + 0];
+            ty = stack[nstack].y = y + dir[dirs[roll]*2 + 1];
             nstack++;
             *maze_get(m, tx, ty) |= F_VISITED;
-            switch (dirs[r]) {
+            switch (dirs[roll]) {
             case 0: *maze_get(m, tx, ty) &= ~F_SOUTH; break;
             case 1: *maze_get(m,  x,  y) &= ~F_EAST;  break;
             case 2: *maze_get(m,  x,  y) &= ~F_SOUTH; break;
@@ -319,30 +465,37 @@ depthfirst(struct maze *m, unsigned long long *rng, int scale)
             break;
         }
 
-        if (scale) {
-            for (int y = 0; y < m->height; y++) {
-                for (int x = 0; x < m->width; x++) {
-                    int px = 1 + x*scale;
-                    int py = 1 + y*scale;
-                    int visited = !!(*maze_get(m, x, y) & F_VISITED);
-                    long color = visited ? 0xafafaf : 0xffffff;
-                    image_fill(im, px, py, px + scale, py + scale, color);
-                }
+        for (int y = 0; y < m->height; y++) {
+            for (int x = 0; x < m->width; x++) {
+                int visited = !!(*maze_get(m, x, y) & F_VISITED);
+                long color = visited ? 0xafafaf : 0xffffff;
+                render_cell(r, x, y, color);
             }
-            for (long i = 0; i < nstack; i++) {
-                int px = 1 + stack[i].x*scale;
-                int py = 1 + stack[i].y*scale;
-                image_fill(im, px, py, px + scale, py + scale, 0x007fff);
-            }
-            draw_walls(im, m, scale, 0x000000);
-            image_write(im);
         }
+        for (long i = 0; i < nstack; i++) {
+            render_cell(r, x, y, 0x007fff);
+        }
+        render_walls(r, 0x000000);
+        render_flush(r);
     }
 
-    free(im);
     free(stack);
 
     return 0xafafaf;
+}
+
+/* maze solvers */
+
+static void
+draw_mask(struct render *r, struct maze *m, int mask, long color)
+{
+    for (int y = 0; y < m->height; y++) {
+        for (int x = 0; x < m->width; x++) {
+            if (*maze_get(m, x, y) & mask) {
+                render_cell(r, x, y, color);
+            }
+        }
+    }
 }
 
 struct coord {
@@ -352,7 +505,7 @@ struct coord {
 };
 
 static struct coord
-flood(struct maze *m, int x, int y, int scale, long base)
+flood(struct maze *m, struct render *r, int x, int y, long base)
 {
     for (int y = 0; y < m->height; y++) {
         for (int x = 0; x < m->width; x++) {
@@ -368,8 +521,6 @@ flood(struct maze *m, int x, int y, int scale, long base)
     queue[0].y = y;
     queue[0].d = 0;
     *maze_get(m, x, y) |= F_VISITED | F_QUEUED;
-
-    struct image *im = image_create(m->width*scale + 2, m->height*scale + 2);
 
     long lastd = 0;
     while (head != tail) {
@@ -387,14 +538,14 @@ flood(struct maze *m, int x, int y, int scale, long base)
             if (maze_valid(m, nx, ny)) {
                 int nw = *maze_get(m, nx, ny);
                 if (!(nw & F_VISITED)) {
-                    int r;
+                    int v = 0;
                     switch (i) {
-                    case 0: r = !(nw & F_SOUTH); break;
-                    case 1: r = !( w & F_EAST ); break;
-                    case 2: r = !( w & F_SOUTH); break;
-                    case 3: r = !(nw & F_EAST ); break;
+                    case 0: v = !(nw & F_SOUTH); break;
+                    case 1: v = !( w & F_EAST ); break;
+                    case 2: v = !( w & F_SOUTH); break;
+                    case 3: v = !(nw & F_EAST ); break;
                     }
-                    if (r) {
+                    if (v) {
                         *maze_get(m, nx, ny) |= F_VISITED | F_QUEUED;
                         queue[head].x = nx;
                         queue[head].y = ny;
@@ -405,26 +556,27 @@ flood(struct maze *m, int x, int y, int scale, long base)
             }
         }
 
-        if (scale && d > lastd) {
-            image_fill(im, 0, 0, im->width, im->height, base);
-            draw_mask(im, m, F_VISITED, scale, 0xffffff);
-            draw_mask(im, m, F_QUEUED, scale, 0xff7f00);
-            draw_walls(im, m, scale, 0x000000);
-            image_write(im);
-            draw_mask(im, m, F_QUEUED, scale, 0xff0000);
-            draw_walls(im, m, scale, 0x000000);
-            image_write(im);
+        if (d > lastd) {
+            render_clear(r, base);
+            draw_mask(r, m, F_VISITED, 0xffffff);
+            draw_mask(r, m, F_QUEUED, 0xff7f00);
+            render_walls(r, 0x000000);
+            render_flush(r);
+            draw_mask(r, m, F_QUEUED, 0xff0000);
+            render_walls(r, 0x000000);
+            render_flush(r);
             lastd = d;
         }
     }
 
     struct coord end = queue[tail - 1];
 
-    free(im);
     free(queue);
 
     return end;
 }
+
+/* option parsing */
 
 static int optind = 1;
 static int opterr = 1;
@@ -514,55 +666,6 @@ validhex(const char *s)
     return valid;
 }
 
-static unsigned long long
-hash(void *buf, size_t len, unsigned long long key)
-{
-    unsigned char *p = buf;
-    unsigned long long h = key;
-    for (size_t i = 0; i < len; i++) {
-        h ^= p[i];
-        h *= 0x25b751109e05be63ULL;
-    }
-    h &= 0xffffffffffffffffULL;
-    h >>= 32;
-    h *= 0x2330e1453ed4b9b9ULL;
-    return h;
-}
-
-static unsigned long long
-genseed(void)
-{
-    unsigned long long seed = 0;
-
-    time_t timeptr = time(0);
-    seed = hash(&timeptr, sizeof(timeptr), seed);
-
-    /* PIE */
-    unsigned long long (*self)(void) = genseed;
-    seed = hash(&self, sizeof(self), seed);
-
-    /* ASLR */
-    void *(*mallocptr)() = malloc;
-    seed = hash(&mallocptr, sizeof(mallocptr), seed);
-
-    /* Random stack gap */
-    void *ptr = &ptr;
-    seed = hash(&ptr, sizeof(ptr), seed);
-
-    /* Jitter */
-    for (int i = 0; i < 1000; i++) {
-        unsigned long counter = 0;
-        clock_t start = clock();
-        while (clock() == start) {
-            counter++;
-        }
-        seed = hash(&start, sizeof(start), seed);
-        seed = hash(&counter, sizeof(counter), seed);
-    }
-
-    return seed;
-}
-
 static void
 usage(FILE *f)
 {
@@ -585,8 +688,9 @@ main(int argc, char *argv[])
     int height = 1080/scale;
     int runs = 0;
     int animate = 1;
-    long (*generator)(struct maze *, unsigned long long *, int) = kruskal;
-    unsigned long long seed = 0;
+    int seeded = 0;
+    struct rng rng;
+    long (*generate)(struct maze *, struct render *, struct rng *) = kruskal;
 
 #ifdef _WIN32
     int _setmode(int, int);
@@ -597,10 +701,10 @@ main(int argc, char *argv[])
     while ((option = getopt(argc, argv, "DKh:n:qs:w:x:")) != -1) {
         switch (option) {
         case 'D':
-            generator = depthfirst;
+            generate = depthfirst;
             break;
         case 'K':
-            generator = kruskal;
+            generate = kruskal;
             break;
         case 'h':
             height = parseint(optarg, 1, "height");
@@ -619,10 +723,11 @@ main(int argc, char *argv[])
             break;
         case 'x':
             if (validhex(optarg)) {
-                seed = strtoull(optarg + 2, 0, 16);
+                rng.s = strtoull(optarg + 2, 0, 16);
             } else {
-                seed = hash(optarg, strlen(optarg), 0x4a3fe5e49100be41ULL);
+                rng = rng_seed(optarg);
             }
+            seeded = 1;
             break;
         default:
             usage(stderr);
@@ -636,69 +741,66 @@ main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    if (!seed) {
-        seed = genseed();
+    if (!seeded) {
+        rng = rng_create();
     }
 
-    unsigned long long best_seed = 0;
+    struct maze *maze = maze_create(width, height);
+
+    struct render render = render_null;
+    if (animate) {
+        render_ppm(&render, maze, scale);
+    }
+
+    struct rng best_rng;
     long best_dist = 0;
-
     for (;;) {
-        unsigned long long save = seed;
-        struct maze *m = maze_create(width, height);
-        long final = generator(m, &seed, animate ? scale : 0);
+        struct rng save = rng;
+        long final = generate(maze, &render, &rng);
 
-        struct coord beg = flood(m, 0, 0, 0, 0);
-        struct coord end = flood(m, beg.x, beg.y, animate ? scale : 0, final);
+        struct coord beg = flood(maze, &render_null, 0, 0, 0);
+        struct coord end = flood(maze, &render, beg.x, beg.y, final);
 
         if (end.d > best_dist) {
-            best_seed = save;
+            best_rng = save;
             best_dist = end.d;
             if (!animate) {
                 fprintf(stderr, "seed=0x%016llx, dist=%ld, remain=%d\n",
-                        save, end.d, runs);
+                        save.s, end.d, runs);
             }
         }
 
         if (animate) {
-            int pw = width*scale + 2;
-            int ph = height*scale + 2;
-            struct image *im = image_create(pw, ph);
-            image_fill(im, 0, 0, im->width, im->height, 0xffffff);
-            draw_walls(im, m, scale, 0x000000);
+            render_clear(&render, 0xffffff);
+            render_walls(&render, 0x000000);
             for (int i = 0; i < 3*60; i++) {
-                image_write(im);
+                render_flush(&render);
             }
-            free(im);
         }
-
-        free(m);
 
         if (runs > 0 && !--runs) {
             break;
         }
+        maze_reset(maze);
     }
 
     if (!animate) {
-        struct maze *m = maze_create(width, height);
-        generator(m, &best_seed, 0);
-        struct coord beg = flood(m, 0, 0, 0, 0);
-        struct coord end = flood(m, beg.x, beg.y, 0, 0);
+        maze_reset(maze);
+        generate(maze, &render_null, &best_rng);
 
-        struct image *im = image_create(width*scale + 2, height*scale + 2);
-        image_fill(im, 0, 0, im->width, im->height, 0xffffff);
-        {
-            int px = 1 + beg.x*scale;
-            int py = 1 + beg.y*scale;
-            image_fill(im, px, py, px + scale, py + scale, 0xff7fff);
-        }
-        {
-            int px = 1 + end.x*scale;
-            int py = 1 + end.y*scale;
-            image_fill(im, px, py, px + scale, py + scale, 0xff7fff);
-        }
-        draw_walls(im, m, scale, 0x000000);
-        image_write(im);
-        free(im);
+        struct coord beg = flood(maze, &render_null, 0, 0, 0);
+        struct coord end = flood(maze, &render_null, beg.x, beg.y, 0);
+
+        struct render ppm;
+        render_ppm(&ppm, maze, scale);
+        render_clear(&ppm, 0xffffff);
+        render_cell(&ppm, beg.x, beg.y, 0xff7fff);
+        render_cell(&ppm, end.x, end.y, 0xff7fff);
+        render_walls(&ppm, 0x000000);
+        render_flush(&ppm);
+        render_free(&ppm);
     }
+
+    render_free(&render);
+    free(maze);
 }
