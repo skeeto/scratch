@@ -288,7 +288,6 @@ render_gl(struct render *r, struct maze *m, int scale)
         fprintf(stderr, "animaze: GLFW3: failed to initialize\n");
         exit(EXIT_FAILURE);
     }
-    glfwWindowHint(GLFW_SAMPLES, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
