@@ -13,6 +13,12 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef ENABLE_GL
+#define GLFW_INCLUDE_NONE
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+#endif
+
 /* rng */
 
 static unsigned long long
@@ -202,12 +208,22 @@ maze_valid(struct maze *m, int x, int y)
 
 struct render {
     struct maze *maze;
-    enum {RENDER_NULL, RENDER_PPM} type;
+    enum {RENDER_NULL, RENDER_PPM, RENDER_GL} type;
     union {
         struct {
             int scale;
             struct image *image;
         } ppm;
+#ifdef ENABLE_GL
+        struct {
+            struct image *texture;
+            GLFWwindow *window;
+            GLuint tex_cells;
+            GLuint tex_walls;
+            GLuint program;
+            GLuint vao_point;
+        } gl;
+#endif
     };
 };
 
@@ -222,6 +238,176 @@ render_ppm(struct render *r, struct maze *m, int scale)
     r->ppm.image = image_create(m->width*scale + 2, m->height*scale + 2);
 }
 
+#ifdef ENABLE_GL
+static GLuint
+compile_shader(GLenum type, const GLchar *source)
+{
+    GLuint shader = glCreateShader(type);
+    glShaderSource(shader, 1, &source, NULL);
+    glCompileShader(shader);
+    GLint param;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &param);
+    if (!param) {
+        GLchar log[4096];
+        glGetShaderInfoLog(shader, sizeof(log), NULL, log);
+        fprintf(stderr, "animaze: %s: %s\n",
+                type == GL_FRAGMENT_SHADER ? "frag" : "vert", (char *) log);
+        exit(EXIT_FAILURE);
+    }
+    return shader;
+}
+
+static GLuint
+link_program(GLuint vert, GLuint frag)
+{
+    GLuint program = glCreateProgram();
+    glAttachShader(program, vert);
+    glAttachShader(program, frag);
+    glLinkProgram(program);
+    GLint param;
+    glGetProgramiv(program, GL_LINK_STATUS, &param);
+    if (!param) {
+        GLchar log[4096];
+        glGetProgramInfoLog(program, sizeof(log), NULL, log);
+        fprintf(stderr, "animaze: link: %s\n", (char *) log);
+        exit(EXIT_FAILURE);
+    }
+    return program;
+}
+#endif
+
+static void
+render_gl(struct render *r, struct maze *m, int scale)
+{
+#ifdef ENABLE_GL
+    r->maze = m;
+    r->type = RENDER_GL;
+    r->gl.texture = image_create(m->width, m->height);
+
+    if (!glfwInit()) {
+        fprintf(stderr, "animaze: GLFW3: failed to initialize\n");
+        exit(EXIT_FAILURE);
+    }
+    glfwWindowHint(GLFW_SAMPLES, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    int width = m->width*scale + 2;
+    int height = m->height*scale + 2;
+    r->gl.window = glfwCreateWindow(width, height, "Animaze", NULL, NULL);
+    glfwMakeContextCurrent(r->gl.window);
+    glfwSwapInterval(1);
+
+    if (glewInit() != GLEW_OK) {
+        fprintf(stderr, "animaze: GLEW: failed to initialize\n");
+        exit(EXIT_FAILURE);
+    }
+
+    static const GLfloat QUAD[] = {
+        -1.0f, +1.0f,
+        -1.0f, -1.0f,
+        +1.0f, +1.0f,
+        +1.0f, -1.0f
+    };
+    GLuint vbo_quad;
+    glGenBuffers(1, &vbo_quad);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_quad);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(QUAD), QUAD, GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    glCreateTextures(GL_TEXTURE_2D, 1, &r->gl.tex_cells);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, r->gl.tex_cells);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexImage2D(
+        GL_TEXTURE_2D, 0,
+        GL_RGB, m->width, m->height, 0,
+        GL_RGB, GL_UNSIGNED_BYTE, 0
+    );
+
+    glCreateTextures(GL_TEXTURE_2D, 1, &r->gl.tex_walls);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, r->gl.tex_walls);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexImage2D(
+        GL_TEXTURE_2D, 0,
+        GL_R8UI, m->width, m->height, 0,
+        GL_RED_INTEGER, GL_UNSIGNED_BYTE, 0
+    );
+
+    static const GLchar src_vert[] =
+        "#version 430\n"
+        "layout(location=0) in vec2 a_point;\n"
+        "varying vec2 v_point;\n"
+        "void main() {\n"
+        "    v_point = a_point*vec2(+0.5, -0.5) + 0.5;\n"
+        "    gl_Position = vec4(a_point, 0, 1);\n"
+        "}\n";
+    static const GLchar src_frag[] =
+        "#version 430\n"
+        "layout(location=0) uniform sampler2D u_cells;\n"
+        "layout(location=1) uniform isampler2D u_walls;\n"
+        "layout(location=2) uniform int u_scale;\n"
+        "varying vec2 v_point;\n"
+        "out vec4 color;\n"
+        "void main() {\n"
+        "    vec2 size = textureSize(u_cells, 0);\n"
+        "    ivec2 cellp = ivec2(size*v_point*u_scale) % u_scale;\n"
+        "    int walls = texture(u_walls, v_point).r;\n"
+        "    bool ws = (walls & 1) != 0;\n"
+        "    bool we = (walls & 2) != 0;\n"
+        "    bool ps = cellp.y == u_scale - 1;\n"
+        "    bool pe = cellp.x == u_scale - 1;\n"
+        "    if ((we && pe) || (ws && ps) || (pe && ps)) {\n"
+        "        color = vec4(0, 0, 0, 1);\n"
+        "    } else {\n"
+        "        color = texture(u_cells, v_point);\n"
+        "    }\n"
+        "}\n";
+    GLuint vert = compile_shader(GL_VERTEX_SHADER, src_vert);
+    GLuint frag = compile_shader(GL_FRAGMENT_SHADER, src_frag);
+    r->gl.program = link_program(vert, frag);
+    glDeleteShader(frag);
+    glDeleteShader(vert);
+
+    glUseProgram(r->gl.program);
+    glUniform1i(0, 0); /* u_cells */
+    glUniform1i(1, 1); /* u_walls */
+    glUniform1i(2, scale); /* u_scale */
+
+    /* Prepare vertrex array object (VAO) */
+    glGenVertexArrays(1, &r->gl.vao_point);
+    glBindVertexArray(r->gl.vao_point);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_quad);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    glDeleteBuffers(1, &vbo_quad);
+
+    glBindVertexArray(r->gl.vao_point);
+
+#else /* !ENABLE_GL */
+    (void)r;
+    (void)m;
+    (void)scale;
+    fprintf(stderr, "animaze: OpenGL output unsupported\n");
+    exit(EXIT_FAILURE);
+#endif
+}
+
 static void
 render_free(struct render *r)
 {
@@ -231,6 +417,18 @@ render_free(struct render *r)
     case RENDER_PPM:
         free(r->ppm.image);
         r->ppm.image = 0;
+        break;
+    case RENDER_GL:
+#ifdef ENABLE_GL
+        glDeleteVertexArrays(1, &r->gl.vao_point);
+        glDeleteProgram(r->gl.program);
+        glDeleteTextures(1, &r->gl.tex_walls);
+        glDeleteTextures(1, &r->gl.tex_cells);
+        glfwDestroyWindow(r->gl.window);
+        r->gl.window = 0;
+        glfwTerminate();
+        free(r->gl.texture);
+#endif
         break;
     }
 }
@@ -247,6 +445,11 @@ render_cell(struct render *r, int x, int y, long color)
         px = 1 + x*scale;
         py = 1 + y*scale;
         image_fill(r->ppm.image, px, py, px + scale, py + scale, color);
+        break;
+    case RENDER_GL:
+#ifdef ENABLE_GL
+        image_set(r->gl.texture, x, y, color);
+#endif
         break;
     }
 }
@@ -305,6 +508,8 @@ render_walls(struct render *r, long color)
     case RENDER_PPM:
         render_walls_ppm(r->ppm.image, r->maze, r->ppm.scale, color);
         break;
+    case RENDER_GL:
+        break;
     }
 }
 
@@ -316,6 +521,35 @@ render_flush(struct render *r)
         break;
     case RENDER_PPM:
         image_write(r->ppm.image);
+        break;
+    case RENDER_GL:
+#ifdef ENABLE_GL
+        glfwPollEvents();
+        if (glfwWindowShouldClose(r->gl.window)) {
+            exit(EXIT_SUCCESS);
+        }
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, r->gl.tex_cells);
+        glTexSubImage2D(
+            GL_TEXTURE_2D,
+            0, 0, 0,
+            r->maze->width, r->maze->height,
+            GL_RGB, GL_UNSIGNED_BYTE,
+            r->gl.texture->buf
+        );
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, r->gl.tex_walls);
+        glTexSubImage2D(
+            GL_TEXTURE_2D,
+            0, 0, 0,
+            r->maze->width, r->maze->height,
+            GL_RED_INTEGER, GL_UNSIGNED_BYTE,
+            r->maze->cells
+        );
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glfwSwapBuffers(r->gl.window);
+#endif
         break;
     }
 }
@@ -673,6 +907,7 @@ usage(FILE *f)
     fprintf(f, "usage: animaze [OPTIONS] | ...\n");
     fprintf(f, "  -D         generate with depth first traversal \n");
     fprintf(f, "  -K         generate with Kruskal's algorithm [default]\n");
+    fprintf(f, "  -f ppm|gl  select maze renderer [ppm]\n");
     fprintf(f, "  -h INT     maze height in cells\n");
     fprintf(f, "  -n INT     number of mazes (default: infinite)\n");
     fprintf(f, "  -q         disable animation\n");
@@ -690,6 +925,7 @@ main(int argc, char *argv[])
     int runs = 0;
     int animate = 1;
     int seeded = 0;
+    enum {FORMAT_PPM, FORMAT_GL} format = FORMAT_PPM;
     struct rng rng;
     long (*generate)(struct maze *, struct render *, struct rng *) = kruskal;
 
@@ -699,13 +935,23 @@ main(int argc, char *argv[])
 #endif
 
     int option;
-    while ((option = getopt(argc, argv, "DKh:n:qs:w:x:")) != -1) {
+    while ((option = getopt(argc, argv, "DKf:h:n:qs:w:x:")) != -1) {
         switch (option) {
         case 'D':
             generate = depthfirst;
             break;
         case 'K':
             generate = kruskal;
+            break;
+        case 'f':
+            if (!strcmp(optarg, "gl")) {
+                format = FORMAT_GL;
+            } else if (!strcmp(optarg, "ppm")) {
+                format = FORMAT_PPM;
+            } else {
+                fprintf(stderr, "animaze: invalid format: %s\n", optarg);
+                exit(EXIT_FAILURE);
+            }
             break;
         case 'h':
             height = parseint(optarg, 1, "height");
@@ -750,7 +996,14 @@ main(int argc, char *argv[])
 
     struct render render = render_null;
     if (animate) {
-        render_ppm(&render, maze, scale);
+        switch (format) {
+        case FORMAT_PPM:
+            render_ppm(&render, maze, scale);
+            break;
+        case FORMAT_GL:
+            render_gl(&render, maze, scale);
+            break;
+        }
     }
 
     struct rng best_rng;

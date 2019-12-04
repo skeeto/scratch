@@ -1,7 +1,7 @@
 CC      = cc
-CFLAGS  = -std=c11 -Wall -Wextra -O3 -march=native
+CFLAGS  = -std=c11 -Wall -Wextra -O3 -march=native -DENABLE_GL
 LDFLAGS =
-LDLIBS  =
+LDLIBS  = -lglfw -lGLEW -lGL
 
 animaze: animaze.c
 	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ animaze.c $(LDLIBS)
