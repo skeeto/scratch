@@ -1,8 +1,9 @@
 /* Animated Kruskal maze generator and solver.
  * Usage:
- *   $ cc -O3 kruskal.c
+ *   $ cc -O3 animaze.c
  *   $ ./a.out | mpv --no-correct-pts --fps=60 --fs -
- *   $ ./a.out | x264 --fps=60 -o maze.mp4 /dev/stdin
+ *   $ ./a.out -n1 | x264 --fps=60 -o maze.mp4 /dev/stdin
+ *   $ ./a.out -q -n1000 -w100 -h50 | convert ppm:- maze.png
  */
 #include <ctype.h>
 #include <errno.h>
