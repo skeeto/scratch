@@ -385,7 +385,6 @@ render_gl(struct render *r, struct maze *m, int scale)
     glUniform1i(1, 1); /* u_walls */
     glUniform1i(2, scale); /* u_scale */
 
-    /* Prepare vertrex array object (VAO) */
     glGenVertexArrays(1, &r->gl.vao_point);
     glBindVertexArray(r->gl.vao_point);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_quad);
