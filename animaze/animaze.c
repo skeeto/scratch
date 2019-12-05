@@ -715,8 +715,9 @@ depthfirst(struct maze *m, struct render *r, struct rng *rng)
             }
         }
         for (long i = 0; i < nstack; i++) {
-            render_cell(r, x, y, 0x007fff);
+            render_cell(r, stack[i].x, stack[i].y, 0x00ff7f);
         }
+        render_cell(r, x, y, 0x007fff);
         render_walls(r, 0x000000);
         render_flush(r);
     }
