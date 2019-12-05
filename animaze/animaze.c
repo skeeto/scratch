@@ -350,7 +350,7 @@ render_gl(struct render *r, struct maze *m, int scale)
     static const GLchar src_vert[] =
         "#version 430\n"
         "layout(location=0) in vec2 a_point;\n"
-        "varying vec2 v_point;\n"
+        "out vec2 v_point;\n"
         "void main() {\n"
         "    v_point = a_point*vec2(+0.5, -0.5) + 0.5;\n"
         "    gl_Position = vec4(a_point, 0, 1);\n"
@@ -360,7 +360,7 @@ render_gl(struct render *r, struct maze *m, int scale)
         "layout(location=0) uniform sampler2D u_cells;\n"
         "layout(location=1) uniform isampler2D u_walls;\n"
         "layout(location=2) uniform int u_scale;\n"
-        "varying vec2 v_point;\n"
+        "in vec2 v_point;\n"
         "out vec4 color;\n"
         "void main() {\n"
         "    vec2 size = textureSize(u_cells, 0);\n"
