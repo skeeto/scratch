@@ -360,6 +360,7 @@ render_gl(struct render *r, struct maze *m, int scale)
         "layout(location=0) uniform sampler2D u_cells;\n"
         "layout(location=1) uniform isampler2D u_walls;\n"
         "layout(location=2) uniform int u_scale;\n"
+        "layout(location=3) uniform vec3 u_wallcolor;\n"
         "in vec2 v_point;\n"
         "out vec4 color;\n"
         "void main() {\n"
@@ -371,7 +372,7 @@ render_gl(struct render *r, struct maze *m, int scale)
         "    bool ps = cellp.y == u_scale - 1;\n"
         "    bool pe = cellp.x == u_scale - 1;\n"
         "    if ((we && pe) || (ws && ps) || (pe && ps)) {\n"
-        "        color = vec4(0, 0, 0, 1);\n"
+        "        color = vec4(u_wallcolor, 1);\n"
         "    } else {\n"
         "        color = texture(u_cells, v_point);\n"
         "    }\n"
@@ -509,6 +510,12 @@ render_walls(struct render *r, long color)
         render_walls_ppm(r->ppm.image, r->maze, r->ppm.scale, color);
         break;
     case RENDER_GL:
+#ifdef ENABLE_GL
+        /* u_wallcolor */
+        glUniform3f(3, (color >> 16 & 0xff) / 255.0f,
+                       (color >>  8 & 0xff) / 255.0f,
+                       (color >>  0 & 0xff) / 255.0f);
+#endif
         break;
     }
 }
