@@ -296,8 +296,8 @@ render_gl(struct render *r, struct maze *m, int scale)
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    int width = m->width*scale + 2;
-    int height = m->height*scale + 2;
+    int width = m->width*scale;
+    int height = m->height*scale;
     r->gl.window = glfwCreateWindow(width, height, "Animaze", NULL, NULL);
     glfwMakeContextCurrent(r->gl.window);
     glfwSwapInterval(1);
@@ -364,12 +364,11 @@ render_gl(struct render *r, struct maze *m, int scale)
         "in vec2 v_point;\n"
         "out vec4 color;\n"
         "void main() {\n"
-        "    vec2 size = textureSize(u_cells, 0);\n"
-        "    ivec2 cellp = ivec2(size*v_point*u_scale) % u_scale;\n"
+        "    ivec2 cellp = ivec2(gl_FragCoord.xy) % u_scale;\n"
         "    int walls = texture(u_walls, v_point).r;\n"
         "    bool ws = (walls & 1) != 0;\n"
         "    bool we = (walls & 2) != 0;\n"
-        "    bool ps = cellp.y == u_scale - 1;\n"
+        "    bool ps = cellp.y == 0;\n"
         "    bool pe = cellp.x == u_scale - 1;\n"
         "    if ((we && pe) || (ws && ps) || (pe && ps)) {\n"
         "        color = vec4(u_wallcolor, 1);\n"
