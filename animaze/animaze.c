@@ -33,7 +33,7 @@ hash(const void *buf, size_t len, unsigned long long key)
         h *= 0x25b751109e05be63ULL;
     }
     h &= 0xffffffffffffffffULL;
-    h >>= 32;
+    h ^= h >> 32;
     h *= 0x2330e1453ed4b9b9ULL;
     return h;
 }
