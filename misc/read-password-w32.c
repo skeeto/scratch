@@ -3,10 +3,6 @@
  */
 #include <windows.h>
 
-#ifdef _MSC_VER
-#  pragma comment(lib, "crypt32.lib")
-#endif
-
 // Display prompt then read zero-terminated, UTF-8 password.
 // Return password length with terminator, or zero on error.
 static int
@@ -16,6 +12,7 @@ read_password(char *buf, int len, char *prompt)
     int pwlen = 0;
     DWORD orig = 0;
     WCHAR *wbuf = 0;
+    SIZE_T wbuf_len = 0;
     HANDLE hi, ho = INVALID_HANDLE_VALUE;
 
     /* Set up input console handle */
@@ -33,7 +30,8 @@ read_password(char *buf, int len, char *prompt)
     if (!WriteConsoleA(ho, prompt, strlen(prompt), 0, 0)) goto done;
 
     /* Allocate a wide character buffer the size of the output */
-    wbuf = CryptMemAlloc((len - 1 + 2) * sizeof(WCHAR));
+    wbuf_len = (len - 1 + 2) * sizeof(WCHAR);
+    wbuf = HeapAlloc(GetProcessHeap(), 0, wbuf_len);
     if (!wbuf) goto done;
 
     /* Read and convert to UTF-8 */
@@ -45,8 +43,11 @@ read_password(char *buf, int len, char *prompt)
     pwlen = WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, buf, len, 0, 0);
 
 done:
-    /* Exploits that operations on INVALID_HANDLE_VALUE are no-ops */
-    CryptMemFree(wbuf);
+    if (wbuf) {
+        SecureZeroMemory(wbuf, wbuf_len);
+        HeapFree(GetProcessHeap(), 0, wbuf);
+    }
+    /* Exploit that operations on INVALID_HANDLE_VALUE are no-ops */
     WriteConsoleA(ho, "\n", 1, 0, 0);
     SetConsoleMode(hi, orig);
     CloseHandle(ho);
