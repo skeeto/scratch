@@ -4,7 +4,7 @@
  *   $ ./a.out | mpv --no-correct-pts --fps=60 -
  *   $ ./a.out -n1 | x264 --fps=60 -o maze.mp4 /dev/stdin
  *   $ ./a.out -q -n1000 -w100 -h50 | convert ppm:- maze.png
- *
+ * https://nullprogram.com/video/?v=kruskal
  * This is free and unencumbered software released into the public domain.
  */
 #include <ctype.h>
