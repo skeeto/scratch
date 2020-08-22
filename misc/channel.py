@@ -148,7 +148,7 @@ async def _test_join(self, size, n):
         while True:
             message = await channel.get()
             outputs.add(message)
-            await asyncio.sleep(random.uniform(0.0, 1e-6))
+            await asyncio.sleep(random.uniform(0.0, 1e-4))
             channel.task_done()
 
     nconsumers = math.floor(math.sqrt(n))
