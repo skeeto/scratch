@@ -45,6 +45,7 @@ class Channel:
 
     def __init__(self, size=0):
         """Initialize a new channel, unbuffered by default."""
+        assert size >= 0, "channel size must non-negative"
         self._put = asyncio.Semaphore(size)
         self._get = asyncio.Semaphore(0)
         self._queue = collections.deque()
@@ -56,8 +57,10 @@ class Channel:
         """Put a value in the channel, blocking until there is room.
 
         It is an error to put() on a closed channel."""
-        assert not self._closed
         await self._put.acquire()
+        if self._closed:
+            self._put.release() # turnstile
+            assert not self._closed, "put on a closed channel"
         self._tasks += 1
         self._done.clear()
         self._queue.appendleft(value)
@@ -91,9 +94,10 @@ class Channel:
 
         It is an error to put() on a closed channel.
         """
-        assert not self._closed
+        assert not self._closed, "closed a closed channel"
         self._closed = True
         self._get.release()
+        self._put.release() # possibly trip assertions
 
     def closed(self):
         """Return True if the channel has been closed."""
