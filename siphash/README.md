@@ -6,7 +6,7 @@ allocations. It defines no extraneous macros or functions, making it perfect
 for embedding and amalgamation.
 
 ```c
-void     siphash_init(struct siphash *, uint64_t key0, uint64_t key1);
+void     siphash_init(struct siphash *, const void *key);
 void     siphash_update(struct siphash *, const void *, size_t);
 uint64_t siphash_final(const struct siphash *);
 ```

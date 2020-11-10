@@ -2,8 +2,18 @@
 #include "siphash.h"
 
 void
-siphash_init(struct siphash *s, uint64_t key0, uint64_t key1)
+siphash_init(struct siphash *s, const void *key)
 {
+    const unsigned char *k = key;
+    uint64_t key0 = (uint64_t)k[7] << 56 | (uint64_t)k[6] << 48 |
+                    (uint64_t)k[5] << 40 | (uint64_t)k[4] << 32 |
+                    (uint64_t)k[3] << 24 | (uint64_t)k[2] << 16 |
+                    (uint64_t)k[1] <<  8 | (uint64_t)k[0] <<  0;
+    k += 8;
+    uint64_t key1 = (uint64_t)k[7] << 56 | (uint64_t)k[6] << 48 |
+                    (uint64_t)k[5] << 40 | (uint64_t)k[4] << 32 |
+                    (uint64_t)k[3] << 24 | (uint64_t)k[2] << 16 |
+                    (uint64_t)k[1] <<  8 | (uint64_t)k[0] <<  0;
     s->v0 = key0 ^ 0x736f6d6570736575;
     s->v1 = key1 ^ 0x646f72616e646f6d;
     s->v2 = key0 ^ 0x6c7967656e657261;
