@@ -9,6 +9,9 @@ for embedding and amalgamation.
 void     siphash_init(struct siphash *, const void *key);
 void     siphash_update(struct siphash *, const void *, size_t);
 uint64_t siphash_final(const struct siphash *);
+
+void     siphash_init128(struct siphash *, const void *key);
+void     siphash_final128(const struct siphash *, void *digest);
 ```
 
 In Go style, finalization function does not modify the context, allowing more
