@@ -321,7 +321,7 @@ render_gl(struct render *r, struct maze *m, int scale)
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-    glCreateTextures(GL_TEXTURE_2D, 1, &r->gl.tex_cells);
+    glGenTextures(1, &r->gl.tex_cells);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, r->gl.tex_cells);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -334,7 +334,7 @@ render_gl(struct render *r, struct maze *m, int scale)
         GL_RGB, GL_UNSIGNED_BYTE, 0
     );
 
-    glCreateTextures(GL_TEXTURE_2D, 1, &r->gl.tex_walls);
+    glGenTextures(1, &r->gl.tex_walls);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, r->gl.tex_walls);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
