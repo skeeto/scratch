@@ -13,8 +13,10 @@
 #define NB_ITERATIONS  3
 
 /* prealloated buffers */
-static uint8_t chunkbuf[CHUNKLEN+16];
-static uint64_t work_area[NB_BLOCKS*1024/sizeof(uint64_t)];
+static union {
+    uint8_t chunk[CHUNKLEN+16];
+    uint64_t work_area[NB_BLOCKS*1024/sizeof(uint64_t)];
+} buf;
 
 enum error {ERR_OK, ERR_ENT, ERR_READ, ERR_WRITE, ERR_TRUNC, ERR_INVALID};
 static const char *errmsg[] = {
@@ -53,23 +55,23 @@ fencrypt(FILE *in, FILE *out, uint8_t *password, int pwlen)
 
     crypto_argon2i(
         key, sizeof(key),
-        work_area, NB_BLOCKS, NB_ITERATIONS,
+        buf.work_area, NB_BLOCKS, NB_ITERATIONS,
         password, pwlen,
         nonce, sizeof(nonce)
     );
     crypto_wipe(password, MAXPASS);
 
     for (;; increment(nonce)) {
-        size_t n = fread(chunkbuf, 1, CHUNKLEN, in);
+        size_t n = fread(buf.chunk, 1, CHUNKLEN, in);
         if (!n && ferror(in)) {
             err = ERR_READ;
             break;
         }
         /* note: zero-length chunk is fine */
 
-        uint8_t *mac = chunkbuf + n;
-        crypto_lock(mac, chunkbuf, key, nonce, chunkbuf, n);
-        if (!fwrite(chunkbuf, n+16, 1, out)) {
+        uint8_t *mac = buf.chunk + n;
+        crypto_lock(mac, buf.chunk, key, nonce, buf.chunk, n);
+        if (!fwrite(buf.chunk, n+16, 1, out)) {
             err = ERR_WRITE;
             break;
         }
@@ -99,14 +101,14 @@ fdecrypt(FILE *in, FILE *out, uint8_t *password, int pwlen)
 
     crypto_argon2i(
         key, sizeof(key),
-        work_area, NB_BLOCKS, NB_ITERATIONS,
+        buf.work_area, NB_BLOCKS, NB_ITERATIONS,
         password, pwlen,
         nonce, sizeof(nonce)
     );
     crypto_wipe(password, MAXPASS);
 
     for (;; increment(nonce)) {
-        size_t n = fread(chunkbuf, 1, sizeof(chunkbuf), in);
+        size_t n = fread(buf.chunk, 1, sizeof(buf.chunk), in);
         if (!n && ferror(in)) {
             err = ERR_READ;
             break;
@@ -117,12 +119,12 @@ fdecrypt(FILE *in, FILE *out, uint8_t *password, int pwlen)
         }
         n -= 16; /* chop off MAC */
 
-        uint8_t *mac = chunkbuf + n;
-        if (crypto_unlock(chunkbuf, key, nonce, mac, chunkbuf, n)) {
+        uint8_t *mac = buf.chunk + n;
+        if (crypto_unlock(buf.chunk, key, nonce, mac, buf.chunk, n)) {
             err = ERR_INVALID;
             break;
         }
-        if (n && !fwrite(chunkbuf, n, 1, out)) {
+        if (n && !fwrite(buf.chunk, n, 1, out)) {
             err = ERR_WRITE;
             break;
         }
