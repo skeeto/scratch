@@ -1,0 +1,32 @@
+digraph {
+    graph [fontname="sans-serif" rankdir=LR];
+    node  [fontname="sans-serif" shape=circle fontsize=20];
+    edge  [fontname="monospace" arrowsize=0.65 fontsize=16];
+
+    s0 [label="s₀" shape=doublecircle];
+    s2 [label="s₂"];
+    s3 [label="s₃"];
+    s4 [label="s₄"];
+    s5 [label="s₅"];
+    T  [shape=doublecircle];
+    F  [shape=doublecircle];
+
+    s0->s2 [label="0"];
+    s0->s3 [label="\n2468"];
+    s0->s4 [label="\n13579"];
+    s0->s5 [label="\n+-"];
+
+    s2->T  [label="EOF"];
+
+    s3->T  [label="\nEOF"];
+    s3->s3 [label="\n02468"];
+    s3->s4 [label="\n13579"];
+
+    s4->F  [label="EOF"];
+    s4->s3 [label="\n02468"];
+    s4->s4 [label="\n13579"];
+
+    s5->s2 [label="\n0"];
+    s5->s3 [label="\n2468"];
+    s5->s4 [label="\n13579"];
+}
