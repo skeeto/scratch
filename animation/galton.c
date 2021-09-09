@@ -17,7 +17,7 @@
 #define H      1080         // video height
 #define S      200.0f       // display scale (m/pixel)
 #define NBALLS 312          // number of falling balls to simulate
-#define NHIST  96           // number of histogram bins
+#define NHIST  64           // number of histogram bins
 #define SKIP   1024         // simulation initialization time
 #define PW     50           // pegs wide count
 #define PH     36           // pegs tall count (must be even)
