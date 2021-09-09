@@ -1,9 +1,7 @@
 // Thue-Morse sequence, base-N expansion digit histogram
 //
-// The Thue-Morse sequence is transcendental, so interpreting its decimal
-// expansion in some bases should have a uniform distribution. This program
-// computes the exact distribution for a given sequence length and chosen
-// base.
+// This program computes the Thue-Morse sequence to a given length, interpets
+// it in a chosen base, and computes the exact digit distribution.
 //
 // Usage:
 //   $ cc -O3 -o thuemorse thuemorse.c -lm
