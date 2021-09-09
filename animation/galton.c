@@ -151,8 +151,11 @@ static unsigned char ppm[H][W][3];
 static int
 ppm_write(void)
 {
-    printf("P6\n%d %d\n255\n", W, H);
-    return fwrite(ppm, sizeof(ppm), 1, stdout);
+    #define STR(s) #s
+    #define XSTR(s) STR(s)
+    static const char header[] = "P6\n" XSTR(W) " " XSTR(H) "\n255\n";
+    return fwrite(header, sizeof(header)-1, 1, stdout) &&
+           fwrite(ppm, sizeof(ppm), 1, stdout);
 }
 
 static void
