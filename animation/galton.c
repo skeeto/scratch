@@ -273,27 +273,18 @@ main(void)
 
         // Ball simulation
         for (int a = 0; a < NBALLS; a++) {
-            float ax = balls[a].pos.x;
-            float ay = balls[a].pos.y;
-            float ar = balls[a].r;
 
             // Completely below the display? Reset the ball.
-            if (ay - ar*2 > H/S) {
+            if (balls[a].pos.y - balls[a].r*2 > H/S) {
                 if (frame >= SKIP) {
-                    int bin = ax / (W/S) * NHIST;
-                    bin = bin < 0 ? 0 : bin >= NHIST ? NHIST-1 : bin;
-                    long long h = ++hist[bin];
-                    hmax = h > hmax ? h : hmax;
+                    int bin = balls[a].pos.x / (W/S) * NHIST;
+                    if (bin >=0 && bin < NHIST) {
+                        long long h = ++hist[bin];
+                        hmax = h > hmax ? h : hmax;
+                    }
                 }
                 ball_create(balls + a, s);
                 continue;
-            }
-
-            // Wall collisions
-            if (ax + ar > W/S && balls[a].vel.x > 0) {
-                balls[a].vel.x *= -E;
-            } else if (ax - ar < 0 && balls[a].vel.x < 0) {
-                balls[a].vel.x *= -E;
             }
 
             // Apply velocity and gravity
