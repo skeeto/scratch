@@ -1,7 +1,7 @@
 // Endless 2D Galton board animation
 //
 // Usage:
-//   $ cc -Ofast -mrecip -o galton galton.c
+//   $ cc -Ofast -mrecip -o galton galton.c -lm
 //   $ ./galton | mpv --no-correct-pts --fps=60 --fs -
 //   $ ./galton | x264 --frames=1800 --fps=60 -o galton.mp4 /dev/stdin
 //
