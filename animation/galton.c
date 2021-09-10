@@ -5,6 +5,9 @@
 //   $ ./galton | mpv --no-correct-pts --fps=60 --fs -
 //   $ ./galton | x264 --frames=1800 --fps=60 -o galton.mp4 /dev/stdin
 //
+// Ref: https://nullprogram.com/video/?v=galton
+// Ref: https://en.wikipedia.org/wiki/Bean_machine
+//
 // This is free and unencumbered software released into the public domain.
 #include <math.h>
 #include <stdint.h>
