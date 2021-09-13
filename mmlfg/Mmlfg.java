@@ -1,9 +1,11 @@
+// Middle Multiplicative Lagged Fibonacci Generator
+// This is free and unencumbered software released into the public domain.
 public class Mmlfg {
-    int i = 14;
-    int j = 12;
-    final long[] s = new long[15];
+    public int i = 14;
+    public int j = 12;
+    public final long[] s = new long[15];
 
-    Mmlfg(long seed) {
+    public Mmlfg(long seed) {
         for (int n = 0; n < 15; n++) {
             seed = seed*0x3243f6a8885a308dL + 1111111111111111111L;
             s[n] = seed ^ seed>>>31 | 1;

@@ -1,4 +1,4 @@
-;; Middle Multiplicative Lagged Fibonacci PRNG
+;; Middle Multiplicative Lagged Fibonacci PRNG -*- lexical-binding: t; -*-
 ;; This is free and unencumbered software released into the public domain.
 
 (defun mmlfg (seed)
@@ -20,6 +20,7 @@
 
 
 ;; Example
-(let ((g (mmlfg 0)))
+(let ((a (mmlfg 0)) (b (mmlfg 1)) (c (mmlfg 2)) (d (mmlfg 3)))
   (dotimes (_ 40)
-    (insert (format "%016x\n" (funcall g)))))
+    (princ (format "%016x %016x %016x %016x\n"
+                   (funcall a) (funcall b) (funcall c) (funcall d)))))
