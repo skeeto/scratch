@@ -11,7 +11,7 @@ try:
     _pledge.restype = ctypes.c_int
     _pledge.argtypes = ctypes.c_char_p, ctypes.c_char_p
 except Exception:
-    pass
+    _pledge = None
 
 def pledge(promises: Optional[str], execpromises: Optional[str]):
     if not _pledge:
@@ -29,7 +29,7 @@ try:
     _unveil.restype = ctypes.c_int
     _unveil.argtypes = ctypes.c_char_p, ctypes.c_char_p
 except Exception:
-    pass
+    _unveil = None
 
 def unveil(path: Union[str, bytes, None], permissions: Optional[str]):
     if not _unveil:
