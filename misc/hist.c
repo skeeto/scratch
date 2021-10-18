@@ -259,14 +259,14 @@ main(void)
     }
 
     ht_sort(ht);
-    int len = 0; /* How wide is the largest count? */
+    int maxlen = 0; /* How wide is the largest count? */
     uint32_t max = ht->entries[0].count;
     do
-        len++;
+        maxlen++;
     while (max /= 10);
     for (size_t i = 0; i < ht->fill; i++) {
         struct ht_entry *e = ht->entries + i;
-        printf("%*lu ", len, (unsigned long)e->count);
+        printf("%*lu ", maxlen, (unsigned long)e->count);
         fwrite(e->ptr, e->len + 1, 1, stdout);
     }
 
