@@ -66,7 +66,7 @@ uint64_t mac_encrypt(uint64_t mac, uint64_t key)
     key *= 1111111111111111111U; key ^= key >> 33;
     mac += key >>  0; mac &= 0xffffffffffffU;
     mac ^= mac >> 24; mac *= 0xcdbc095777a5U;
-    mac -= key >> 16; mac &= 0xffffffffffffU;
+    mac -= key >> 48; mac &= 0xffffffffffffU;
     mac ^= mac >> 24; mac *= 0xd481eae9d751U;
     mac &= 0xffffffffffffU; mac ^= mac >> 24;
     return mac;
@@ -80,7 +80,7 @@ uint64_t mac_decrypt(uint64_t mac, uint64_t key)
     key *= 1111111111111111111U; key ^= key >> 33;
     mac ^= mac >> 24; mac *= 0x4cf572b9d1b1U;
     mac &= 0xffffffffffffU; mac ^= mac >> 24;
-    mac += key >> 16; mac *= 0x758e265e982dU;
+    mac += key >> 48; mac *= 0x758e265e982dU;
     mac &= 0xffffffffffffU; mac ^= mac >> 24;
     mac -= key >>  0; mac &= 0xffffffffffffU;
     return mac;
