@@ -2,7 +2,9 @@
 // This is free and unencumbered software released into the public domain.
 #include <stdint.h>
 
-// Encode a MAC address to a 17-byte, UTF-8 destination buffer. The
+#define MAC_INVALID UINT64_C(0xffffffffffffffff)
+
+// Encode a MAC address to a 17-byte UTF-8 destination buffer. The
 // destination buffer is lowercase and is not null-terminated.
 void mac_encode(char *dst, uint64_t mac)
 {
@@ -24,9 +26,9 @@ void mac_encode(char *dst, uint64_t mac)
     dst[16] = hex[mac >>  0 & 15];
 }
 
-// Decode a 17-byte buffer containing a UTF-8 MAC address. Returns 0 if
-// the input is malformed.
-int mac_decode(const char *restrict src, uint64_t *mac)
+// Decode a 17-byte UTF-8 buffer containing a MAC address. Returns
+// MAC_INVALID (-1) if the input is malformed.
+uint64_t mac_decode(const char *src)
 {
     static const signed char t[256] = {
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -46,15 +48,16 @@ int mac_decode(const char *restrict src, uint64_t *mac)
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
     };
-    *mac = (uint64_t)t[src[ 0]&255] << 44 | (uint64_t)t[src[ 1]&255] << 40 |
-           (uint64_t)t[src[ 3]&255] << 36 | (uint64_t)t[src[ 4]&255] << 32 |
-           (uint64_t)t[src[ 6]&255] << 28 | (uint64_t)t[src[ 7]&255] << 24 |
-           (uint64_t)t[src[ 9]&255] << 20 | (uint64_t)t[src[10]&255] << 16 |
-           (uint64_t)t[src[12]&255] << 12 | (uint64_t)t[src[13]&255] <<  8 |
-           (uint64_t)t[src[15]&255] <<  4 | (uint64_t)t[src[16]&255] <<  0;
-    return !((int)(*mac >> 48) | (src[ 2] ^ 0x3a) | (src[ 5] ^ 0x3a) |
-                                 (src[ 8] ^ 0x3a) | (src[11] ^ 0x3a) |
-                                 (src[14] ^ 0x3a));
+    uint64_t mac =
+        (uint64_t)t[src[ 0]&255] << 44 | (uint64_t)t[src[ 1]&255] << 40 |
+        (uint64_t)t[src[ 3]&255] << 36 | (uint64_t)t[src[ 4]&255] << 32 |
+        (uint64_t)t[src[ 6]&255] << 28 | (uint64_t)t[src[ 7]&255] << 24 |
+        (uint64_t)t[src[ 9]&255] << 20 | (uint64_t)t[src[10]&255] << 16 |
+        (uint64_t)t[src[12]&255] << 12 | (uint64_t)t[src[13]&255] <<  8 |
+        (uint64_t)t[src[15]&255] <<  4 | (uint64_t)t[src[16]&255] <<  0;
+    uint64_t c = (src[ 2] ^ 0x3a) | (src[ 5] ^ 0x3a) | (src[ 8] ^ 0x3a) |
+                 (src[11] ^ 0x3a) | (src[14] ^ 0x3a) | (mac >> 48);
+    return mac | -!!c;
 }
 
 // Format-preserving encryption of a MAC address, randomly permuting the
@@ -97,14 +100,14 @@ int main(void)
     uint64_t s = 1;
 
     for (long i = 0; i < 1L<<26; i++) {
-        uint64_t tmp, mac = (s = s*0x3d7d900e0c4dU + 1) & 0xffffffffffff;
+        uint64_t mac = (s = s*0x3d7d900e0c4dU + 1) & 0xffffffffffff;
         mac_encode(buf, mac);
-        if (!mac_decode(buf, &tmp) || tmp != mac) {
+        if (mac_decode(buf) != mac) {
             nfails++;
             printf("FAIL: %012llx %s\n", (unsigned long long)mac, buf);
         }
 
-        tmp = mac_encrypt(mac, i);
+        uint64_t tmp = mac_encrypt(mac, i);
         if (mac_decrypt(tmp, i) != mac) {
             printf("FAIL: (encrypt) key=%016llx %s\n",
                    (unsigned long long)mac, buf);
@@ -114,8 +117,7 @@ int main(void)
     for (int i = 0; i < 17; i++) {
         mac_encode(buf, 0x1234abcdef56);
         buf[i] = 'x';
-        uint64_t mac;
-        if (mac_decode(buf, &mac)) {
+        if (mac_decode(buf) != MAC_INVALID) {
             printf("FAIL: (malformed) %s\n", buf);
         }
     }
