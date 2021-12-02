@@ -58,13 +58,13 @@ io_write(int len)
 #elif !defined(PLAIN) && defined(_WIN32)
 #include <windows.h>
 
-HANDLE xin, xout;
+static HANDLE io_in, io_out;
 
 static void
 io_init(void)
 {
-    xin = GetStdHandle(STD_INPUT_HANDLE);
-    xout = GetStdHandle(STD_OUTPUT_HANDLE);
+    io_in = GetStdHandle(STD_INPUT_HANDLE);
+    io_out = GetStdHandle(STD_OUTPUT_HANDLE);
     // TODO: Check if it's a console and do UTF-16 encoding/decoding?
 }
 
@@ -74,7 +74,7 @@ io_read(void)
     int n = 0;
     do {
         DWORD c;
-        if (!ReadFile(xin, buf+n, sizeof(buf)-n, &c, 0)) {
+        if (!ReadFile(io_in, buf+n, sizeof(buf)-n, &c, 0)) {
             return GetLastError() == ERROR_BROKEN_PIPE ? n : -1;
         }
         if (!c) {
@@ -91,7 +91,7 @@ io_write(int len)
     int n = 0;
     do {
         DWORD c;
-        if (!WriteFile(xout, buf+n, len-n, &c, 0)) {
+        if (!WriteFile(io_out, buf+n, len-n, &c, 0)) {
             return -1;
         }
         n += c;
@@ -360,17 +360,16 @@ int main(int argc, char **argv)
     for (;;) {
         int n = io_read();
         switch (n) {
-        case -1:
-            fprintf(stderr, "csvquote: read error\n");
-            return 1;
-        case +0:
-            return 0;
+        case -1: fprintf(stderr, "csvquote: read error\n");
+                 return 1;
+        case  0: return 0;
         }
 
         if (strict && check()) {
             fprintf(stderr, "csvquote: ambiguous encoding\n");
             return 1;
         }
+
         encode();
 
         if (io_write(n) == -1) {
@@ -379,8 +378,7 @@ int main(int argc, char **argv)
         }
 
         if (n < (int)sizeof(buf)) {
-            break;
+            return 0;
         }
     }
-    return 0;
 }
