@@ -1,6 +1,6 @@
 // Benchmark/test for csvquote
-//   $ cc -O3 -o bench bench.c
-//   $ ./bench | ./csvquote >/dev/null
+//   $ cc -O3 -o csvdump csvdump.c
+//   $ ./csvdump | ./csvquote >/dev/null
 // This is free and unencumbered software released into the public domain.
 #include <stdio.h>
 #include <time.h>

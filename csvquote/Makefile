@@ -6,11 +6,11 @@ LDLIBS  =
 csvquote$(EXE): csvquote.c
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ csvquote.c $(LDLIBS)
 
-bench$(EXE): etc/bench.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ etc/bench.c $(LDLIBS)
+csvdump$(EXE): etc/csvdump.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ etc/csvdump.c $(LDLIBS)
 
-benchmark: csvquote$(EXE) bench$(EXE)
-	./bench | ./csvquote >/dev/null
+bench: csvquote$(EXE) csvdump$(EXE)
+	./csvdump | ./csvquote >/dev/null
 
 clean:
-	rm -f csvquote$(EXE) bench$(EXE)
+	rm -f csvquote$(EXE) csvdump$(EXE)
