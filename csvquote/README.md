@@ -19,6 +19,12 @@ faster than the original implementation.
 It's fast enough that stdio becomes a serious bottleneck, so the program
 bypasses it if possible.
 
+## Benchmark
+
+To run the live benchmark:
+
+    make bench
+
 
 [orig]: https://github.com/dbro/csvquote
 [via]: https://github.com/adamgordonbell/csvquote
