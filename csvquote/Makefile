@@ -1,5 +1,5 @@
-CC      = cc
-CFLAGS  = -std=c11 -march=x86-64-v3 -O3 -g3 -Wall -Wextra
+CC      = cc -std=c11
+CFLAGS  = -march=x86-64-v3 -O3 -g3 -Wall -Wextra
 LDFLAGS =
 LDLIBS  =
 

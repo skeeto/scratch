@@ -25,6 +25,11 @@ To run the live benchmark:
 
     make bench
 
+This assumes you're on an x86-64-v3 host. If you're not, or you'd like to
+disable SIMD:
+
+    make CFLAGS=-O3 bench
+
 
 [orig]: https://github.com/dbro/csvquote
 [via]: https://github.com/adamgordonbell/csvquote
