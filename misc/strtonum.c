@@ -119,6 +119,8 @@ strtonum(const char *buf, long long min, long long max, const char **err)
 
 
 #ifdef TEST
+// $ cc -DTEST -fsanitize=address,undefined -o strtonum strtonum.c
+// $ ./strtonum
 #include <stdio.h>
 #include <string.h>
 
@@ -206,5 +208,22 @@ main(void)
     }
     puts("All tests pass.");
     return 0;
+}
+
+#elif defined(FUZZ)
+// $ afl-gcc -DFUZZ -fsanitize=undefined -Os -o strtonum strtonum.c
+// $ mkdir -p in out
+// $ echo -n 0 >in/0
+// $ afl-fuzz -i in/ -o out/ -- ./strtonum
+#include <stdio.h>
+
+int
+main(void)
+{
+    char buf[4097];
+    const char *err;
+    buf[fread(buf, 1, sizeof(buf)-1, stdin)] = 0;
+    strtonum(buf, -(1LL << 32), 1LL << 32, &err);
+    return !!err;
 }
 #endif
