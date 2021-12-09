@@ -112,6 +112,20 @@ csv_parse(struct csv_parser *c, struct csv_slice *s)
     return -1;
 }
 
+// Compute a simple string hash over the given buffer. This library uses
+// hash>>40|1 for the linear probing step size.
+static unsigned long long
+csv_hash(const void *buf, size_t len)
+{
+    const unsigned char *p = buf;
+    unsigned long long h = 0x3243f6a8885a308d;
+    for (size_t i = 0; i < len; i++) {
+        h ^= p[i];
+        h *= 1111111111111111111U;
+    }
+    return h ^ h>>32;
+}
+
 // Hash an encoded CSV field as though it were decoded.
 static unsigned long long
 csv_field_hash(const void *buf, size_t len)
@@ -121,22 +135,18 @@ csv_field_hash(const void *buf, size_t len)
 
     if (!len || p[0] != 0x22) {
         // No encoding, hash normally
-        for (size_t i = 0; i < len; i++) {
+        return csv_hash(buf, len);
+    }
+
+    // Decode quotes during hashing
+    int s = 1;
+    for (size_t i = 1; i < len; i++) {
+        s ^= p[i] == 0x22;
+        if (s) {
             h ^= p[i];
             h *= 1111111111111111111U;
         }
-    } else {
-        // Decode quotes during hashing
-        int s = 1;
-        for (size_t i = 1; i < len; i++) {
-            s ^= p[i] == 0x22;
-            if (s) {
-                h ^= p[i];
-                h *= 1111111111111111111U;
-            }
-        }
     }
-    h &= 0xffffffffffffffffU;
     return h ^ h >> 32;
 }
 
@@ -256,9 +266,11 @@ csv_idx(struct csv_idx *idx, size_t size, size_t n, const void *buf, size_t len)
 
         case CSV_FIELD:
             if (s.idx == n) {
-                i = csv_field_hash(p+s.off, s.len) & mask;
+                unsigned long long h = csv_field_hash(p+s.off, s.len);
+                size_t step = h>>40 | 1;
+                i = h & mask;
                 while (idx->slots[i].field) {
-                    i = (i + 1) & mask;
+                    i = (i + step) & mask;
                 }
                 idx->slots[i].field = p + s.off;
                 idx->slots[i].len = s.len;
@@ -272,7 +284,7 @@ struct csv_idx_it {
     struct csv_idx *idx;
     const void *buf;
     size_t len;
-    size_t i;
+    size_t i, step;
 };
 
 // Initialize a results iterator for a new search. No resources are
@@ -281,18 +293,11 @@ struct csv_idx_it {
 static struct csv_idx_it
 csv_idx_it(struct csv_idx *idx, const void *value, size_t len)
 {
+    unsigned long long h = csv_hash(value, len);
     size_t mask = idx->len - 1;
-    const unsigned char *p = value;
-    unsigned long long h = 0x3243f6a8885a308dU;
-
-    for (size_t i = 0; i < len; i++) {
-        h ^= p[i];
-        h *= 1111111111111111111U;
-    }
-    h &= 0xffffffffffffffffU;
-    h ^= h >> 32;
-
-    return (struct csv_idx_it){idx, value, len, h&mask};
+    size_t i = h & mask;
+    size_t step = h>>40 | 1;
+    return (struct csv_idx_it){idx, value, len, i, step};
 }
 
 // Find the next search result in the index. Returns 1 if there is
@@ -306,7 +311,7 @@ csv_idx_it_next(struct csv_idx_it *it, struct csv_slice *s)
         // Multiple matches are stored along the hash table itself, so
         // keep looking for the next result.
         size_t i = it->i;
-        it->i = (it->i + 1) & mask;
+        it->i = (it->i + it->step) & mask;
 
         const unsigned char *field = it->idx->slots[i].field;
         if (!field) {
