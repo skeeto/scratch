@@ -257,14 +257,11 @@ csv_idx(struct csv_idx *idx, size_t size, size_t n, const void *buf, size_t len)
         case CSV_FIELD:
             if (s.idx == n) {
                 i = csv_field_hash(p+s.off, s.len) & mask;
-                for (;;) {
-                    if (!idx->slots[i].field) {
-                        idx->slots[i].field = p + s.off;
-                        idx->slots[i].len = s.len;
-                        break;
-                    }
+                while (idx->slots[i].field) {
                     i = (i + 1) & mask;
                 }
+                idx->slots[i].field = p + s.off;
+                idx->slots[i].len = s.len;
             }
             break;
         }
