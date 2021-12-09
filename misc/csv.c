@@ -227,7 +227,7 @@ csv_idx_size(const void *buf, size_t len)
 static struct csv_idx *
 csv_idx(struct csv_idx *idx, size_t size, size_t n, const void *buf, size_t len)
 {
-    if (!idx) {
+    if (!idx || !size) {
         return 0;
     }
 
