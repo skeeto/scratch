@@ -112,8 +112,7 @@ csv_parse(struct csv_parser *c, struct csv_slice *s)
     return -1;
 }
 
-// Compute a simple string hash over the given buffer. This library uses
-// hash>>40|1 for the linear probing step size.
+// Compute a simple string hash over the given buffer.
 static unsigned long long
 csv_hash(const void *buf, size_t len)
 {
@@ -267,10 +266,9 @@ csv_idx(struct csv_idx *idx, size_t size, size_t n, const void *buf, size_t len)
         case CSV_FIELD:
             if (s.idx == n) {
                 unsigned long long h = csv_field_hash(p+s.off, s.len);
-                size_t step = h>>40 | 1;
                 i = h & mask;
                 while (idx->slots[i].field) {
-                    i = (i + step) & mask;
+                    i = (i + 1) & mask;
                 }
                 idx->slots[i].field = p + s.off;
                 idx->slots[i].len = s.len;
@@ -284,7 +282,7 @@ struct csv_idx_it {
     struct csv_idx *idx;
     const void *buf;
     size_t len;
-    size_t i, step;
+    size_t i;
 };
 
 // Initialize a results iterator for a new search. No resources are
@@ -296,8 +294,7 @@ csv_idx_it(struct csv_idx *idx, const void *value, size_t len)
     unsigned long long h = csv_hash(value, len);
     size_t mask = idx->len - 1;
     size_t i = h & mask;
-    size_t step = h>>40 | 1;
-    return (struct csv_idx_it){idx, value, len, i, step};
+    return (struct csv_idx_it){idx, value, len, i};
 }
 
 // Find the next search result in the index. Returns 1 if there is
@@ -311,7 +308,7 @@ csv_idx_it_next(struct csv_idx_it *it, struct csv_slice *s)
         // Multiple matches are stored along the hash table itself, so
         // keep looking for the next result.
         size_t i = it->i;
-        it->i = (it->i + it->step) & mask;
+        it->i = (it->i + 1) & mask;
 
         const unsigned char *field = it->idx->slots[i].field;
         if (!field) {
