@@ -404,8 +404,8 @@ test_idx(void)
         "abc,456,xyz,\n"
         "abc,789,xyz,\n"
         "bca,\"1\"\"3\",yzx\n"
-        "bc,123,yz\n"
-        "c,123,z,\n"
+        "bc,\"123\",yz\n"
+        "c,123,z,\"\"\n"
         "abc,0,xyz\n";
     size_t z = csv_idx_size(xbuf, sizeof(xbuf)-1);
     struct csv_idx *idx = malloc(z);
