@@ -3,8 +3,8 @@
 // Parses a CSV file in memory, building an index over a chosen field
 // allowing for exact-match searches against that field, returning the
 // row index/offset/length. The library itself makes no allocations,
-// which is left to the caller, and the index itself is just a single,
-// large allocation.
+// which is left to the caller, and the index is just a single, large
+// allocation.
 //
 // Example usage:
 //
