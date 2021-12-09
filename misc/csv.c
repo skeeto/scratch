@@ -195,28 +195,25 @@ csv_idx_size(const void *buf, size_t len)
     for (struct csv_parser csv = csv_parser(buf, len);;) {
         switch (csv_parse(&csv, &s)) {
         case CSV_EOF:
-            if (nrows*2 < nrows) {
+            if (nrows > (size_t)-1/4) {
                 return 0;  // overflow
             }
-            nrows *= 2;
+            nrows *= 4;
 
             // Round down to a power of 2
             while (nrows & (nrows - 1)) {
                 nrows &= nrows - 1;
             }
 
-            if (nrows*2 < nrows) {
-                return 0;  // overflow
-            }
-            nrows *= 2;
-
-            if (nrows > (size_t)-1 / sizeof(*idx.slots)) {
+            if (nrows > (size_t)-1/sizeof(*idx.slots)) {
                 return 0;  // overflow
             }
             return sizeof(idx) + nrows*sizeof(*idx.slots);
+
         case CSV_ROW:
             nrows++;
             break;
+
         case CSV_FIELD:
             break;
         }
