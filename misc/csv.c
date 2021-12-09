@@ -112,25 +112,6 @@ csv_parse(struct csv_parser *c, struct csv_slice *s)
     return -1;
 }
 
-// Decode a CSV field in place, returning the decoded length.
-static size_t
-csv_field_decode(void *buf, size_t len)
-{
-    int s = 1;
-    size_t dst = 0;
-    unsigned char *p = buf;
-
-    if (!len || p[0] != 0x22) {
-        return len;
-    }
-
-    for (size_t src = 1; src < len; src++) {
-        p[dst] = p[src];
-        dst += s ^= p[src] == 0x22;
-    }
-    return dst;
-}
-
 // Hash an encoded CSV field as though it were decoded.
 static unsigned long long
 csv_field_hash(const void *buf, size_t len)
