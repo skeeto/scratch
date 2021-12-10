@@ -4,7 +4,9 @@
 // allowing for exact-match searches against that field, returning the
 // row index/offset/length. The library itself makes no allocations,
 // which is left to the caller, and the index is just a single, large
-// allocation.
+// allocation. The index references the CSV buffer, it contains no
+// pointers to that buffer, just offsets, so it can be serialized for
+// later use with a different copy of the CSV buffer.
 //
 // Example usage:
 //
@@ -19,9 +21,9 @@
 //    }
 //
 //    // Search for matching rows
-//    struct csv_idx_it it = csv_idx_it(idx, "foobar", 6);
+//    struct csv_it it = csv_it(idx, csv, len, "foobar", 6);
 //    struct csv_slice row;
-//    while (csv_idx_it_next(&it, &row)) {
+//    while (csv_it_next(&it, &row)) {
 //        // consume row
 //    }
 //
@@ -187,8 +189,7 @@ csv_field_equal(const void *f, size_t fn, const void *b, size_t bn)
 struct csv_idx {
     size_t len;
     struct {
-        const unsigned char *field;
-        size_t len;
+        size_t off, len;
         struct csv_slice row;
     } slots[];
 };
@@ -233,6 +234,11 @@ csv_idx_size(const void *csv, size_t len)
 // size must be computed with csv_idx_size(). If idx is NULL, returns
 // NULL. Rows lacking the field (too field fields) are not present in
 // the index.
+//
+// The index retains no pointers to the original CSV buffer, just
+// buffer offsets, so the index can be used later with the CSV buffer
+// located at a different address. The iterator will need to be provided
+// with the CSV buffer.
 static struct csv_idx *
 csv_idx(struct csv_idx *idx, size_t size, size_t n, const void *csv, size_t len)
 {
@@ -247,7 +253,7 @@ csv_idx(struct csv_idx *idx, size_t size, size_t n, const void *csv, size_t len)
     size_t mask = idx->len - 1;
 
     for (size_t i = 0; i < idx->len; i++) {
-        idx->slots[i].field = 0;
+        idx->slots[i].off = -1;
     }
 
     size_t i = -1;
@@ -267,10 +273,10 @@ csv_idx(struct csv_idx *idx, size_t size, size_t n, const void *csv, size_t len)
             if (s.idx == n) {
                 unsigned long long h = csv_field_hash(p+s.off, s.len);
                 i = h & mask;
-                while (idx->slots[i].field) {
+                while (idx->slots[i].off != (size_t)-1) {
                     i = (i + 1) & mask;
                 }
-                idx->slots[i].field = p + s.off;
+                idx->slots[i].off = s.off;
                 idx->slots[i].len = s.len;
             }
             break;
@@ -278,30 +284,34 @@ csv_idx(struct csv_idx *idx, size_t size, size_t n, const void *csv, size_t len)
     }
 }
 
-struct csv_idx_it {
-    struct csv_idx *idx;
-    const void *buf;
-    size_t len;
+struct csv_it {
+    const struct csv_idx *idx;
     size_t i;
+    const void *csv;
+    size_t csvlen;
+    const void *key;
+    size_t keylen;
 };
 
 // Initialize a results iterator for a new search. No resources are
-// allocated, but the field pointer must remain valid for the entire
-// iteration process. The value buffer should not be CSV-encoded.
-static struct csv_idx_it
-csv_idx_it(struct csv_idx *idx, const void *value, size_t len)
+// allocated, but the CSV and key pointers must remain valid for the
+// entire iteration process. The key buffer should not be CSV-encoded.
+static struct csv_it
+csv_it(const struct csv_idx *idx,
+       const void *csv, size_t csvlen,
+       const void *key, size_t keylen)
 {
-    unsigned long long h = csv_hash(value, len);
+    unsigned long long h = csv_hash(key, keylen);
     size_t mask = idx->len - 1;
     size_t i = h & mask;
-    return (struct csv_idx_it){idx, value, len, i};
+    return (struct csv_it){idx, i, csv, csvlen, key, keylen};
 }
 
 // Find the next search result in the index. Returns 1 if there is
 // another result. Otherwise it returns 0 and the iterator should not be
 // used further.
 static int
-csv_idx_it_next(struct csv_idx_it *it, struct csv_slice *s)
+csv_it_next(struct csv_it *it, struct csv_slice *s)
 {
     size_t mask = it->idx->len - 1;
     for (;;) {
@@ -310,13 +320,13 @@ csv_idx_it_next(struct csv_idx_it *it, struct csv_slice *s)
         size_t i = it->i;
         it->i = (it->i + 1) & mask;
 
-        const unsigned char *field = it->idx->slots[i].field;
-        if (!field) {
+        if (it->idx->slots[i].off == (size_t)-1) {
             return 0;
         }
 
+        const unsigned char *field = it->csv + it->idx->slots[i].off;
         size_t len = it->idx->slots[i].len;
-        if (csv_field_equal(field, len, it->buf, it->len)) {
+        if (csv_field_equal(field, len, it->key, it->keylen)) {
             *s = it->idx->slots[i].row;
             return 1;
         }
@@ -325,6 +335,9 @@ csv_idx_it_next(struct csv_idx_it *it, struct csv_slice *s)
 
 
 #ifdef TEST
+// Test suite for parser and index
+//   $ cc -DTEST -g -fsanitize=address,undefined -o test csv.c
+//   $ ./test
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -405,7 +418,7 @@ test_idx(void)
         "abc,0,xyz\n";
     size_t z = csv_idx_size(csv, sizeof(csv)-1);
     struct csv_idx *idx = malloc(z);
-    struct csv_idx_it it;
+    struct csv_it it;
     struct csv_slice row;
 
     static const struct {
@@ -425,8 +438,8 @@ test_idx(void)
     for (int i = 0; i < ntests; i++) {
         int nmatches = 0;
         csv_idx(idx, z, tests[i].field, csv, sizeof(csv)-1);
-        it = csv_idx_it(idx, tests[i].key, tests[i].len);
-        while (csv_idx_it_next(&it, &row)) {
+        it = csv_it(idx, csv, sizeof(csv)-1, tests[i].key, tests[i].len);
+        while (csv_it_next(&it, &row)) {
             nmatches++;
         }
         if (nmatches != tests[i].expect) {
@@ -450,5 +463,135 @@ main(void)
         puts("All tests pass.");
     }
     return !!nfails;
+}
+#endif
+
+#ifdef CMD
+// Command line CSV indexer demonstration
+//   $ cc -DCMD -O3 -o csvidx csv.c
+//   $ ./csvidx <csv  >idx N      # build index for field N
+//   $ ./csvidx <csv 3<idx KEY... # print rows matching keys
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+
+static void
+usage(FILE *f)
+{
+    fprintf(f, "usage: csvidx <csv  >idx N\n");
+    fprintf(f, "       csvidx <csv 3<idx [KEY]...\n");
+}
+
+static const void *
+map(int fd, size_t *len)
+{
+    struct stat st;
+    if (fstat(fd, &st) == -1) {
+        fprintf(stderr, "csvidx: fstat(%d): %s\n", fd, strerror(errno));
+        return 0;
+    }
+    if (len) {
+        *len = st.st_size;
+    }
+
+    const void *p = mmap(0, st.st_size, PROT_READ, MAP_SHARED, fd, 0);
+    if (p == MAP_FAILED) {
+        fprintf(stderr, "csvidx: mmap(%d): %s\n", fd, strerror(errno));
+        return 0;
+    }
+
+    return p;
+}
+
+static int
+build(size_t n)
+{
+    size_t len;
+    const char *csv = map(0, &len);
+    if (!csv) {
+        return 1;
+    }
+
+    size_t z = csv_idx_size(csv, len);
+    struct csv_idx *idx = csv_idx(malloc(z), z, n, csv, len);
+    if (!idx) {
+        fprintf(stderr, "csvidx: out of memory\n");
+        return 1;
+    }
+
+    fwrite(idx, z, 1, stdout);
+    fflush(stdout);
+    free(idx);
+
+    if (ferror(stdout)) {
+        fprintf(stderr, "csvidx: write error\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+static int
+query(char **argv)
+{
+    size_t csvlen;
+    const char *csv = map(0, &csvlen);
+    if (!csv) {
+        return 1;
+    }
+
+    const struct csv_idx *idx = map(3, 0);
+    if (!idx) {
+        return 1;
+    }
+
+    for (int i = 1; argv[i]; i++) {
+        char *key = argv[i];
+        size_t keylen = strlen(argv[i]);
+        struct csv_it it = csv_it(idx, csv, csvlen, key, keylen);
+        struct csv_slice row;
+        while (csv_it_next(&it, &row)) {
+            if (!fwrite(csv+row.off, row.len, 1, stdout)) {
+                fprintf(stderr, "csvidx: write error\n");
+                return 1;
+            }
+        }
+    }
+
+    fflush(stdout);
+    if (ferror(stdout)) {
+        fprintf(stderr, "csvidx: write error\n");
+        return 1;
+    }
+
+    return 0;
+}
+
+int
+main(int argc, char **argv)
+{
+    if (argc >= 2 && !strcmp(argv[1], "-h")) {
+        usage(stdout);
+        return 0;
+    }
+
+    struct stat st;
+    if (fstat(3, &st) == -1) {
+        if (errno != EBADF) {
+            fprintf(stderr, "csvidx: %s\n", strerror(errno));
+            return 1;
+        }
+
+        if (argc != 2) {
+            usage(stderr);
+            return 1;
+        }
+        return build(strtoull(argv[1], 0, 10));
+    } else {
+        return query(argv);
+    }
 }
 #endif
