@@ -31,7 +31,7 @@
 #include <stddef.h>
 
 struct csv_parser {
-    const void *buf;
+    const void *csv;
     size_t len;
     size_t off;
 
@@ -50,9 +50,9 @@ struct csv_slice {
 
 // Initialize a new parser on the given buffer.
 static struct csv_parser
-csv_parser(const void *buf, size_t len)
+csv_parser(const void *csv, size_t len)
 {
-    return (struct csv_parser){buf, len, 0, 0, 0, 0, 0};
+    return (struct csv_parser){csv, len, 0, 0, 0, 0, 0};
 }
 
 // Parse and return the next token from the input CSV. The token offset
@@ -76,18 +76,18 @@ csv_parser(const void *buf, size_t len)
 static enum csv_tok { CSV_EOF, CSV_ROW, CSV_FIELD }
 csv_parse(struct csv_parser *c, struct csv_slice *s)
 {
-    const unsigned char *restrict buf = c->buf;
+    const unsigned char *restrict csv = c->csv;
     switch (c->state) {
     case 0:
         s->idx = c->nfields++;
         s->off = c->off;
         s->len = 0;
         for (int state = 1; c->off < c->len;) {
-            int b = buf[c->off++];
+            int b = csv[c->off++];
             state ^= b == 0x22;
             switch (-state & b) {
             case 0x2c: return CSV_FIELD;
-            case 0x0d: c->off += c->off < c->len && buf[c->off] == 0x0a;
+            case 0x0d: c->off += c->off < c->len && csv[c->off] == 0x0a;
                        // fallthrough
             case 0x0a: c->state = 1;
                        return CSV_FIELD;
@@ -196,13 +196,13 @@ struct csv_idx {
 // Compute the allocation size for an index over the given CSV data.
 // Returns zero if the index would be too large to allocate.
 static size_t
-csv_idx_size(const void *buf, size_t len)
+csv_idx_size(const void *csv, size_t len)
 {
     size_t nrows = 0;
     struct csv_slice s;
     struct csv_idx idx;
-    for (struct csv_parser csv = csv_parser(buf, len);;) {
-        switch (csv_parse(&csv, &s)) {
+    for (struct csv_parser c = csv_parser(csv, len);;) {
+        switch (csv_parse(&c, &s)) {
         case CSV_EOF:
             if (nrows > (size_t)-1/4) {
                 return 0;  // overflow
@@ -234,14 +234,14 @@ csv_idx_size(const void *buf, size_t len)
 // NULL. Rows lacking the field (too field fields) are not present in
 // the index.
 static struct csv_idx *
-csv_idx(struct csv_idx *idx, size_t size, size_t n, const void *buf, size_t len)
+csv_idx(struct csv_idx *idx, size_t size, size_t n, const void *csv, size_t len)
 {
     if (!idx || !size) {
         return 0;
     }
 
     struct csv_slice s;
-    const unsigned char *p = buf;
+    const unsigned char *p = csv;
 
     idx->len = (size - sizeof(*idx)) / sizeof(*idx->slots);
     size_t mask = idx->len - 1;
@@ -251,8 +251,8 @@ csv_idx(struct csv_idx *idx, size_t size, size_t n, const void *buf, size_t len)
     }
 
     size_t i = -1;
-    for (struct csv_parser csv = csv_parser(buf, len);;) {
-        switch (csv_parse(&csv, &s)) {
+    for (struct csv_parser c = csv_parser(csv, len);;) {
+        switch (csv_parse(&c, &s)) {
         case CSV_EOF:
             return idx;
 
@@ -332,7 +332,7 @@ csv_idx_it_next(struct csv_idx_it *it, struct csv_slice *s)
 static int
 test_parser(void)
 {
-    static const char buf[] = "a,bc,def\r\n\"x \"\"y\"\" z\",\"1,2,3\"\r\n";
+    static const char csv[] = "a,bc,def\r\n\"x \"\"y\"\" z\",\"1,2,3\"\r\n";
     static const struct {
         enum csv_tok tok;
         int idx;
@@ -357,10 +357,10 @@ test_parser(void)
         [CSV_FIELD] = "CSV_FIELD",
     };
 
-    struct csv_parser csv = csv_parser(buf, sizeof(buf)-1);
+    struct csv_parser c = csv_parser(csv, sizeof(csv)-1);
     for (int i = 0; i < nexpect; i++) {
         struct csv_slice s;
-        enum csv_tok tok = csv_parse(&csv, &s);
+        enum csv_tok tok = csv_parse(&c, &s);
         if (tok != expect[i].tok) {
             printf("FAIL: got %s, want %s\n",
                    names[tok], names[expect[i].tok]);
@@ -379,10 +379,10 @@ test_parser(void)
             break;
         case CSV_FIELD:
             if ((int)s.len != expect[i].len ||
-                    (memcmp(buf+s.off, expect[i].field, s.len))) {
+                    (memcmp(csv+s.off, expect[i].field, s.len))) {
                 printf("FAIL: (%s) got %*s, want %s\n",
                         names[tok],
-                        (int)s.len, buf+s.off,
+                        (int)s.len, csv+s.off,
                         expect[i].field);
                 return 1;
             }
@@ -395,7 +395,7 @@ test_parser(void)
 static int
 test_idx(void)
 {
-    static const char xbuf[] =
+    static const char csv[] =
         "abc,123,xyz\n"
         "abc,456,xyz,\n"
         "abc,789,xyz,\n"
@@ -403,7 +403,7 @@ test_idx(void)
         "bc,\"123\",yz\n"
         "c,123,z,\"\"\n"
         "abc,0,xyz\n";
-    size_t z = csv_idx_size(xbuf, sizeof(xbuf)-1);
+    size_t z = csv_idx_size(csv, sizeof(csv)-1);
     struct csv_idx *idx = malloc(z);
     struct csv_idx_it it;
     struct csv_slice row;
@@ -424,7 +424,7 @@ test_idx(void)
     int nfails = 0;
     for (int i = 0; i < ntests; i++) {
         int nmatches = 0;
-        csv_idx(idx, z, tests[i].field, xbuf, sizeof(xbuf)-1);
+        csv_idx(idx, z, tests[i].field, csv, sizeof(csv)-1);
         it = csv_idx_it(idx, tests[i].key, tests[i].len);
         while (csv_idx_it_next(&it, &row)) {
             nmatches++;
