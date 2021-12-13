@@ -486,15 +486,20 @@ usage(FILE *f)
 }
 
 static const void *
-map(int fd, size_t *len)
+map(int fd, size_t *len, int quiet)
 {
     struct stat st;
     if (fstat(fd, &st) == -1) {
-        fprintf(stderr, "csvidx: fstat(%d): %s\n", fd, strerror(errno));
+        if (errno != quiet) {
+            fprintf(stderr, "csvidx: fstat(%d): %s\n", fd, strerror(errno));
+        }
         return 0;
     }
-    if (len) {
-        *len = st.st_size;
+
+    *len = st.st_size;
+    if (*len == 0) {
+        static const size_t dummy;
+        return &dummy;  // mmap() won't map an empty file
     }
 
     const void *p = mmap(0, st.st_size, PROT_READ, MAP_SHARED, fd, 0);
@@ -510,7 +515,7 @@ static int
 build(size_t n)
 {
     size_t len;
-    const char *csv = map(0, &len);
+    const char *csv = map(0, &len, 0);
     if (!csv) {
         return 1;
     }
@@ -535,16 +540,11 @@ build(size_t n)
 }
 
 static int
-query(char **argv)
+query(const struct csv_idx *idx, char **argv)
 {
     size_t csvlen;
-    const char *csv = map(0, &csvlen);
+    const char *csv = map(0, &csvlen, 0);
     if (!csv) {
-        return 1;
-    }
-
-    const struct csv_idx *idx = map(3, 0);
-    if (!idx) {
         return 1;
     }
 
@@ -570,6 +570,16 @@ query(char **argv)
     return 0;
 }
 
+// Basic index size validation. The index may still contain invalid CSV offsets,
+// and these offsets will not be checked later since the index is assumed to be
+// valid during iteration.
+static int
+valid_index(const struct csv_idx *idx, size_t len)
+{
+    return len > sizeof(size_t) &&
+           len == sizeof(*idx)  + sizeof(*idx->slots)*idx->len;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -578,10 +588,10 @@ main(int argc, char **argv)
         return 0;
     }
 
-    struct stat st;
-    if (fstat(3, &st) == -1) {
+    size_t len;
+    const struct csv_idx *idx = map(3, &len, EBADF);
+    if (!idx) {
         if (errno != EBADF) {
-            fprintf(stderr, "csvidx: %s\n", strerror(errno));
             return 1;
         }
 
@@ -589,9 +599,14 @@ main(int argc, char **argv)
             usage(stderr);
             return 1;
         }
+
         return build(strtoull(argv[1], 0, 10));
     } else {
-        return query(argv);
+        if (!valid_index(idx, len)) {
+            fprintf(stderr, "csvidx: corrupted index\n");
+            return 1;
+        }
+        return query(idx, argv);
     }
 }
 #endif
