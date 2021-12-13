@@ -4,8 +4,8 @@
 // allowing for exact-match searches against that field, returning the
 // row index/offset/length. The library itself makes no allocations,
 // which is left to the caller, and the index is just a single, large
-// allocation. The index references the CSV buffer, it contains no
-// pointers to that buffer, just offsets, so it can be serialized for
+// allocation. While the index references the CSV buffer, it contains no
+// pointers into that buffer, only offsets, so it can be serialized for
 // later use with a different copy of the CSV buffer.
 //
 // Example usage:
@@ -73,7 +73,7 @@ csv_parser(const void *csv, size_t len)
 // bounds regardless. An improper CSV simply returns improperly-encoded
 // fields.
 //
-// Note: An zero-length input is one row with one empty field. It's not
+// Note: A zero-length input is one row with one empty field. It's not
 // possible to have zero rows.
 static enum csv_tok { CSV_EOF, CSV_ROW, CSV_FIELD }
 csv_parse(struct csv_parser *c, struct csv_slice *s)
@@ -231,14 +231,14 @@ csv_idx_size(const void *csv, size_t len)
 }
 
 // Build an index of field N (zero-indexed) over the given CSV data. The
-// size must be computed with csv_idx_size(). If idx is NULL, returns
-// NULL. Rows lacking the field (too field fields) are not present in
-// the index.
+// size must be computed with csv_idx_size(). If idx is NULL or size is
+// zero, returns NULL. Rows lacking the field (too field fields) are not
+// present in the index.
 //
-// The index retains no pointers to the original CSV buffer, just
-// buffer offsets, so the index can be used later with the CSV buffer
-// located at a different address. The iterator will need to be provided
-// with the CSV buffer.
+// The index retains no pointers into the original CSV buffer, only
+// offsets, so the index can be used later with the CSV buffer located
+// at a different address. The iterator will need to be provided with
+// the CSV buffer.
 static struct csv_idx *
 csv_idx(struct csv_idx *idx, size_t size, size_t n, const void *csv, size_t len)
 {
@@ -308,7 +308,7 @@ csv_it(const struct csv_idx *idx,
 }
 
 // Find the next search result in the index. Returns 1 if there is
-// another result. Otherwise it returns 0 and the iterator should not be
+// another result. Otherwise it returns 0 and the iterator must not be
 // used further.
 static int
 csv_it_next(struct csv_it *it, struct csv_slice *s)
@@ -469,7 +469,7 @@ main(void)
 #ifdef CMD
 // Command line CSV indexer demonstration
 //   $ cc -DCMD -O3 -o csvidx csv.c
-//   $ ./csvidx <csv  >idx N      # build index for field N
+//   $ ./csvidx <csv  >idx INT    # build index for field INT
 //   $ ./csvidx <csv 3<idx KEY... # print rows matching keys
 #include <errno.h>
 #include <stdio.h>
@@ -481,7 +481,7 @@ main(void)
 static void
 usage(FILE *f)
 {
-    fprintf(f, "usage: csvidx <csv  >idx N\n");
+    fprintf(f, "usage: csvidx <csv  >idx INT\n");
     fprintf(f, "       csvidx <csv 3<idx [KEY]...\n");
 }
 
