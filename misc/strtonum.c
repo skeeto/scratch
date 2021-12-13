@@ -91,7 +91,7 @@ strtonum(const char *buf, long long min, long long max, const char **err)
 
   invalid:
     #if __STDC_HOSTED__ == 1
-    errno = EINVAL;
+        errno = EINVAL;
     #endif
     *err = "invalid";
     return 0;
