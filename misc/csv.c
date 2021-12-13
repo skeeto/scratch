@@ -76,9 +76,9 @@ csv_parser(const void *csv, size_t len)
 // Note: A zero-length input is one row with one empty field. It's not
 // possible to have zero rows.
 static enum csv_tok { CSV_EOF, CSV_ROW, CSV_FIELD }
-csv_parse(struct csv_parser *c, struct csv_slice *s)
+csv_parse(struct csv_parser *restrict c, struct csv_slice *s)
 {
-    const unsigned char *restrict csv = c->csv;
+    const unsigned char *csv = c->csv;
     switch (c->state) {
     case 0:
         s->idx = c->nfields++;
