@@ -85,10 +85,10 @@ uuidgen(struct uuidgen *g, char *buf)
     }
 
     // Clamp some nibbles to "89ab"
-    x[ 1] = (x[ 1] & 0xffff3fffU) | 0x00008000U;
-    x[ 5] = (x[ 5] & 0xffff3fffU) | 0x00008000U;
-    x[ 9] = (x[ 9] & 0xffff3fffU) | 0x00008000U;
-    x[13] = (x[13] & 0xffff3fffU) | 0x00008000U;
+    x[ 2] = (x[ 2] & 0x3fffffffU) | 0x80000000U;
+    x[ 6] = (x[ 6] & 0x3fffffffU) | 0x80000000U;
+    x[10] = (x[10] & 0x3fffffffU) | 0x80000000U;
+    x[14] = (x[14] & 0x3fffffffU) | 0x80000000U;
 
     // Generate 4 UUIDs
     for (int i = 0; i < 4; i++) {
@@ -104,12 +104,12 @@ uuidgen(struct uuidgen *g, char *buf)
         d[ 6] = hex[s[0] >>  4 & 0x0f];
         d[ 7] = hex[s[0] >>  0 & 0x0f];
         d[ 8] = '-';
-        d[ 9] = '4';
+        d[ 9] = hex[s[1] >> 28 & 0x0f];
         d[10] = hex[s[1] >> 24 & 0x0f];
         d[11] = hex[s[1] >> 20 & 0x0f];
         d[12] = hex[s[1] >> 16 & 0x0f];
         d[13] = '-';
-        d[14] = hex[s[1] >> 12 & 0x0f];
+        d[14] = '4';
         d[15] = hex[s[1] >>  8 & 0x0f];
         d[16] = hex[s[1] >>  4 & 0x0f];
         d[17] = hex[s[1] >>  0 & 0x0f];
