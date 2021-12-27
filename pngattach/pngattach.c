@@ -572,10 +572,10 @@ cmd_write(char **paths, int flags)
                 return err;
             }
 
+            _Bool skip = 0;
             struct atch a;
             if (atch_parse(&a, buf, c->len)) {
                 // Skip matching file names
-                _Bool skip = 0;
                 for (char **path = paths; *path; path++) {
                     struct offlen n = basename(*path);
                     const char *b = *path + n.off;
@@ -584,12 +584,12 @@ cmd_write(char **paths, int flags)
                         break;
                     }
                 }
-                if (!skip) {
-                    err = png_unslurp(stdout, c, buf);
-                    if (err) {
-                        free(buf);
-                        return err;
-                    }
+            }
+            if (!skip) {
+                err = png_unslurp(stdout, c, buf);
+                if (err) {
+                    free(buf);
+                    return err;
                 }
             }
             break;
