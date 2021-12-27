@@ -311,23 +311,26 @@ atch_compress(unsigned char *buf, size_t *len)
 static const char *
 png_atch(FILE *fo, const char *path, int flags)
 {
-    if (path[0] == '.') {
-        return "invalid attachment name";
+    struct offlen name = basename(path);
+    if (name.len > (uint32_t)-1 - 2) {
+        return errwrap("input file name too large", path);
     }
-    for (const char *s = path; *s; s++) {
-        if (*s < ' ') {
-            return "invalid attachment name";
+    if (name.len < 1) {
+        return errwrap("input file name too short", path);
+    }
+
+    if (path[name.off] == '.') {
+        return "invalid attachment name (begins with .)";
+    }
+    for (size_t i = 0; i < name.len; i++) {
+        if (path[name.off+i] < ' ') {
+            return "invalid attachment name (contains control byte)";
         }
     }
 
     FILE *f = fopen(path, "rb");
     if (!f) {
         return errwrap("failed to open file", path);
-    }
-
-    struct offlen name = basename(path);
-    if (name.len > (uint32_t)-1 - 2) {
-        return errwrap("input file name too large", path);
     }
 
     size_t len;
