@@ -42,7 +42,7 @@
 #define FLAG_STDOUT  (1<<1)  // dump attachments to standard output
 #define FLAG_DUMP    (1<<2)  // dump attachments while parsing
 #define FLAG_STORE   (1<<3)  // store new attachments while parsing
-#define FLAG_RAW     (1<<4)  // do no compress attachments
+#define FLAG_RAW     (1<<4)  // do not compress attachments
 
 // Wrap an error with additional context, such as a file name.
 static const char *
@@ -138,10 +138,9 @@ crc32_update(uint32_t crc, const void *buf, size_t len)
         0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b,
         0x2d02ef8d
     };
-    size_t n;
     const unsigned char *p = buf;
     crc ^= 0xffffffff;
-    for (n = 0; n < len; n++)
+    for (size_t n = 0; n < len; n++)
         crc = crc32_table[(crc ^ p[n]) & 0xff] ^ (crc >> 8);
     return crc ^ 0xffffffff;
 }
@@ -188,10 +187,10 @@ png_begin(FILE *fi, FILE *fo)
 {
     unsigned char buf[8];
     if (!fread(buf, 8, 1, fi)) {
-        return feof(fi) ? "truncated PNG" : "input error";
+        return feof(fi) ? "input is not a PNG" : "input error";
     }
     if (loadu64(buf) != 0x89504e470d0a1a0a) {
-        return "input is not in PNG format";
+        return "input is not a PNG";
     }
     if (fo && !fwrite(buf, 8, 1, fo)) {
         return "write error";
@@ -511,6 +510,7 @@ atch_decompress(FILE *fo, unsigned char *buf, size_t len)
                 return "write error";
             }
             return 0;
+        case Z_OK:
         case Z_BUF_ERROR:
             if (!fwrite(tmp, sizeof(tmp), 1, fo)) {
                 inflateEnd(&z);
