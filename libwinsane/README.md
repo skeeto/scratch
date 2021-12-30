@@ -8,6 +8,8 @@ provide some sanity on Windows. Specifically:
 * Functions accepting paths (i.e. `fopen`) will support UTF-8, such as
   file names passed as command line arguments.
 
+* All environment variables (i.e. `argv`) will be encoded with UTF-8.
+
 * The Windows console will correctly decode the program's UTF-8 output.
 
 * `stdin` and `stdout` will be in binary mode, no text translation.
