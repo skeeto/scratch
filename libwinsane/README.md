@@ -17,10 +17,10 @@ platform. Windows may not need to be a special support case, either for
 Unicode or binary handling. Many command line programs not designed for
 Windows will simply work correctly when linked with libwinsane.
 
-Caveat: Despite every indication otherwise, Windows does not yet support
-reading UTF-8 input from a console, so programs still cannot accept UTF-8
-keyboard input. For now that remains a special case requiring [special
-handling](https://nullprogram.com/blog/2020/05/04/).
+Caveat: Despite every indication otherwise, Windows does [not yet support
+reading UTF-8 input from a console][in], so programs still cannot accept
+UTF-8 keyboard input. For now that continues remaining a special case
+requiring [special handling][pw].
 
 ## FAQ
 
@@ -42,3 +42,7 @@ can `#include`?
 
 A: Only `windres` can produce the specific, 32-bit static relocation used
 to build the resource `.rsrc` tree. Trust me, I tried!
+
+
+[in]: https://github.com/microsoft/terminal/issues/4551#issuecomment-585487802
+[pw]: https://nullprogram.com/blog/2020/05/04/
