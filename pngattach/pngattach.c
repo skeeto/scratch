@@ -323,7 +323,7 @@ png_atch(FILE *fo, const char *path, int flags)
         return "invalid attachment name (begins with .)";
     }
     for (size_t i = 0; i < name.len; i++) {
-        if (path[name.off+i] < ' ') {
+        if ((path[name.off+i]&0xff) < ' ') {
             return "invalid attachment name (contains control byte)";
         }
     }
@@ -469,7 +469,7 @@ atch_parse(struct atch *a, unsigned char *buf, size_t len)
 
     unsigned char *end = buf;
     for (; end < buf+len-1 && *end; end++) {
-        if (*end < ' ' || *end == '/' || *end == '\\') {
+        if ((*end&0xff) < ' ' || *end == '/' || *end == '\\') {
             return 0;
         }
     }
