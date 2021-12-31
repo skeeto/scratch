@@ -187,13 +187,13 @@ png_begin(FILE *fi, FILE *fo)
 {
     unsigned char buf[8];
     if (!fread(buf, 8, 1, fi)) {
-        return feof(fi) ? "input is not a PNG" : "input error";
+        return feof(fi) ? "PNG input invalid" : "PNG input error";
     }
     if (loadu64(buf) != 0x89504e470d0a1a0a) {
-        return "input is not a PNG";
+        return "PNG input invalid";
     }
     if (fo && !fwrite(buf, 8, 1, fo)) {
-        return "write error";
+        return "PNG write error";
     }
     return 0;
 }
@@ -206,7 +206,7 @@ png_next(FILE *fi, struct chunk *c)
 {
     unsigned char buf[8];
     if (!fread(buf, 8, 1, fi)) {
-        return feof(fi) ? "truncated PNG" : "input error";
+        return feof(fi) ? "PNG truncated" : "PNG input error";
     }
     c->len  = loadu32(buf+0);
     c->type = loadu32(buf+4);
@@ -224,30 +224,30 @@ png_pass(FILE *fi, FILE *fo, const struct chunk *c)
     storeu32(buf+4, c->type);
     crc = crc32_update(crc, buf+4, 4);
     if (fo && !fwrite(buf, 8, 1, fo)) {
-        return "write error";
+        return "PNG write error";
     }
 
     uint32_t len = c->len;
     while (len) {
         size_t z = len > sizeof(buf) ? sizeof(buf) : len;
         if (!fread(buf, z, 1, fi)) {
-            return feof(fi) ? "truncated PNG" : "input error";
+            return feof(fi) ? "PNG truncated" : "PNG input error";
         }
         crc = crc32_update(crc, buf, z);
         if (fo && !fwrite(buf, z, 1, fo)) {
-            return "write error";
+            return "PNG write error";
         }
         len -= z;
     }
 
     if (!fread(buf, 4, 1, fi)) {
-        return feof(fi) ? "truncated PNG" : "input error";
+        return feof(fi) ? "PNG truncated" : "PNG input error";
     }
     if (loadu32(buf) != crc) {
-        return "bad chunk CRC";
+        return "bad PNG chunk CRC";
     }
     if (fo && !fwrite(buf, 4, 1, fo)) {
-        return "write error";
+        return "PNG write error";
     }
 
     return 0;
@@ -313,10 +313,10 @@ png_atch(FILE *fo, const char *path, int flags)
 {
     struct offlen name = basename(path);
     if (name.len > (uint32_t)-1 - 2) {
-        return errwrap("input file name too large", path);
+        return errwrap("attachment name too large", path);
     }
     if (name.len < 1) {
-        return errwrap("input file name too short", path);
+        return errwrap("attachment name too short", path);
     }
 
     if (path[name.off] == '.') {
@@ -348,7 +348,7 @@ png_atch(FILE *fo, const char *path, int flags)
 
     if (len > (uint32_t)-1 - (name.len + 2)) {
         free(buf);
-        return errwrap("input file too large", path);
+        return errwrap("attachment too large", path);
     }
 
     unsigned char hdr[8];
@@ -357,13 +357,13 @@ png_atch(FILE *fo, const char *path, int flags)
     uint32_t crc = crc32_update(0, hdr+4, 4);
     if (!fwrite(hdr, 8, 1, fo)) {
         free(buf);
-        return "write error";
+        return "PNG write error";
     }
 
     crc = crc32_update(crc, path+name.off, name.len);
     if (!fwrite(path+name.off, name.len, 1, fo)) {
         free(buf);
-        return "write error";
+        return "PNG write error";
     }
 
     hdr[0] = 0;
@@ -371,19 +371,19 @@ png_atch(FILE *fo, const char *path, int flags)
     crc = crc32_update(crc, hdr, 2);
     if (!fwrite(hdr, 2, 1, fo)) {
         free(buf);
-        return "write error";
+        return "PNG write error";
     }
 
     crc = crc32_update(crc, buf, len);
     if (len && !fwrite(buf, len, 1, fo)) {
         free(buf);
-        return "write error";
+        return "PNG write error";
     }
 
     storeu32(hdr, crc);
     if (!fwrite(hdr, 4, 1, fo)) {
         free(buf);
-        return "write error";
+        return "PNG write error";
     }
 
     free(buf);
@@ -408,15 +408,15 @@ png_slurp(FILE *fi, const struct chunk *c, unsigned char **buf, size_t *cap)
     }
 
     if (!fread(*buf, c->len, 1, fi)) {
-        return "truncated PNG";
+        return "PNG truncated";
     }
 
     crc = crc32_update(crc, *buf, c->len);
     if (!fread(tmp, 4, 1, fi)) {
-        return "truncated PNG";
+        return "PNG truncated";
     }
     if (loadu32(tmp) != crc) {
-        return "bad chunk CRC";
+        return "bad PNG chunk CRC";
     }
 
     return 0;
@@ -432,17 +432,17 @@ png_unslurp(FILE *fo, const struct chunk *c, const unsigned char *buf)
 
     uint32_t crc = crc32_update(0, hdr+4, 4);
     if (!fwrite(hdr, 8, 1, fo)) {
-        return "write error";
+        return "PNG write error";
     }
 
     crc = crc32_update(crc, buf, c->len);
     if (c->len && !fwrite(buf, c->len, 1, fo)) {
-        return "write error";
+        return "PNG write error";
     }
 
     storeu32(hdr, crc);
     if (!fwrite(hdr, 4, 1, fo)) {
-        return "write error";
+        return "PNG write error";
     }
 
     return 0;
@@ -510,21 +510,21 @@ atch_decompress(FILE *fo, unsigned char *buf, size_t len)
             inflateEnd(&z);
             size_t n = z.next_out - tmp;
             if (n && !fwrite(tmp, n, 1, fo)) {
-                return "write error";
+                return "attachment write error";
             }
             return 0;
         case Z_OK:
         case Z_BUF_ERROR:
             if (!fwrite(tmp, sizeof(tmp), 1, fo)) {
                 inflateEnd(&z);
-                return "write error";
+                return "attachment write error";
             }
             z.next_out = tmp;
             z.avail_out = sizeof(tmp);
             break;
         default:
             inflateEnd(&z);
-            return "compression error";
+            return "attachment decompression error";
         }
     }
     #endif
@@ -663,7 +663,7 @@ cmd_read(int flags)
                 if (flags & FLAG_LIST) {
                     if (puts(a.path) == EOF) {
                         free(buf);
-                        return "write error";
+                        return "attachment listing write error";
                     }
                 }
 
@@ -678,7 +678,7 @@ cmd_read(int flags)
                         } else {
                             if (a.datalen &&
                                 !fwrite(a.data, a.datalen, 1, stdout)) {
-                                return "write error";
+                                return "attachment write error";
                             }
                         }
 
