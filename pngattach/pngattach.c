@@ -279,7 +279,7 @@ atch_compress(unsigned char *buf, size_t *len)
     #else
     unsigned char *tmp = malloc(*len-1);
     if (!tmp) {
-        return "out of memory";
+        return 0;
     }
 
     struct z_stream_s z = {
