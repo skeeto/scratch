@@ -8,7 +8,7 @@ provide some sanity on Windows. Specifically:
 * Functions accepting paths (i.e. `fopen`) will support UTF-8, such as
   file names passed as command line arguments.
 
-* All environment variables (i.e. `argv`) will be encoded with UTF-8.
+* All environment variables (i.e. `getenv`) will be encoded with UTF-8.
 
 * The Windows console will correctly decode the program's UTF-8 output.
 
