@@ -149,10 +149,9 @@ crc32_update(uint32_t crc, const void *buf, size_t len)
 static const char *
 slurp(FILE *f, unsigned char **buf, size_t *len)
 {
-    size_t cap = 1 << 11;
-
+    *len = 0;
     *buf = 0;
-    for (*len = 0;;) {
+    for (size_t cap = 1 << 13;;) {
         cap *= 2;
         if (!cap) {
             free(*buf);
@@ -160,13 +159,13 @@ slurp(FILE *f, unsigned char **buf, size_t *len)
             return "input too large";
         }
 
-        void *tmp = realloc(*buf, cap);
-        if (!tmp) {
+        void *p = realloc(*buf, cap);
+        if (!p) {
             free(*buf);
             *buf = 0;
             return "out of memory";
         }
-        *buf = tmp;
+        *buf = p;
 
         size_t in = fread(*buf+*len, 1, cap-*len, f);
         *len += in;
@@ -307,7 +306,7 @@ atch_compress(unsigned char *buf, size_t *len)
     #endif
 }
 
-// Write an atCh chunk to standard output.
+// Write an atCh chunk to a stream.
 static const char *
 png_atch(FILE *fo, const char *path, int flags)
 {
@@ -335,13 +334,13 @@ png_atch(FILE *fo, const char *path, int flags)
 
     size_t len;
     unsigned char *buf;
-    _Bool compressed = 0;
     const char *err = slurp(f, &buf, &len);
     fclose(f);
     if (err) {
         return errwrap(err, path);
     }
 
+    _Bool compressed = 0;
     if (!(flags & FLAG_RAW)) {
         compressed = atch_compress(buf, &len);
     }
@@ -492,14 +491,16 @@ atch_decompress(FILE *fo, unsigned char *buf, size_t len)
     #ifdef NO_ZLIB
     (void)fo; (void)buf; (void)len;
     return "compression unsupported";
+
     #else
-    static unsigned char tmp[1<<12];
+    static unsigned char tmp[1<<14];
     struct z_stream_s z = {
         .next_in = buf,
         .avail_in = len,
         .next_out = tmp,
         .avail_out = sizeof(tmp),
     };
+
     if (inflateInit(&z) != Z_OK) {
         return "out of memory";
     }
