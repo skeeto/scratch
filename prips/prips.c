@@ -285,15 +285,10 @@ format_print(char *buf, enum format f, unsigned long ip)
  *   "...."   = invalid (too many IP octets)
  */
 static int
-exclude_parse(unsigned short *table, const char *s)
+exclude_parse(unsigned short table[4][16], const char *s)
 {
-    int i, n, a;
-
-    for (i = 0; i < 4*16; i++) {
-        table[i] = 0;
-    }
-
-    for (a = 0, i = 0, n = 0; ; s++) {
+    int c, n, a;
+    for (a = 0, c = 0, n = 0; ; s++) {
         int v = *s;
         switch (v) {
         case 0: case ',': case '.':
@@ -301,7 +296,7 @@ exclude_parse(unsigned short *table, const char *s)
                 return 0;
             }
             if (n != 0) {
-                table[i*16 + a/16] |= 1U << (a%16);
+                table[c][a/16] |= 1U << (a%16);
             }
 
             if (v == 0) {
@@ -333,16 +328,16 @@ exclude_parse(unsigned short *table, const char *s)
 }
 
 static int
-exclude_match(const unsigned short *table, unsigned long ip)
+exclude_match(unsigned short table[4][16], unsigned long ip)
 {
     int a = ip >> 24       ;
     int b = ip >> 16 & 0xff;
     int c = ip >>  8 & 0xff;
     int d = ip       & 0xff;
-    return (table[0*16 + a/16] & 1U<<(a%16)) |
-           (table[1*16 + b/16] & 1U<<(b%16)) |
-           (table[2*16 + c/16] & 1U<<(c%16)) |
-           (table[3*16 + d/16] & 1U<<(d%16));
+    return (table[0][a/16] & 1U<<(a%16)) |
+           (table[1][b/16] & 1U<<(b%16)) |
+           (table[2][c/16] & 1U<<(c%16)) |
+           (table[3][d/16] & 1U<<(d%16));
 }
 
 static int xoptind = 1;
@@ -418,7 +413,7 @@ main(int argc, char **argv)
     int print_cidr = 0;
     int exclude = 0;
     unsigned long increment = 1;
-    unsigned short exclude_table[4*16];
+    unsigned short exclude_table[4][16] = {{0}};
     enum format fmt = FORMAT_DOT;
     unsigned long beg, end, mask;
 
