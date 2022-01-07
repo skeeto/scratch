@@ -438,7 +438,7 @@ main(int argc, char **argv)
                 return 1;
             } break;
         case 'i':
-            increment = uint32_parse(xoptarg, -1, &err);
+            increment = uint32_parse(xoptarg, 0xffffffff, &err);
             if (err) {
                 fprintf(stderr, "prips: %s -i, %s\n", err, xoptarg);
                 return 1;
@@ -476,7 +476,7 @@ main(int argc, char **argv)
             return 1;
         }
 
-        end = (-1UL&~mask) | (mask&beg);
+        end = ~mask | (mask&beg);
         break;
 
     case 2:  /* START..END */
