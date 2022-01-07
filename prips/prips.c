@@ -82,13 +82,13 @@ uint32_parse(const char *s, unsigned long max, char **err)
 static int
 ipv4_parse(const char *s, unsigned long *ip)
 {
-    int c = 0, n = 0, v = 0;
+    int c = 0, n = 0, a = 0;
     for (*ip = 0;; s++) {
         switch (*s) {
         case '0': case '1': case '2': case '3': case '4':
         case '5': case '6': case '7': case '8': case '9':
-            v = v*10 + *s - '0';
-            if (v > 255) {
+            a = a*10 + *s - '0';
+            if (a > 255) {
                 return 0;
             }
             n++;
@@ -97,12 +97,12 @@ ipv4_parse(const char *s, unsigned long *ip)
             if (!n || c == 4) {
                 return 0;
             }
-            *ip = *ip<<8 | v;
+            *ip = *ip<<8 | a;
             c++;
             if (!*s) {
                 return c == 4;
             }
-            n = v = 0;
+            n = a = 0;
             break;
         default:
             return 0;
@@ -309,10 +309,10 @@ exclude_parse(unsigned short *table, const char *s)
             }
 
             if (v == '.') {
-                if (i == 3) {
+                if (c == 3) {
                     return 0;
                 }
-                i++;
+                c++;
             }
             n = a = 0;
             break;
