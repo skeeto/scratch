@@ -28,7 +28,7 @@ xisalnum(int c)
 static const char *
 xstrchr(const char *s, int c)
 {
-    for (;; s++) {
+    for (c = (char)c;; s++) {
         if (*s == c) {
             return s;
         } else if (!*s) {
