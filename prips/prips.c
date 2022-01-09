@@ -15,8 +15,81 @@
  *
  * This is free and unencumbered software released into the public domain.
  */
+
+/* Write a buffer to 1 (standard output) or 2 (standard error), without
+ * buffering and potentially with multiple underlying writes. Return
+ * non-zero on success.
+ *
+ * This is the only function that interacts with libc or the outside
+ * world. The program does its own buffering and formatting.
+ */
+static int xwrite(int fd, const char *buf, int len);
+
+#if defined(__unix__) || defined(__APPLE__)
+#include <unistd.h>
+
+static int
+xwrite(int fd, const char *buf, int len)
+{
+    int n = 0;
+    do {
+        int r = write(fd, buf+n, len-n);
+        switch (r) {
+        case -1: return 0;
+        default: n += r;
+        }
+    } while (n < len);
+    return 1;
+}
+
+#elif defined(_WIN32)
+#include <windows.h>
+
+static int
+xwrite(int fd, const char *buf, int len)
+{
+    HANDLE h = GetStdHandle(fd == 1 ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE);
+    int n = 0;
+    do {
+        DWORD c;
+        if (!WriteFile(h, buf+n, len-n, &c, 0)) {
+            return 0;
+        }
+        n += c;
+    } while (n < len);
+    return 1;
+}
+
+#else
 #include <stdio.h>
 
+static int
+xwrite(int fd, const char *buf, int len)
+{
+    FILE *f = fd == 1 ? stdout : stderr;
+    return fwrite(buf, len, 1, f) && !fflush(f);
+}
+#endif
+
+/* Output a null-terminated string followed by with a newline. Returns
+ * non-zero on success.
+ */
+static int
+xputs(int fd, const char *s)
+{
+    int len = 0;
+    const char *p;
+    for (p = s; *p; p++) {
+        len++;
+    }
+    /* Two unbuffered writes isn't great, but this function is only used
+     * once to print an error message (i.e. the slow path).
+     */
+    return xwrite(fd, s, len) && xwrite(fd, "\n", 1);
+}
+
+/* Same as isalnum(3), but without locale.
+ */
 static int
 xisalnum(int c)
 {
@@ -25,6 +98,8 @@ xisalnum(int c)
            (c >= 'a' && c <= 'z');
 }
 
+/* Same as strchr(3).
+ */
 static const char *
 xstrchr(const char *s, int c)
 {
@@ -51,13 +126,13 @@ uint32_len(unsigned long u)
  * failure, err points to a descriptive error message.
  */
 static unsigned long
-uint32_parse(const char *s, unsigned long max, char **err)
+uint32_parse(const char *s, unsigned long max, const char **err)
 {
     unsigned long n = 0;
-    for (*err = "invalid"; *s; s++, *err = 0) {
+    for (*err = "invalid format"; *s; s++, *err = 0) {
         unsigned v = (*s&0xff) - '0';
         if (v > 9) {
-            *err = "invalid";
+            *err = "invalid format";
             break;
         }
 
@@ -123,7 +198,7 @@ cidr_to_mask(int cidr)
 static int
 cidr_parse(const char *s, unsigned long *ip, unsigned long *mask)
 {
-    char *err;
+    const char *err;
     int i, cidr;
     char copy[16];
 
@@ -260,11 +335,12 @@ format_print(char *buf, enum format f, unsigned long ip)
 }
 
 /* Populate an exclusion table from an exclusion specification. Returns
- * non-zero if the specification was valid.
+ * non-zero if the specification was valid. May be called repeatedly to
+ * append additional exclusions.
  *
  * The table is a bit array with 16-bit elements. Each of the four IP
- * octets is therefore 16 array elements. A bit is set if that
- * particular octet value should be excluded.
+ * octets uses 16 array elements. A bit is set if that particular octet
+ * value should be excluded.
  *
  * Each IP octet is a list of zero or more comma-separated octets to be
  * excluded. Trailing empty IP octets may be omitted. Empty list
@@ -327,6 +403,8 @@ exclude_parse(unsigned short table[4][16], const char *s)
     }
 }
 
+/* Return non-zero if the address is in the exclusion table.
+ */
 static int
 exclude_match(unsigned short table[4][16], unsigned long ip)
 {
@@ -340,17 +418,50 @@ exclude_match(unsigned short table[4][16], unsigned long ip)
            (table[3][d/16] & 1U<<(d%16));
 }
 
+/* Wrap an error with additional context.
+ */
+static const char *
+errwrap(const char *pre, const char *suf)
+{
+    static int toggle;
+    static char errtmp[2][128];
+    int i, m = 0, n = sizeof(errtmp[0]) - 4;
+    char *dst = errtmp[(toggle = !toggle)], *p = dst;
+    const char *src[3];
+
+    src[0] = pre;
+    src[1] = ": ";
+    src[2] = suf;
+    for (i = 0; i < n && m < 3; i++) {
+        do {
+            *p = *src[m];
+            if (*src[m]++) {
+                p++;
+                break;
+            }
+            m++;
+        } while (m < 3);
+    }
+
+    dst[n] = dst[n+1] = dst[n+2] = '.';
+    return dst;
+}
+
 static int xoptind = 1;
-static int xopterr = 1;
 static int xoptopt;
 static char *xoptarg;
 
+/* Like getopt(3), but on error points err to a contextual static error
+ * string.
+ */
 static int
-xgetopt(int argc, char * const argv[], const char *optstring)
+xgetopt(int argc, char * const argv[], const char *optstring, const char **err)
 {
     static int optpos = 1;
     const char *arg;
     (void)argc;
+
+    *err = 0;
 
     arg = argv[xoptind];
     if (arg && arg[0] == '-' && arg[1] == '-' && !arg[2]) {
@@ -362,8 +473,9 @@ xgetopt(int argc, char * const argv[], const char *optstring)
         const char *opt = xstrchr(optstring, arg[optpos]);
         xoptopt = arg[optpos];
         if (!opt) {
-            if (xopterr && *optstring != ':')
-                fprintf(stderr, "prips: illegal option: %c\n", xoptopt);
+            char suf[2] = {0, 0};
+            suf[0] = xoptopt;
+            *err = errwrap("illegal option", suf);
             return '?';
         } else if (opt[1] == ':') {
             if (arg[optpos + 1]) {
@@ -377,10 +489,10 @@ xgetopt(int argc, char * const argv[], const char *optstring)
                 optpos = 1;
                 return xoptopt;
             } else {
-                if (xopterr && *optstring != ':')
-                    fprintf(stderr, "prips: option requires an argument: %c\n",
-                            xoptopt);
-                return *optstring == ':' ? ':' : '?';
+                char suf[2] = {0, 0};
+                suf[0] = xoptopt;
+                *err = errwrap("option requires an argument", suf);
+                return '?';
             }
         } else {
             if (!arg[++optpos]) {
@@ -393,21 +505,24 @@ xgetopt(int argc, char * const argv[], const char *optstring)
 }
 
 static void
-usage(FILE *f)
+usage(int fd)
 {
-    fputs("usage: prips [-ch] [-d N] [-f FMT] [-i N] [-e SPEC] "
-          "<FIRST LAST | CIDR>\n", f);
-    fputs("  -c       output in CIDR notation\n", f);
-    fputs("  -d N     delimiter octet (0..255) [10]\n", f);
-    fputs("  -f FMT   output address format (dot, dec, hex) [dot]\n", f);
-    fputs("  -i N     increment between addresses [1]\n", f);
-    fputs("  -e SPEC  exclude addresses with specific octets\n", f);
+    static const char usage[] =
+    "usage: prips [-ch] [-d N] [-f FMT] [-i N] [-e SPEC] <FIRST LAST | CIDR>\n"
+    "  -c       output in CIDR notation\n"
+    "  -d N     delimiter octet (0..255) [10]\n"
+    "  -f FMT   output address format (dot, dec, hex) [dot]\n"
+    "  -i N     increment between addresses [1]\n"
+    "  -e SPEC  exclude addresses with specific octets\n";
+    xwrite(fd, usage, sizeof(usage)-1);
 }
 
-int
-main(int argc, char **argv)
+/* Like main(), but returns a static error string on error.
+ */
+const char *
+run(int argc, char **argv)
 {
-    char *err;
+    const char *err;
     int option;
     int delim = '\n';
     int print_cidr = 0;
@@ -417,7 +532,7 @@ main(int argc, char **argv)
     enum format fmt = FORMAT_DOT;
     unsigned long beg, end, mask;
 
-    while ((option = xgetopt(argc, argv, "cd:hf:i:e:")) != -1) {
+    while ((option = xgetopt(argc, argv, "cd:hf:i:e:", &err)) != -1) {
         switch (option) {
         case 'c':
             print_cidr = 1;
@@ -425,85 +540,72 @@ main(int argc, char **argv)
         case 'd':
             delim = uint32_parse(xoptarg, 255, &err);
             if (err) {
-                fprintf(stderr, "prips: %s -d, %s\n", err, xoptarg);
-                return 1;
+                return errwrap(errwrap("-d", err), xoptarg);
             }
             break;
         case 'h':
-            usage(stdout);
+            usage(1);
             return 0;
         case 'f':
             if (!(fmt = format_parse(xoptarg))) {
-                fprintf(stderr, "prips: invalid format, %s\n", xoptarg);
-                return 1;
+                return errwrap("-f: invalid format", xoptarg);
             } break;
         case 'i':
             increment = uint32_parse(xoptarg, 0xffffffff, &err);
             if (err) {
-                fprintf(stderr, "prips: %s -i, %s\n", err, xoptarg);
-                return 1;
+                return errwrap("-i: invalid increment", xoptarg);
             }
             if (!increment) {
-                fprintf(stderr, "prips: -i must be non-zero\n");
-                return 1;
+                return errwrap("-i: must be non-zero", xoptarg);
             }
             break;
         case 'e':
             exclude = 1;
             if (!exclude_parse(exclude_table, xoptarg)) {
-                fprintf(stderr, "prips: invalid -e table, %s\n", xoptarg);
-                return 1;
+                return errwrap("-e: invalid table", xoptarg);
             }
             break;
         case '?':
-            usage(stderr);
-            return 1;
+            usage(2);
+            return err;
         }
     }
 
+    argv += xoptind;
     switch (argc - xoptind) {
     case 1:  /* CIDR */
-        if (!cidr_parse(argv[xoptind], &beg, &mask)) {
-            fprintf(stderr, "prips: invalid CIDR IP address, %s\n",
-                    argv[xoptind]);
-            return 1;
+        if (!cidr_parse(argv[0], &beg, &mask)) {
+            return errwrap("invalid CIDR IP address", argv[0]);
         }
 
         if (~mask & beg) {
-            fprintf(stderr,
-                    "prips: CIDR base address not a subnet boundary, %s\n",
-                    argv[xoptind]);
-            return 1;
+            return errwrap("CIDR base address not a subnet boundary", argv[0]);
         }
 
         end = ~mask | (mask&beg);
         break;
 
     case 2:  /* START..END */
-        if (!ipv4_parse(argv[xoptind+0], &beg)) {
-            fprintf(stderr, "prips: invalid IP address, %s\n",
-                    argv[xoptind+0]);
-            return 1;
+        if (!ipv4_parse(argv[0], &beg)) {
+            return errwrap("invalid IP address", argv[0]);
         }
-        if (!ipv4_parse(argv[xoptind+1], &end)) {
-            fprintf(stderr, "prips: invalid IP address, %s\n",
-                    argv[xoptind+1]);
-            return 1;
+        if (!ipv4_parse(argv[1], &end)) {
+            return errwrap("invalid IP address", argv[1]);
         }
         break;
 
     default:
-        usage(stderr);
-        return 1;
+        usage(2);
+        return "wrong number of arguments";
     }
 
     if (end < beg) {
-        fprintf(stderr, "prips: start address larger than end address\n");
-        return 1;
+        return "start address larger than end address";
     }
 
     if (print_cidr) {
-        char buf[16];
+        char *p;
+        char buf[16+3];
         int cidr = 32;
         unsigned long match;
 
@@ -511,19 +613,29 @@ main(int argc, char **argv)
             cidr--;
         }
         mask = cidr_to_mask(cidr);
-        ipv4_dot(buf, beg&mask);
-        printf("%s/%d%c", buf, cidr, delim);
+        p = buf + ipv4_dot(buf, beg&mask);
+        *p++ = '/';
+        if (cidr > 10) {
+            *p++ = cidr/10 + '0';
+        }
+        *p++ = cidr%10 + '0';
+        *p++ = delim;
+        if (!xwrite(1, buf, p-buf)) {
+            return "write error";
+        }
 
     } else {
+        int len = 0;
+        static char buf[1<<13];
         for (;;) {
-            int len;
-            char buf[16];
-
             if (!exclude || !exclude_match(exclude_table, beg)) {
-                len = format_print(buf, fmt, beg);
+                len += format_print(buf+len, fmt, beg);
                 buf[len++] = delim;
-                if (!fwrite(buf, len, 1, stdout)) {
-                    break;
+                if (len > (int)sizeof(buf) - 16) {
+                    if (!xwrite(1, buf, len)) {
+                        return "write error";
+                    }
+                    len = 0;
                 }
             }
 
@@ -532,11 +644,20 @@ main(int argc, char **argv)
             }
             beg += increment;
         }
+        if (len && !xwrite(1, buf, len)) {
+            return "write error";
+        }
     }
 
-    fflush(stdout);
-    if (ferror(stdout)) {
-        fprintf(stderr, "prips: output error\n");
+    return 0;
+}
+
+int
+main(int argc, char **argv)
+{
+    const char *err = run(argc, argv);
+    if (err) {
+        xputs(2, errwrap("prips", err));
         return 1;
     }
     return 0;
