@@ -115,7 +115,7 @@ ipv4_parse(const char *s, unsigned long *ip)
 static unsigned long
 cidr_to_mask(int cidr)
 {
-    return cidr ? -1UL<<(32 - cidr) : 0UL;
+    return cidr ? -1UL<<(32 - cidr) : ~0xffffffffUL;
 }
 
 /* Parse an IP address with CIDR subnet mask.
