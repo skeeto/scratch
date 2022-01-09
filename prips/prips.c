@@ -88,30 +88,6 @@ xputs(int fd, const char *s)
     return xwrite(fd, s, len) && xwrite(fd, "\n", 1);
 }
 
-/* Same as isalnum(3), but without locale.
- */
-static int
-xisalnum(int c)
-{
-    return (c >= '0' && c <= '9') ||
-           (c >= 'A' && c <= 'Z') ||
-           (c >= 'a' && c <= 'z');
-}
-
-/* Same as strchr(3).
- */
-static const char *
-xstrchr(const char *s, int c)
-{
-    for (c = (char)c;; s++) {
-        if (*s == c) {
-            return s;
-        } else if (!*s) {
-            return 0;
-        }
-    }
-}
-
 /* Return the printed decimal length for any unsigned 32-bit integer.
  */
 static int
@@ -447,21 +423,42 @@ errwrap(const char *pre, const char *suf)
     return dst;
 }
 
+/* Same as isalnum(3), but without locale.
+ */
+static int
+xisalnum(int c)
+{
+    return (c >= '0' && c <= '9') ||
+           (c >= 'A' && c <= 'Z') ||
+           (c >= 'a' && c <= 'z');
+}
+
+/* Same as strchr(3).
+ */
+static const char *
+xstrchr(const char *s, int c)
+{
+    for (c = (char)c;; s++) {
+        if (*s == c) {
+            return s;
+        } else if (!*s) {
+            return 0;
+        }
+    }
+}
+
 static int xoptind = 1;
 static int xoptopt;
 static char *xoptarg;
 
-/* Like getopt(3), but on error points err to a contextual static error
- * string.
+/* Like getopt(3) but never prints error messages.
  */
 static int
-xgetopt(int argc, char * const argv[], const char *optstring, const char **err)
+xgetopt(int argc, char * const argv[], const char *optstring)
 {
     static int optpos = 1;
     const char *arg;
     (void)argc;
-
-    *err = 0;
 
     arg = argv[xoptind];
     if (arg && arg[0] == '-' && arg[1] == '-' && !arg[2]) {
@@ -473,9 +470,6 @@ xgetopt(int argc, char * const argv[], const char *optstring, const char **err)
         const char *opt = xstrchr(optstring, arg[optpos]);
         xoptopt = arg[optpos];
         if (!opt) {
-            char suf[2] = {0, 0};
-            suf[0] = xoptopt;
-            *err = errwrap("illegal option", suf);
             return '?';
         } else if (opt[1] == ':') {
             if (arg[optpos + 1]) {
@@ -489,10 +483,7 @@ xgetopt(int argc, char * const argv[], const char *optstring, const char **err)
                 optpos = 1;
                 return xoptopt;
             } else {
-                char suf[2] = {0, 0};
-                suf[0] = xoptopt;
-                *err = errwrap("option requires an argument", suf);
-                return '?';
+                return ':';
             }
         } else {
             if (!arg[++optpos]) {
@@ -512,6 +503,7 @@ usage(int fd)
     "  -c       output in CIDR notation\n"
     "  -d N     delimiter octet (0..255) [10]\n"
     "  -f FMT   output address format (dot, dec, hex) [dot]\n"
+    "  -h       print this usage information\n"
     "  -i N     increment between addresses [1]\n"
     "  -e SPEC  exclude addresses with specific octets\n";
     xwrite(fd, usage, sizeof(usage)-1);
@@ -524,6 +516,7 @@ run(int argc, char **argv)
 {
     const char *err;
     int option;
+    char opterr[] = {'-', 0, 0};
     int delim = '\n';
     int print_cidr = 0;
     int exclude = 0;
@@ -532,7 +525,7 @@ run(int argc, char **argv)
     enum format fmt = FORMAT_DOT;
     unsigned long beg, end, mask;
 
-    while ((option = xgetopt(argc, argv, "cd:hf:i:e:", &err)) != -1) {
+    while ((option = xgetopt(argc, argv, ":cd:f:hi:e:")) != -1) {
         switch (option) {
         case 'c':
             print_cidr = 1;
@@ -543,13 +536,13 @@ run(int argc, char **argv)
                 return errwrap(errwrap("-d", err), xoptarg);
             }
             break;
-        case 'h':
-            usage(1);
-            return 0;
         case 'f':
             if (!(fmt = format_parse(xoptarg))) {
                 return errwrap("-f: invalid format", xoptarg);
             } break;
+        case 'h':
+            usage(1);
+            return 0;
         case 'i':
             increment = uint32_parse(xoptarg, 0xffffffff, &err);
             if (err) {
@@ -565,9 +558,13 @@ run(int argc, char **argv)
                 return errwrap("-e: invalid table", xoptarg);
             }
             break;
+        case ':':
+            opterr[1] = xoptopt;
+            return errwrap(opterr, "option requires an argument");
         case '?':
             usage(2);
-            return err;
+            opterr[1] = xoptopt;
+            return errwrap("illegal option", opterr);
         }
     }
 
