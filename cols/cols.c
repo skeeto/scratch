@@ -465,7 +465,7 @@ run(int argc, char **argv)
                   break;
         case 'W': errno = 0;
                   value = strtol(xoptarg, &end, 10);
-                  if (errno || *end || value <= 0) {
+                  if (errno || *end || value < 1) {
                       return "-W: invalid argument";
                   }
                   conf.twidth = value;
@@ -474,7 +474,7 @@ run(int argc, char **argv)
         case 'w': errno = 0;
                   value = strtol(xoptarg, &end, 10);
                   if (errno || *end || value < 1) {
-                      return "-W: invalid argument";
+                      return "-w: invalid argument";
                   }
                   conf.cwidth = value - 1;
                   break;
