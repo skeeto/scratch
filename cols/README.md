@@ -56,10 +56,10 @@ Column-order:
 Unicode-aware column layout:
 
     $ cols -W25 <alphabets
-    A a B b c c d d e e f f g
-    g h h i i j j k k l l m m
-    n n o o p p q q r r s s t
-    t u u v v w w x x y y z z
+    A a B b C c D d E e F f G
+    g H h I i J j K k L l M m
+    N n O o P p Q q R r S s T
+    t U u V v W w X x Y y Z z
     Α α Β β Γ γ Δ δ Ε ε Ζ ζ Η
     η Θ θ Ι ι Κ κ Λ λ Μ μ Ν ν
     Ξ ξ Ο ο Π π Ρ ρ Σ σ ς Τ τ
