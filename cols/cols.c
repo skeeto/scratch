@@ -427,14 +427,16 @@ xgetopt(int argc, char * const argv[], const char *optstring)
     }
 }
 
-static void
+static int
 usage(FILE *f)
 {
-    fprintf(f, "usage: cols [-Ch] [-W INT] [-w INT]\n");
-    fprintf(f, "  -C      print lines in column-order\n");
-    fprintf(f, "  -h      display usage information\n");
-    fprintf(f, "  -W INT  desired line width [80]\n");
-    fprintf(f, "  -w INT  desired column width [auto]\n");
+    static const char usage[] =
+    "usage: cols [-Ch] [-W INT] [-w INT]\n"
+    "  -C      print lines in column-order\n"
+    "  -h      display usage information\n"
+    "  -W INT  desired line width [80]\n"
+    "  -w INT  desired column width [auto]\n";
+    return fwrite(usage, sizeof(usage)-1, 1, f) && !fflush(f);
 }
 
 /* Like main(), but returns a static error string.
@@ -468,8 +470,7 @@ run(int argc, char **argv)
                   }
                   conf.twidth = value;
                   break;
-        case 'h': usage(stdout);
-                  return 0;
+        case 'h': return usage(stdout) ? 0 : "write error";
         case 'w': errno = 0;
                   value = strtol(xoptarg, &end, 10);
                   if (errno || *end || value < 1) {
