@@ -368,7 +368,7 @@ print_by_col(char *buf, size_t buflen, struct conf conf)
                 blen += btmp & mask;  dlen += dtmp & mask;
                 blen &= keep;         dlen &= keep;
                 btmp &= keep & ~mask; dtmp &= keep & ~mask;
-                beg = (beg&keep) | ((i+1)&~keep);
+                beg = (beg&keep) | ((cursors[i]+1)&~keep);
                 cursors[i] += clen;
             }
         }
