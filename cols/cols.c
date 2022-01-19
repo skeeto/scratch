@@ -487,6 +487,11 @@ run(int argc, char **argv)
         }
     }
 
+    if (argc > xoptind) {
+        usage(stderr);
+        return "too many arguments";
+    }
+
     buf = slurp(&len);
     if (!buf) {
         return ferror(stdin) ? "read error" : "out of memory";
