@@ -1,0 +1,50 @@
+// State machine diagram for chars.c
+// This is free and unencumbered software released into the public domain.
+
+digraph {
+    graph [fontname="sans-serif" rankdir=LR nodesep=0.2]
+    node [fontname="sans-serif" shape=circle fontsize=16]
+    edge [fontname="monospace" arrowsize=0.65 fontsize=14]
+
+    2 [shape=doublecircle]
+    2 -> 0 [label="*"]
+    2 -> 1 [label="0d"]
+    2 -> 3 [label="ef"]
+    2 -> 4 [label="fe"]
+    2 -> 5 [label="ff"]
+
+    subgraph cluster {
+        graph [style=filled color=lightgray]
+
+        0 -> 1 [label="0d"]
+        0 -> 0 [label="*"]
+
+        1 -> 0 [label="*"]
+        1 -> 1 [label="0d"]
+    }
+
+    subgraph cluster8 {
+        graph [style=invis]
+
+        3 -> 0 [label="*"]
+        3 -> 1 [label="0d"]
+        3 -> 6 [label="bb"]
+
+
+        6 -> 0 [label="*"]
+        6 -> 1 [label="0d"]
+        6 -> 0 [label="bf:UTF-8"]
+    }
+
+    subgraph cluster16 {
+        graph [style=invis]
+
+        4 -> 0 [label="*"]
+        4 -> 1 [label="0d"]
+        4 -> 0 [label="ff:16BE"]
+
+        5 -> 0 [label="*"]
+        5 -> 1 [label="0d"]
+        5 -> 1 [label="fe:16LE"]
+    }
+}
