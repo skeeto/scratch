@@ -25,7 +25,42 @@
  */
 static int xwrite(int fd, const char *buf, int len);
 
-#if defined(__unix__) || defined(__APPLE__)
+/* Minimalist build (Linux x86-64)
+ *   $ make CFLAGS="-Os -fno-pie -ffreestanding"
+ *          LDFLAGS="-s -no-pie -nostdlib --Wl,--omagic"
+ * Note: --omagic binaries are much smaller but less compatible
+ */
+#if defined(__linux__) && defined(__amd64) && !__STDC_HOSTED__
+__asm (
+    ".global _start\n"
+    "_start:\n"
+    "   movl  (%rsp), %edi\n"
+    "   lea   8(%rsp), %rsi\n"
+    "   call  main\n"
+    "   movl  %eax, %edi\n"
+    "   movl  $60, %eax\n"
+    "   syscall\n"
+);
+
+static int
+xwrite(int fd, const char *buf, int len)
+{
+    int n = 0;
+    do {
+        long r;
+        __asm volatile (
+            "syscall"
+            : "=a"(r)
+            : "a"(1L), "D"(fd), "S"(buf), "d"(len)
+            : "rcx", "r11", "memory"
+        );
+        if (r < 0) return 0;
+        n += (int)r;
+    } while (n < len);
+    return 1;
+}
+
+#elif defined(__unix__) || defined(__APPLE__)
 #include <unistd.h>
 
 static int
@@ -44,6 +79,48 @@ xwrite(int fd, const char *buf, int len)
 
 #elif defined(_WIN32)
 #include <windows.h>
+
+/* Minimalist build (Windows)
+ *   $ make CFLAGS="-Os -ffreestanding"
+ *          LDFLAGS="-s -nostdlib" LDLIBS="-lkernel32 -lshell32"
+ *   C:\>cl /Os /GS- prips.c
+ */
+#  if defined(_MSC_VER) || !__STDC_HOSTED__
+#  define main oldmain
+#  if defined(_MSC_VER)
+#      pragma comment(lib, "kernel32")
+#      pragma comment(lib, "shell32")
+#      pragma comment(linker, "/subsystem:console")
+#   endif
+int
+mainCRTStartup(void)
+{
+    size_t len;
+    int argc, i;
+    wchar_t **wargv;
+    char **argv, *buf, *p;
+    int main(int, char **);
+
+    wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
+
+    len = (1 + argc)*sizeof(*argv);
+    for (i = 0; i < argc; i++) {
+        len += WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, 0, 0, 0, 0);
+    }
+    buf = LocalAlloc(0, len);
+
+    argv = (char **)buf;
+    p = buf + (1 + argc)*sizeof(*argv);
+    for (i = 0; i < argc; i++) {
+        argv[i] = p;
+        p += WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, p, buf+len-p, 0, 0);
+    }
+    argv[argc] = 0;
+
+    LocalFree(wargv);
+    return main(argc, argv);
+}
+#  endif
 
 static int
 xwrite(int fd, const char *buf, int len)
