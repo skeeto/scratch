@@ -20,6 +20,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Block size used in xmemcpy(). Input and output buffers must have at
+ * least this much overhead in order to accommodate over-copying.
+ *
+ * This has been chosen to match typical SIMD register widths and fit
+ * the common case.
+ */
+#define OVERCOPY 16
+
 #define CONF_DEFAULT {0, 80, 0, 0, 0}
 struct conf {
     size_t cwidth;
@@ -98,7 +106,7 @@ static const int utf8_len[16] = {1,1,1,1,1,1,1,1,1,1,1,1,2,2,3,4};
 static char *
 slurp(size_t *len)
 {
-    size_t cap, z;
+    size_t cap, z, w;
     char *buf = 0;
 
     for (*len = 0, cap = 1<<11; cap; cap *= 2) {
@@ -110,12 +118,21 @@ slurp(size_t *len)
         }
         buf = p;
 
-        z = fread(buf+*len, 1, cap-*len, stdin);
+        w = cap - *len;
+        z = fread(buf+*len, 1, w, stdin);
         *len += z;
-        if (z < cap-*len) {
+        if (z < w) {
             if (feof(stdin)) {
                 /* Guaranteed newline simplifies processing */
                 buf[(*len)++] = 0x0a;
+                if (cap - *len < OVERCOPY) {
+                    cap += OVERCOPY;
+                    p = realloc(buf, cap);
+                    if (!p) {
+                        free(buf);
+                    }
+                    buf = p;
+                }
                 return buf;
             }
             *len = 0;
@@ -187,18 +204,45 @@ io_flush(void)
     return !fflush(stdout);
 }
 
+/* Like memcpy(), but may copy OVERCOPY extra bytes.
+ *
+ * This program's buffers are slightly larger than necessary in order to
+ * accommodate over-copying. It eliminates a significant constraint on
+ * memcpy(), and also prevents this function from being replaced with a
+ * slow memcpy().
+ *
+ * Since this function is never called with a zero length, in practice
+ * it over-copies by at most OVERCOPY-1 bytes.
+ *
+ * In the common case, columns are small enough that a single iteration
+ * suffices, which is quick and friendly to branch prediction.
+ *
+ * Aliasing is not an issue. When inlined, there's enough context to
+ * prove that no aliasing occurs. It's also mitigated by block copying.
+ *
+ * In some toolchains with slow memcpy(), such as musl, the original
+ * memcpy() calls were the primary bottlenecks for the entire program.
+ * This resolves that issue.
+ */
+static void
+xmemcpy(char *dst, const char *src, size_t len)
+{
+    char buf[OVERCOPY];
+    size_t n = 0;
+    do {
+        memcpy(buf, src+n, sizeof(buf));
+        memcpy(dst+n, buf, sizeof(buf));
+        n += sizeof(buf);
+    } while (n < len);
+}
+
 /* Buffered write to standard output, returning 0 on error.
  */
 static int
 io_write(const char *buf, size_t size)
 {
-    /* NOTE: In some toolchains, such as musl, the memcpy() calls here
-     * are the primary bottlenecks for the entire program, worse than
-     * stdio (which has otherwise already been mitigated).
-     */
-
-    if (sizeof(io_buf)-1-io_len > size) {
-        memcpy(io_buf+io_len, buf, size);
+    if (sizeof(io_buf)-OVERCOPY-io_len > size) {
+        xmemcpy(io_buf+io_len, buf, size);
         io_len += size;
         return 1;
     }
@@ -207,11 +251,11 @@ io_write(const char *buf, size_t size)
         return 0;
     }
 
-    if (size >= sizeof(io_buf)-1) {
+    if (size >= sizeof(io_buf)-OVERCOPY) {
         return fwrite(buf, size, 1, stdout);
     }
 
-    memcpy(io_buf, buf, size);
+    xmemcpy(io_buf, buf, size);
     io_len = size;
     return 1;
 }
