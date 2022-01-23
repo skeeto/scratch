@@ -27,7 +27,7 @@ static int xwrite(int fd, const char *buf, int len);
 
 /* Minimalist build (Linux x86-64)
  *   $ make CFLAGS="-Os -fno-pie -ffreestanding"
- *          LDFLAGS="-s -no-pie -nostdlib --Wl,--omagic"
+ *          LDFLAGS="-s -no-pie -nostdlib -Wl,--omagic"
  * Note: --omagic binaries are much smaller but less compatible
  */
 #if defined(__linux__) && defined(__amd64) && !__STDC_HOSTED__
