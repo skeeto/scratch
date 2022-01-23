@@ -1,6 +1,9 @@
 .POSIX:
-CC     = cc -std=c99
-CFLAGS = -Wall -Wextra -O3 -march=native -g3
+CC      = cc -std=c99
+CFLAGS  = -Wall -Wextra -O3 -march=native -g3
+LDFLAGS =
+LDLIBS  =
+
 all: tests speckcrypt
 speckcrypt: speckcrypt.c speck.h
 	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ speckcrypt.c $(LDLIBS)

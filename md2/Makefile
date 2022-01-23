@@ -1,6 +1,8 @@
 .POSIX:
-CC = cc
-CFLAGS = -ansi -pedantic -Wall -Wextra -O3
+CC      = cc
+CFLAGS  = -ansi -pedantic -Wall -Wextra -O3
+LDFLAGS =
+LDLIBS  =
 
 all: tests/md2sum tests/tests
 

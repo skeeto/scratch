@@ -1,3 +1,4 @@
+.POSIX:
 CC      = cc
 CFLAGS  = -std=c99 -pedantic \
     -Ofast -march=native \

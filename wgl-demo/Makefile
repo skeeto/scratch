@@ -1,3 +1,4 @@
+.POSIX:
 CC      = x86_64-w64-mingw32-gcc
 CFLAGS  = -std=c99 -Os -ffreestanding -Wall -Wextra -Werror \
     -fno-stack-check -fno-stack-protector -mno-stack-arg-probe \

@@ -1,5 +1,8 @@
-CFLAGS = -std=c99 -Wall
-LDLIBS = -lm
+.POSIX:
+CC      = cc
+CFLAGS  = -std=c99 -Wall
+LDLIBS  = -lm
+LDLIBS  =
 
 bloom : bloom.o main.o
 

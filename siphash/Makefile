@@ -1,3 +1,4 @@
+.POSIX:
 CC      = cc
 CFLAGS  = -g -Og -fsanitize=address -fsanitize=undefined -Wall -Wextra
 LDFLAGS = -fsanitize=address -fsanitize=undefined

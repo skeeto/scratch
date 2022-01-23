@@ -1,3 +1,4 @@
+.POSIX:
 CC      = cc
 CFLAGS  = -O3 -march=native -Wall -Wextra
 LDFLAGS =

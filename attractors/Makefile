@@ -1,3 +1,4 @@
+.POSIX:
 CC      = cc
 CFLAGS  = -Wall -Wextra -Wdouble-promotion -Ofast
 LDFLAGS = -s
