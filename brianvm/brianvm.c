@@ -15,7 +15,7 @@
 #include <windows.h>
 #include <ntsecapi.h>
 
-int WINAPI
+int
 mainCRTStartup(void)
 {
     DWORD u;
