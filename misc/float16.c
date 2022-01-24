@@ -71,24 +71,6 @@ f16_to_f64(uint16_t x)
 #include <stdio.h>
 #include "table.h"
 
-// # python table.py >table.h
-// import math
-// import struct
-// print("#include <math.h>\n")
-// print(f"static const double f16[{1<<16}] = {{\n    ", end="")
-// for i in range(1<<16):
-//     f = struct.unpack(">e", struct.pack(">H", i))[0]
-//     if math.isnan(f):
-//         s = "NAN"
-//     elif not math.isfinite(f):
-//         s = "INFINITY" if f > 0 else "-INFINITY"
-//     else:
-//         s = f.hex()
-//     print(f"{s:>22},", end="")
-//     if i%3 == 2:
-//         print("\n    ",end="")
-// print("\n};")
-
 int
 main(void)
 {
@@ -106,5 +88,26 @@ main(void)
             return 1;
         }
     }
+    puts("All tests pass.");
 }
+
+#if 0  // :.,$w !python >table.h
+# python table.py >table.h
+import math
+import struct
+print("#include <math.h>\n")
+print(f"static const double f16[{1<<16}] = {{\n    ", end="")
+for i in range(1<<16):
+    f = struct.unpack(">e", struct.pack(">H", i))[0]
+    if math.isnan(f):
+        s = "NAN"
+    elif not math.isfinite(f):
+        s = "INFINITY" if f > 0 else "-INFINITY"
+    else:
+        s = f.hex()
+    print(f"{s:>22},", end="")
+    if i%3 == 2:
+        print("\n    ",end="")
+print("\n};")
+#endif
 #endif
