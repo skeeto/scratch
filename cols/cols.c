@@ -26,7 +26,9 @@
  * This has been chosen to match typical SIMD register widths and fit
  * the common case.
  */
-#define OVERCOPY 16
+#ifndef OVERCOPY
+#  define OVERCOPY 16
+#endif
 
 #define CONF_DEFAULT {0, 80, 0, 0, 0}
 struct conf {
@@ -204,6 +206,7 @@ io_flush(void)
     return !fflush(stdout);
 }
 
+#if OVERCOPY > 1
 /* Like memcpy(), but may copy OVERCOPY extra bytes.
  *
  * This program's buffers are slightly larger than necessary in order to
@@ -235,6 +238,9 @@ xmemcpy(char *dst, const char *src, size_t len)
         n += sizeof(buf);
     } while (n < len);
 }
+#else
+#  define xmemcpy memcpy
+#endif
 
 /* Buffered write to standard output, returning 0 on error.
  */
