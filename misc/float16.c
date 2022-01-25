@@ -13,7 +13,7 @@ f64_to_f16(double f)
     int m = (b >> 42) & 0x3ff;
 
     if (e == -1023) {
-        return s;  // input is denormal, round to zero
+        e = m = 0;  // input is denormal, round to zero;
     } else if (e < -14) {
         // convert to denormal
         m |= 0x400;
@@ -25,7 +25,7 @@ f64_to_f16(double f)
         m = (m>>1) + (m&1);  // round
         e = 0;
     } else if (e > +16) {
-        return s|0x7c00|m;  // overflow to infinity
+        e = 31;  // nan / overflow to infinity
     } else {
         e += 15;
     }
