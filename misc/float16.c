@@ -25,7 +25,9 @@ f64_to_f16(double f)
         m = (m>>1) + (m&1);  // round
         e = 0;
     } else if (e > +16) {
-        e = 31;  // nan / overflow to infinity
+        // NaN / overflow to infinity
+        m &= 0x200;  // force quiet NaN
+        e = 31;
     } else {
         e += 15;
     }
@@ -53,7 +55,8 @@ f16_to_f64(uint16_t x)
                   m &= 0x3ff;
               }
               break;
-    case +16: e = 2047;
+    case +16: m = !!m << 9;  // force quiet NaN
+              e = 2047;
               break;
     default:  e += 1023;
     }
