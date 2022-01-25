@@ -9,20 +9,21 @@ f64_to_f16(double f)
     uint64_t b;
     memcpy(&b, &f, 8);
     int s = (b>>48 & 0x8000);
-    int e = (b>>52 & 0x7ff) - 1023;
-    int m = (b >> 42) & 0x3ff;
+    int e = (b>>52 & 0x07ff) - 1023;
+    int m = (b>>42 & 0x03ff);
 
     if (e == -1023) {
-        e = m = 0;  // input is denormal, round to zero;
+        // input is denormal, round to zero;
+        e = m = 0;
     } else if (e < -14) {
         // convert to denormal
-        m |= 0x400;
         if (-14 - e > 10) {
             m = 0;
         } else {
+            m |= 0x400;
             m >>= -14 - e - 1;
+            m = (m>>1) + (m&1);  // round
         }
-        m = (m>>1) + (m&1);  // round
         e = 0;
     } else if (e > +16) {
         // NaN / overflow to infinity
@@ -32,15 +33,15 @@ f64_to_f16(double f)
         e += 15;
     }
 
-    return s | (e<<10) | m;
+    return s | e<<10 | m;
 }
 
 static double
 f16_to_f64(uint16_t x)
 {
-    int s = x & 0x8000;
-    int e = (x>>10 & 0x1f) - 15;
-    int m = x & 0x3ff;
+    int s = (x     & 0x8000);
+    int e = (x>>10 & 0x001f) - 15;
+    int m = (x     & 0x03ff);
 
     switch (e) {
     case -15: if (!m) {
@@ -61,9 +62,9 @@ f16_to_f64(uint16_t x)
     default:  e += 1023;
     }
 
-    uint64_t b = ((uint64_t)s<<48) |
-                 ((uint64_t)e<<52) |
-                 ((uint64_t)m<<42);
+    uint64_t b = (uint64_t)s<<48 |
+                 (uint64_t)e<<52 |
+                 (uint64_t)m<<42;
     double f;
     memcpy(&f, &b, 8);
     return f;
