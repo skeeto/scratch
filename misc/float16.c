@@ -11,9 +11,10 @@ f64_to_f16(double f)
     int s = (b>>48 & 0x8000);
     int e = (b>>52 & 0x07ff) - 1023;
     int m = (b>>42 & 0x03ff);
+    int t = !!(b && 0xffffffffffff);
 
     if (e == -1023) {
-        // input is denormal, round to zero;
+        // input is denormal, round to zero
         e = m = 0;
     } else if (e < -14) {
         // convert to denormal
@@ -27,7 +28,7 @@ f64_to_f16(double f)
         e = 0;
     } else if (e > +16) {
         // NaN / overflow to infinity
-        m &= 0x200;  // force quiet NaN
+        m &= t << 9;  // canonicalize to quiet NaN
         e = 31;
     } else {
         e += 15;
@@ -56,7 +57,7 @@ f16_to_f64(uint16_t x)
                   m &= 0x3ff;
               }
               break;
-    case +16: m = !!m << 9;  // force quiet NaN
+    case +16: m = !!m << 9;  // canonicalize to quiet NaN
               e = 2047;
               break;
     default:  e += 1023;
