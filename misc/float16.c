@@ -82,7 +82,7 @@ main(void)
             return 1;
         }
 
-        int d = f64_to_f16(w);
+        long d = f64_to_f16(w);
         if (isnan(w) ? !isnan(f16[d]) : d != i) {
             printf("%.17g w=%04lx g=%04x %.17g\n", w, i, d, f16[d]);
             return 1;
