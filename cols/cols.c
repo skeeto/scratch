@@ -365,7 +365,7 @@ print_by_row(char *buf, size_t buflen, struct conf conf)
 static int
 print_by_col(char *buf, size_t buflen, struct conf conf)
 {
-    size_t i, r;
+    size_t col, r;
     size_t nrows;
     size_t *cursors;
 
@@ -376,50 +376,50 @@ print_by_col(char *buf, size_t buflen, struct conf conf)
 
     /* Advance each cursor to the top of each column. */
     nrows = (conf.nlines + conf.ncols - 1) / conf.ncols;
-    for (i = 1; i < conf.ncols; i++) {
+    for (col = 1; col < conf.ncols; col++) {
         /* Don't care about lengths, just counting non-empty lines. */
         size_t nonempty = 0;
-        cursors[i] = cursors[i-1];
+        cursors[col] = cursors[col-1];
         for (r = 0; r < nrows; r++) {
-            while (cursors[i] < buflen) {
-                int b = buf[cursors[i]] & 0xff;
+            while (cursors[col] < buflen) {
+                int b = buf[cursors[col]] & 0xff;
                 size_t clen = utf8_len[b>>4];
                 size_t keep = -(b != 0x0a);
                 if (nonempty & ~keep) {
-                    cursors[i]++;
+                    cursors[col]++;
                     break;
                 }
                 nonempty |= whitespace[b];
-                cursors[i] += clen;
+                cursors[col] += clen;
             }
         }
     }
 
     for (r = 0; r < nrows; r++) {
         /* Like print_by_row but advance each cursor one-by-one. */
-        for (i = 0; i < conf.ncols; i++) {
+        for (col = 0; col < conf.ncols; col++) {
             size_t pad;
             size_t blen = 0;
             size_t dlen = 0;
             size_t btmp = 0;
             size_t dtmp = 0;
-            size_t beg = cursors[i];
+            size_t beg = cursors[col];
 
-            while (cursors[i] < buflen) {
-                int b = buf[cursors[i]] & 0xff;
+            while (cursors[col] < buflen) {
+                int b = buf[cursors[col]] & 0xff;
                 size_t clen = utf8_len[b>>4];
                 size_t mask = whitespace[b];
                 size_t keep = -(b != 0x0a);
 
                 if (dlen & ~keep) {
-                    if (i) {
+                    if (col) {
                         io_push(0x20);
                     }
 
                     pad = conf.cwidth - dlen;
                     switch (conf.align) {
                     case ALIGN_LEFT:
-                        pad = i != conf.ncols-1 ? pad : 0;
+                        pad = col != conf.ncols-1 ? pad : 0;
                         if (!io_write(buf+beg, blen) || !space(pad)) {
                             free(cursors);
                             return 0;
@@ -432,7 +432,7 @@ print_by_col(char *buf, size_t buflen, struct conf conf)
                         }
                     }
 
-                    cursors[i]++;
+                    cursors[col]++;
                     break;
                 }
 
@@ -440,8 +440,8 @@ print_by_col(char *buf, size_t buflen, struct conf conf)
                 blen += btmp & mask;  dlen += dtmp & mask;
                 blen &= keep;         dlen &= keep;
                 btmp &= keep & ~mask; dtmp &= keep & ~mask;
-                beg = (beg&keep) | ((cursors[i]+1)&~keep);
-                cursors[i] += clen;
+                beg = (beg&keep) | ((cursors[col]+1)&~keep);
+                cursors[col] += clen;
             }
         }
         io_push(0x0a);
