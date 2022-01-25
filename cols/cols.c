@@ -30,13 +30,14 @@
 #  define OVERCOPY 16
 #endif
 
-#define CONF_DEFAULT {0, 80, 0, 0, 0}
+#define CONF_DEFAULT {0, 80, 0, 0, 0, 0}
 struct conf {
     size_t cwidth;
     size_t twidth;
     size_t ncols;
     size_t nlines;
     size_t widest;
+    enum align {ALIGN_LEFT, ALIGN_RIGHT} align;
 };
 
 /* Byte table where whitespace is zero. Sign-extension of signed char
@@ -266,16 +267,16 @@ io_write(const char *buf, size_t size)
     return 1;
 }
 
-/* Append one newline to the end of the output buffer.
+/* Append one byte to the end of the output buffer.
  *
  * Always succeeds, but cannot be called twice in a row, without
  * io_write() or io_flush() in between. This is needed frequently, and
  * making it a special case allows for greater efficiency.
  */
 static void
-io_newline(void)
+io_push(int b)
 {
-    io_buf[io_len++] = 0x0a;
+    io_buf[io_len++] = b;
 }
 
 /* Write the given number of spaces to standard output.
@@ -302,6 +303,7 @@ static int
 print_by_row(char *buf, size_t buflen, struct conf conf)
 {
     size_t i;
+    size_t pad;
     size_t beg = 0;
     size_t col = 0;
     size_t blen = 0;  /* byte length   */
@@ -321,17 +323,26 @@ print_by_row(char *buf, size_t buflen, struct conf conf)
         size_t keep = -(b != 0x0a);
 
         if (dlen & ~keep) {
-            if (!io_write(buf+beg, blen)) {
-                return 0;
-            }
-
-            if (++col == conf.ncols) {
-                io_newline();
-                col = 0;
-            } else {
-                if (!space(conf.cwidth - dlen + 1)) {
+            pad = conf.cwidth - dlen;
+            switch (conf.align) {
+            case ALIGN_LEFT:
+                pad = col != conf.ncols-1 ? pad : 0;
+                if (!io_write(buf+beg, blen) || !space(pad)) {
                     return 0;
                 }
+                break;
+            case ALIGN_RIGHT:
+                if (!space(pad) || !io_write(buf+beg, blen)) {
+                    return 0;
+                }
+            }
+
+            if (col == conf.ncols-1) {
+                col = 0;
+                io_push(0x0a);
+            } else {
+                col++;
+                io_push(0x20);
             }
         }
 
@@ -344,7 +355,7 @@ print_by_row(char *buf, size_t buflen, struct conf conf)
     }
 
     if (col) {
-        io_newline();
+        io_push(0x0a);
     }
     return io_flush();
 }
@@ -387,6 +398,7 @@ print_by_col(char *buf, size_t buflen, struct conf conf)
     for (r = 0; r < nrows; r++) {
         /* Like print_by_row but advance each cursor one-by-one. */
         for (i = 0; i < conf.ncols; i++) {
+            size_t pad;
             size_t blen = 0;
             size_t dlen = 0;
             size_t btmp = 0;
@@ -400,16 +412,26 @@ print_by_col(char *buf, size_t buflen, struct conf conf)
                 size_t keep = -(b != 0x0a);
 
                 if (dlen & ~keep) {
-                    if (!io_write(buf+beg, blen)) {
-                        free(cursors);
-                        return 0;
+                    if (i) {
+                        io_push(0x20);
                     }
-                    if (i != conf.ncols-1) {
-                        if (!space(conf.cwidth - dlen + 1)) {
+
+                    pad = conf.cwidth - dlen;
+                    switch (conf.align) {
+                    case ALIGN_LEFT:
+                        pad = i != conf.ncols-1 ? pad : 0;
+                        if (!io_write(buf+beg, blen) || !space(pad)) {
+                            free(cursors);
+                            return 0;
+                        }
+                        break;
+                    case ALIGN_RIGHT:
+                        if (!space(pad) || !io_write(buf+beg, blen)) {
                             free(cursors);
                             return 0;
                         }
                     }
+
                     cursors[i]++;
                     break;
                 }
@@ -422,7 +444,7 @@ print_by_col(char *buf, size_t buflen, struct conf conf)
                 cursors[i] += clen;
             }
         }
-        io_newline();
+        io_push(0x0a);
     }
 
     free(cursors);
@@ -481,9 +503,10 @@ static int
 usage(FILE *f)
 {
     static const char usage[] =
-    "usage: cols [-Ch] [-W INT] [-w INT]\n"
+    "usage: cols [-Chr] [-W INT] [-w INT]\n"
     "  -C      print lines in column-order\n"
     "  -h      display usage information\n"
+    "  -r      right-align columns\n"
     "  -W INT  desired line width [80]\n"
     "  -w INT  desired column width [auto]\n";
     return fwrite(usage, sizeof(usage)-1, 1, f) && !fflush(f);
@@ -509,7 +532,7 @@ run(int argc, char **argv)
     _setmode(1, 0x8000);
     #endif
 
-    while ((option = xgetopt(argc, argv, ":CW:hw:")) != -1) {
+    while ((option = xgetopt(argc, argv, ":CW:hrw:")) != -1) {
         switch (option) {
         case 'C': mode = MODE_CORDER;
                   break;
@@ -521,6 +544,8 @@ run(int argc, char **argv)
                   conf.twidth = value;
                   break;
         case 'h': return usage(stdout) ? 0 : "write error";
+        case 'r': conf.align = ALIGN_RIGHT;
+                  break;
         case 'w': errno = 0;
                   value = strtol(xoptarg, &end, 10);
                   if (errno || *end || value < 1) {

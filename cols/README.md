@@ -23,11 +23,12 @@ these all correctly anyways.)
 
 ## Usage
 
-Usage information is printed with `-h`:
+Print usage information with `-h`:
 
-    usage: cols [-Ch] [-W INT] [-w INT]
+    usage: cols [-Chr] [-W INT] [-w INT]
       -C      print lines in column-order
       -h      display usage information
+      -r      right-align columns
       -W INT  desired line width [80]
       -w INT  desired column width [auto]
 
