@@ -46,7 +46,7 @@ int main(void)
         }
         putchar(c);
     }
-    return !(!fflush(stdout) && !ferror(stdout) && !ferror(stdin));
+    return !(!ferror(stdin) && !fflush(stdout) && !ferror(stdout));
 }
 
 #else
