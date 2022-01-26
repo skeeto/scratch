@@ -25,7 +25,7 @@ int main(void)
                 case '\'': state = 6; break;
                 case '/' : state = 4; c = '*';
                 } break;
-        case 4: switch (c) {        // inside C++ comment
+        case 4: switch (c) {       // inside C++ comment
                 case '\\': state = 5; break;
                 case '\n': state = 0; fwrite(" */", 3, 1, stdout);
                 } break;
