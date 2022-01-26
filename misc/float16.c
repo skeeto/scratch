@@ -4,7 +4,7 @@
 #include <string.h>
 
 static uint16_t
-f64_to_f16(double f)
+float16_64(double f)
 {
     uint64_t b;
     memcpy(&b, &f, 8);
@@ -38,7 +38,7 @@ f64_to_f16(double f)
 }
 
 static double
-f16_to_f64(uint16_t x)
+float64_16(uint16_t x)
 {
     int s = (x     & 0x8000);
     int e = (x>>10 & 0x001f) - 15;
@@ -81,13 +81,13 @@ main(void)
 {
     for (long i = 0; i < 1L<<16; i++) {
         double w = f16[i];
-        double g = f16_to_f64(i);
+        double g = float64_16(i);
         if (!((isnan(w) && isnan(g)) || w == g)) {
             printf("%04lx w=%.17g g=%.17g\n", i, w, g);
             return 1;
         }
 
-        long d = f64_to_f16(w);
+        long d = float16_64(w);
         if (isnan(w) ? !isnan(f16[d]) : d != i) {
             printf("%.17g w=%04lx g=%04x %.17g\n", w, i, d, f16[d]);
             return 1;
