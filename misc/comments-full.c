@@ -9,8 +9,8 @@ int main(void)
         switch (state) {
         case 0: switch (c) {       // outside string/comment
                 case '"' : state = 1; break;
-                case '\'': state = 6; break;
-                case '/' : state = 3;
+                case '/' : state = 3; break;
+                case '\'': state = 6;
                 } break;
         case 1: switch (c) {       // inside string
                 case '"' : state = 0; break;
@@ -19,7 +19,9 @@ int main(void)
         case 2: state = 1; break;  // escape in string
         case 3: switch (c) {       // inside open C/C++ comment token
                 default  : state = 0; break;
+                case '"' : state = 1; break;
                 case '*' : state = 8; break;
+                case '\'': state = 6; break;
                 case '/' : state = 4; c = '*';
                 } break;
         case 4: switch (c) {        // inside C++ comment
@@ -36,8 +38,9 @@ int main(void)
                 case '*' : state = 9;
                 } break;
         case 9: switch (c) {       // inside close C comment token
+                default  : state = 8; break;
                 case '/' : state = 0; break;
-                default  : state = 8;
+                case '*' : state = 9;
                 } break;
         }
         putchar(c);
