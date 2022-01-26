@@ -11,9 +11,9 @@ int main(void)
     };
     for (int s = 0, c = getchar(); c != EOF; c = getchar()) {
         int n = t[s][c] + t[10][s];
-        switch (s*16 + n) {
-        case 0x34: c = 0x2a; break;
-        case 0x40: fwrite("\x20\x2a\x2f", 3, 1, stdout);
+        switch (s*8 + n) {
+        case 034: c = 0x2a; break;
+        case 040: fwrite("\x20\x2a\x2f", 3, 1, stdout);
         }
         putchar(c);
         s = n;
