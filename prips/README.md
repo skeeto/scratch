@@ -66,5 +66,33 @@ The original does not check for errors, so you won't know when it fails:
     $ prips 127.0.0.0/8 >/dev/full && echo success
     success
 
+## Special, minimalist builds
+
+This program is incredibly portable and requires no runtime, only needing
+access to its command line arguments and a write system call. It can be
+built for Linux (x86-64) and Windows (any) without linking against libc or
+a CRT.
+
+Linux (x86-64):
+
+    $ make CC=x86_64-w64-mingw32-gcc \
+           CFLAGS="-Os -fno-pie -ffreestanding" \
+           LDFLAGS="-s -no-pie -nostdlib -Wl,--omagic"
+
+Note: `--omagic` binaries are much smaller but less compatible, so you may
+want to exclude this option.
+
+Mingw-w64:
+
+    $ make CC=x86_64-w64-mingw32-gcc \
+           CFLAGS="-Os -ffreestanding" \
+           LDFLAGS="-s -nostdlib" \
+           LDLIBS="-lkernel32 -lshell32" \
+           EXE=.exe
+
+MSVC:
+
+    C:\>cl /Os /GS- prips.c
+
 
 [prips]: https://devel.ringlet.net/sysutils/prips/
