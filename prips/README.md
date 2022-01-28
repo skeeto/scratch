@@ -75,7 +75,7 @@ a CRT.
 
 Linux (x86-64):
 
-    $ make CC=x86_64-w64-mingw32-gcc \
+    $ make CC=x86_64-linux-gnu-gcc \
            CFLAGS="-Os -fno-pie -ffreestanding" \
            LDFLAGS="-s -no-pie -nostdlib -Wl,--omagic"
 
