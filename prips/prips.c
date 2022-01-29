@@ -592,7 +592,7 @@ xgetopt(int argc, char * const argv[], const char *optstring)
     }
 }
 
-static void
+static int
 usage(int fd)
 {
     static const char usage[] =
@@ -603,7 +603,7 @@ usage(int fd)
     "  -h       print this usage information\n"
     "  -i N     increment between addresses [1]\n"
     "  -e SPEC  exclude addresses with specific octets\n";
-    xwrite(fd, usage, sizeof(usage)-1);
+    return xwrite(fd, usage, sizeof(usage)-1);
 }
 
 /* Like main(), but returns a static error string on error.
@@ -638,8 +638,7 @@ run(int argc, char **argv)
                 return errwrap("-f: invalid format", xoptarg);
             } break;
         case 'h':
-            usage(1);
-            return 0;
+            return usage(1) ? 0 : "write error";
         case 'i':
             increment = uint32_parse(xoptarg, 0xffffffff, &err);
             if (err) {
