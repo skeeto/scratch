@@ -25,12 +25,8 @@
  */
 static int xwrite(int fd, const char *buf, int len);
 
-/* Minimalist build (Linux x86-64)
- *   $ make CFLAGS="-Os -fno-pie -ffreestanding"
- *          LDFLAGS="-s -no-pie -nostdlib -Wl,--omagic"
- * Note: --omagic binaries are much smaller but less compatible
- */
-#if defined(__linux__) && defined(__amd64) && !__STDC_HOSTED__
+#if defined(__linux__) && !__STDC_HOSTED__
+#  if defined(__amd64)
 __asm (
     ".global _start\n"
     "_start:\n"
@@ -42,26 +38,52 @@ __asm (
     "   syscall\n"
 );
 
-static int
-xwrite(int fd, const char *buf, int len)
+static long
+write(int fd, const void *buf, unsigned long len)
 {
-    int n = 0;
-    do {
-        long r;
-        __asm volatile (
-            "syscall"
-            : "=a"(r)
-            : "a"(1L), "D"(fd), "S"(buf), "d"(len)
-            : "rcx", "r11", "memory"
-        );
-        if (r < 0) return 0;
-        n += (int)r;
-    } while (n < len);
-    return 1;
+    long r;
+    __asm volatile (
+        "syscall"
+        : "=a"(r)
+        : "a"(1), "D"(fd), "S"(buf), "d"(len)
+        : "rcx", "r11", "memory"
+    );
+    return r;
 }
 
-#elif defined(__unix__) || defined(__APPLE__)
-#include <unistd.h>
+#  elif defined(__aarch64__)
+__asm (
+    ".global _start\n"
+    "_start:\n"
+    "    ldr  w0, [sp]\n"
+    "    add  x1, sp, 8\n"
+    "    bl   main\n"
+    "    mov  w8, 93\n"
+    "    svc  0\n"
+);
+
+static long
+write(int fd, const void *buf, unsigned long len)
+{
+    register long x0 __asm("x0") = fd;
+    register long x1 __asm("x1") = (long)buf;
+    register long x2 __asm("x2") = (long)len;
+    register long x8 __asm("x8") = 64;
+    __asm volatile (
+        "svc 0"
+        : "=r"(x0)
+        : "r"(x8), "r"(x0), "r"(x1), "r"(x2)
+        : "memory"
+    );
+    return x0;
+}
+#  endif  /* __aarch64__ */
+#endif  /* !__STDC_HOSTED__ */
+
+#if defined(__unix__) || defined(__APPLE__)
+#  if __STDC_HOSTED__
+#    include <unistd.h>
+#  endif
 
 static int
 xwrite(int fd, const char *buf, int len)
@@ -69,10 +91,8 @@ xwrite(int fd, const char *buf, int len)
     int n = 0;
     do {
         int r = write(fd, buf+n, len-n);
-        switch (r) {
-        case -1: return 0;
-        default: n += r;
-        }
+        if (r < 0) return 0;
+        n += r;
     } while (n < len);
     return 1;
 }

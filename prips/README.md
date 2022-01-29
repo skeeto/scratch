@@ -73,13 +73,13 @@ access to its command line arguments and a write system call. It can be
 built for Linux (x86-64) and Windows (any) without linking against libc or
 a CRT.
 
-Linux (x86-64):
+Linux (x86-64 and Aarch64):
 
-    $ make CC=x86_64-linux-gnu-gcc \
-           CFLAGS="-Os -fno-pie -ffreestanding" \
+    $ make CFLAGS="-Os -fno-pie -ffreestanding" \
            LDFLAGS="-s -no-pie -nostdlib -Wl,--omagic"
 
-Note: `--omagic` binaries are much smaller but less compatible, so you may
+Note: GCC may emit a `memset` for Aarch64, which will need to be defined.
+Also, `--omagic` binaries are much smaller but less compatible, so you may
 want to exclude this option.
 
 Mingw-w64:
