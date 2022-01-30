@@ -398,10 +398,10 @@ main(void)
 {
     char buf[1<<15], cmd[1<<12];
     struct jsonb b[1] = JSONB_INIT;
-    int i, r, cmdlen, len = sizeof(buf)-1;
+    int i, r = 0, cmdlen, len = sizeof(buf)-1;
 
     cmdlen = fread(cmd, 1, sizeof(cmd), stdin);
-    for (i = 0; i < cmdlen; i++) {
+    for (i = 0; !r && i < cmdlen; i++) {
         int c = cmd[i] & 0xff;
         switch (c) {
         case  0: r = jsonb_push_object(b, buf, len);        break;
@@ -419,14 +419,11 @@ main(void)
                      i += c - 8;
                  }
         }
-        if (r < 0) {
-            return 1;
-        }
     }
 
     buf[b->offset] = '\n';
     fwrite(buf, b->offset+1, 1, stdout);
     fflush(stdout);
-    return !ferror(stdin) && !ferror(stdout);
+    return !(!ferror(stdin) && !ferror(stdout) && !r && JSONB_DONE(*b));
 }
 #endif
