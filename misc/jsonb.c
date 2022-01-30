@@ -391,4 +391,49 @@ main(void)
     fwrite(buf, b->offset, 1, stdout);
     return 0;
 }
+
+#elif FUZZ
+/* Usage:
+ *   $ mkdir in
+ *   $ printf '\x02\x04\x05\x06\x00\x0ahi\x07\x01\x03' >in/example
+ *   $ afl-gcc -DFUZZ -m32 -Os -fsanitize=address,undefined jsonb.c
+ *   $ afl-fuzz -m800 -i in -o out -- ./a.out
+ */
+
+int
+main(void)
+{
+    char buf[1<<15], cmd[1<<12];
+    struct jsonb b[1] = JSONB_INIT;
+    int i, r, cmdlen, len = sizeof(buf)-1;
+
+    cmdlen = fread(cmd, 1, sizeof(cmd), stdin);
+    for (i = 0; i < cmdlen; i++) {
+        int c = cmd[i] & 0xff;
+        switch (c) {
+        case  0: r = jsonb_push_object(b, buf, len);        break;
+        case  1: r = jsonb_pop_object(b, buf, len);         break;
+        case  2: r = jsonb_push_array(b, buf, len);         break;
+        case  3: r = jsonb_pop_array(b, buf, len);          break;
+        case  4: r = jsonb_push_bool(b, buf, len, 0);       break;
+        case  5: r = jsonb_push_bool(b, buf, len, 1);       break;
+        case  6: r = jsonb_push_null(b, buf, len);          break;
+        case  7: r = jsonb_push_number(b, buf, len, i/3.0); break;
+        default: if (c-8 > cmdlen - i - 1) {
+                     r = JSONB_INVALID;
+                 } else {
+                     r = jsonb_push_string(b, buf, len, cmd+i+1, c-8);
+                     i += c - 8;
+                 }
+        }
+        if (r < 0) {
+            return 1;
+        }
+    }
+
+    buf[b->offset] = '\n';
+    fwrite(buf, b->offset+1, 1, stdout);
+    fflush(stdout);
+    return !ferror(stdin) && !ferror(stdout);
+}
 #endif
