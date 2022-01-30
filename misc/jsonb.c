@@ -226,6 +226,8 @@ jsonb_push_string(struct jsonb *b, char *buf, size_t len, char *s, size_t slen)
     buf[b->offset++] = '"';
     for (i = 0; i < slen; i++) {
         switch (lens[s[i]&0xff]) {
+        case 1: buf[b->offset++] = s[i];
+                break;
         case 2: buf[b->offset++] = '\\';
                 switch (s[i]) {
                 case '\"': buf[b->offset++] = '"';  break;
@@ -236,8 +238,6 @@ jsonb_push_string(struct jsonb *b, char *buf, size_t len, char *s, size_t slen)
                 case '\t': buf[b->offset++] = 't';  break;
                 case '\r': buf[b->offset++] = 'r';  break;
                 }
-                break;
-        case 1: buf[b->offset++] = s[i];
                 break;
         case 6: buf[b->offset++] = '\\';
                 buf[b->offset++] = 'u';
