@@ -225,18 +225,19 @@ jsonb_push_string(struct jsonb *b, char *buf, size_t len, char *s, size_t slen)
     /* JSON-encode the string */
     buf[b->offset++] = '"';
     for (i = 0; i < slen; i++) {
-        switch (lens[s[i]&0xff]) {
-        case 1: buf[b->offset++] = s[i];
+        int c = s[i] & 0xff;
+        switch (lens[c]) {
+        case 1: buf[b->offset++] = c;
                 break;
         case 2: buf[b->offset++] = '\\';
-                buf[b->offset++] = "..\".....btn.fr..............\\"[s[i]&31];
+                buf[b->offset++] = "..\".....btn.fr..............\\"[c&31];
                 break;
         case 6: buf[b->offset++] = '\\';
                 buf[b->offset++] = 'u';
                 buf[b->offset++] = '0';
                 buf[b->offset++] = '0';
-                buf[b->offset++] = '0' + (s[i] >> 4);
-                buf[b->offset++] = '0' + (s[i] & 15);
+                buf[b->offset++] = '0' + (c >> 4);
+                buf[b->offset++] = '0' + (c & 15);
                 break;
         }
     }
