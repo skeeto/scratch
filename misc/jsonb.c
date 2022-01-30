@@ -42,7 +42,7 @@ enum jsonb_result {
 /* Implementation notes
  *
  * No modifications may be made to any inputs along any path prior to an
- * error return. This ensures the inputs are not modified it something
+ * error return. This ensures the inputs are not modified if something
  * is wrong.
  *
  * Stack state descriptions
