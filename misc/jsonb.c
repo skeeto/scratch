@@ -176,7 +176,7 @@ jsonb_pop_array(struct jsonb *b, char *buf, size_t len)
 static enum jsonb_result
 jsonb_push_string(struct jsonb *b, char *buf, size_t len, char *s, size_t slen)
 {
-    static const unsigned char lens[] = {
+    static const unsigned char lens[256] = {
         6,6,6,6,6,6,6,6,2,2,2,6,2,2,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
         1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
         1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,
@@ -229,15 +229,7 @@ jsonb_push_string(struct jsonb *b, char *buf, size_t len, char *s, size_t slen)
         case 1: buf[b->offset++] = s[i];
                 break;
         case 2: buf[b->offset++] = '\\';
-                switch (s[i]) {
-                case '\"': buf[b->offset++] = '"';  break;
-                case '\\': buf[b->offset++] = '\\'; break;
-                case '\n': buf[b->offset++] = 'n';  break;
-                case '\b': buf[b->offset++] = 'b';  break;
-                case '\f': buf[b->offset++] = 'f';  break;
-                case '\t': buf[b->offset++] = 't';  break;
-                case '\r': buf[b->offset++] = 'r';  break;
-                }
+                buf[b->offset++] = "..\".....btn.fr..............\\"[s[i]&31];
                 break;
         case 6: buf[b->offset++] = '\\';
                 buf[b->offset++] = 'u';
@@ -374,13 +366,13 @@ main(void)
         r |= jsonb_push_bool(b, buf, len, 1);
         r |= jsonb_push_bool(b, buf, len, 0);
         r |= jsonb_push_null(b, buf, len);
-        r |= jsonb_push_string(b, buf, len, "hello", -1);
+        r |= jsonb_push_string(b, buf, len, "\x19\b\t\n\f\r\"\\", -1);
         r |= jsonb_push_number(b, buf, len, 3.141592653589793);
         r |= jsonb_push_object(b, buf, len); {
-            r |= jsonb_push_string(b, buf, len, "key1", -1);
-            r |= jsonb_push_string(b, buf, len, "a\"b", 3);
-            r |= jsonb_push_string(b, buf, len, "key2", -1);
-            r |= jsonb_push_number(b, buf, len, -1234);
+            r |= jsonb_push_string(b, buf, len, "k1", -1);
+            r |= jsonb_push_string(b, buf, len, 0, 0);
+            r |= jsonb_push_string(b, buf, len, "k2", -1);
+            r |= jsonb_push_number(b, buf, len, -123);
         } r |= jsonb_pop_object(b, buf, len);
     } r |= jsonb_pop_array(b, buf, len);
 
