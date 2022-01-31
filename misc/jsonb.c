@@ -399,16 +399,16 @@ main(void)
 /* Usage:
  *   $ mkdir in
  *   $ printf '\x02\x04\x05\x06\x00\x0ahi\x07\x01\x03' >in/example
- *   $ afl-gcc -DFUZZ -m32 -Os -fsanitize=address,undefined jsonb.c
+ *   $ afl-gcc -DFUZZ -DJSONB_MAX_DEPTH=4 -m32 -Os -fsanitize=address,undefined jsonb.c
  *   $ afl-fuzz -m800 -i in -o out -- ./a.out
  */
 
 int
 main(void)
 {
-    char buf[1<<15], cmd[1<<12];
+    char buf[80], cmd[1<<12];
     struct jsonb b[1] = JSONB_INIT;
-    int i, r = 0, cmdlen, len = sizeof(buf)-1;
+    int i, r = 0, cmdlen, len = sizeof(buf);
 
     cmdlen = fread(cmd, 1, sizeof(cmd), stdin);
     for (i = 0; !r && i < cmdlen; i++) {
@@ -431,8 +431,8 @@ main(void)
         }
     }
 
-    buf[b->offset] = '\n';
-    fwrite(buf, b->offset+1, 1, stdout);
+    fwrite(buf, b->offset, 1, stdout);
+    putchar('\n');
     fflush(stdout);
     return !(!ferror(stdin) && !ferror(stdout) && !r && JSONB_DONE(*b));
 }
