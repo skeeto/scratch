@@ -203,17 +203,17 @@ jsonb_push_string(struct jsonb *b, char *buf, size_t len, const char *s, size_t 
     case  0: if (b->offset+n >= len) return JSONB_BUFFER;
              b->stack[b->depth] = 6;
              break;
-    case  1: if (b->offset+n+1 >= len) return JSONB_BUFFER;
+    case  1: if (b->offset+n+2 >= len) return JSONB_BUFFER;
              b->stack[b->depth] = 2;
-             colon = 1;
+             n += colon = 1;
              break;
     case  2: if (b->offset+n >= len) return JSONB_BUFFER;
              b->stack[b->depth] = 3;
              break;
-    case  3: if (b->offset+n+1 >= len) return JSONB_BUFFER;
+    case  3: if (b->offset+n+2 >= len) return JSONB_BUFFER;
              buf[b->offset++] = ',';
              b->stack[b->depth] = 2;
-             colon = 1;
+             n += colon = 1;
              break;
     case  4: if (b->offset+n >= len) return JSONB_BUFFER;
              b->stack[b->depth] = 5;
@@ -222,28 +222,38 @@ jsonb_push_string(struct jsonb *b, char *buf, size_t len, const char *s, size_t 
              buf[b->offset++] = ',';
     }
 
-    /* JSON-encode the string */
-    buf[b->offset++] = '"';
+    /* JSON-encode the string
+     *
+     * The compiler must assume that buf and b alias, and so a store to
+     * one invalidates the other, forcing an unnecessary load. To avoid
+     * extra loads in the loop, don't modify b while copying the string.
+     *
+     * Alternatively this function could use the "restrict" qualifier on
+     * its arguments, but that would reduce portability.
+     */
+    buf += b->offset;
+    b->offset += n;
+    *buf++ = '"';
     for (i = 0; i < slen; i++) {
         int c = s[i] & 0xff;
         switch (lens[c]) {
-        case 1: buf[b->offset++] = c;
+        case 1: *buf++ = c;
                 break;
-        case 2: buf[b->offset++] = '\\';
-                buf[b->offset++] = "..\".....btn.fr..............\\"[c&31];
+        case 2: *buf++ = '\\';
+                *buf++ = "..\".....btn.fr..............\\"[c&31];
                 break;
-        case 6: buf[b->offset++] = '\\';
-                buf[b->offset++] = 'u';
-                buf[b->offset++] = '0';
-                buf[b->offset++] = '0';
-                buf[b->offset++] = '0' + (c >> 4);
-                buf[b->offset++] = '0' + (c & 15);
+        case 6: *buf++ = '\\';
+                *buf++ = 'u';
+                *buf++ = '0';
+                *buf++ = '0';
+                *buf++ = '0' + (c >> 4);
+                *buf++ = '0' + (c & 15);
                 break;
         }
     }
-    buf[b->offset++] = '"';
+    *buf++ = '"';
     if (colon) {
-        buf[b->offset++] = ':';
+        *buf = ':';
     }
     return JSONB_SUCCESS;
 }
