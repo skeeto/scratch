@@ -1544,7 +1544,11 @@ main(void)
         if (r || !JSONB_DONE(*b)||
             (int)b->offset != tests[n].outlen ||
             memcmp(tests[n].out, buf, b->offset)) {
-            printf("FAIL: test #%d\n", n);
+            printf("FAIL: #%d, want '", n);
+            fwrite(tests[n].out, tests[n].outlen, 1, stdout);
+            printf("' got '");
+            fwrite(buf, b->offset, 1, stdout);
+            printf("'\n");
             nfails++;
         }
     }
