@@ -17,7 +17,12 @@
 #  define JSONB_MAX_DEPTH 256
 #endif
 
-/* Must initialize offset, depth, and stack[0] to zero. */
+/* Must initialize offset, depth, and stack[0] to zero.
+ *
+ * It is always safe to flush the output buffer and reset offset to
+ * zero. Aside from resizing the output buffer, this is another way to
+ * increase the available buffer space.
+ */
 #define JSONB_INIT {0}
 struct jsonb {
     size_t offset;
@@ -94,7 +99,7 @@ jsonb_push_object(struct jsonb *b, char *buf, size_t len)
 }
 
 /* Finish writing an object into the buffer. This cannot be called
- * immediately after writing a key, otherwise it return JSONB_INVALID.
+ * immediately after writing a key, otherwise it returns JSONB_INVALID.
  */
 static enum jsonb_result
 jsonb_pop_object(struct jsonb *b, char *buf, size_t len)
@@ -335,7 +340,6 @@ jsonb_push_number(struct jsonb *b, char *buf, size_t len, double v)
                 bestlen = len;
                 memcpy(best, buf, sizeof(buf));
             }
-
         } else {
             break;
         }
