@@ -74,16 +74,16 @@ jsonb_push_object(struct jsonb *b, char *buf, size_t len)
 
     switch (b->stack[b->depth]) {
     default: return JSONB_INVALID;
-    case  0: if (b->offset+0 >= len) return JSONB_BUFFER;
+    case  0: if (b->offset+1 > len) return JSONB_BUFFER;
              b->stack[b->depth++] = 6;
              break;
-    case  2: if (b->offset+0 >= len) return JSONB_BUFFER;
+    case  2: if (b->offset+1 > len) return JSONB_BUFFER;
              b->stack[b->depth++] = 3;
              break;
-    case  4: if (b->offset+0 >= len) return JSONB_BUFFER;
+    case  4: if (b->offset+1 > len) return JSONB_BUFFER;
              b->stack[b->depth++] = 5;
              break;
-    case  5: if (b->offset+1 >= len) return JSONB_BUFFER;
+    case  5: if (b->offset+2 > len) return JSONB_BUFFER;
              buf[b->offset++] = ',';
              b->depth++;
     }
@@ -106,7 +106,7 @@ jsonb_pop_object(struct jsonb *b, char *buf, size_t len)
     switch (b->stack[b->depth]) {
     default: return JSONB_INVALID;
     case  1:
-    case  3: if (b->offset+0 >= len) return JSONB_BUFFER;
+    case  3: if (b->offset+1 > len) return JSONB_BUFFER;
              b->depth--;
     }
 
@@ -124,16 +124,16 @@ jsonb_push_array(struct jsonb *b, char *buf, size_t len)
 
     switch (b->stack[b->depth]) {
     default: return JSONB_INVALID;
-    case  0: if (b->offset+0 >= len) return JSONB_BUFFER;
+    case  0: if (b->offset+1 > len) return JSONB_BUFFER;
              b->stack[b->depth++] = 6;
              break;
-    case  2: if (b->offset+0 >= len) return JSONB_BUFFER;
+    case  2: if (b->offset+1 > len) return JSONB_BUFFER;
              b->stack[b->depth++] = 3;
              break;
-    case  4: if (b->offset+0 >= len) return JSONB_BUFFER;
+    case  4: if (b->offset+1 > len) return JSONB_BUFFER;
              b->stack[b->depth++] = 5;
              break;
-    case  5: if (b->offset+1 >= len) return JSONB_BUFFER;
+    case  5: if (b->offset+2 > len) return JSONB_BUFFER;
              buf[b->offset++] = ',';
              b->depth++;
     }
@@ -154,7 +154,7 @@ jsonb_pop_array(struct jsonb *b, char *buf, size_t len)
     switch (b->stack[b->depth]) {
     default: return JSONB_INVALID;
     case  4:
-    case  5: if (b->offset+0 >= len) return JSONB_BUFFER;
+    case  5: if (b->offset+1 > len) return JSONB_BUFFER;
              b->depth--;
     }
 
@@ -200,25 +200,25 @@ jsonb_push_string(struct jsonb *b, char *buf, size_t len, const char *s, size_t 
 
     switch (b->stack[b->depth]) {
     default: return JSONB_INVALID;
-    case  0: if (b->offset+n >= len) return JSONB_BUFFER;
+    case  0: if (b->offset+n+0 > len) return JSONB_BUFFER;
              b->stack[b->depth] = 6;
              break;
-    case  1: if (b->offset+n+2 >= len) return JSONB_BUFFER;
+    case  1: if (b->offset+n+1 > len) return JSONB_BUFFER;
              b->stack[b->depth] = 2;
              n += colon = 1;
              break;
-    case  2: if (b->offset+n >= len) return JSONB_BUFFER;
+    case  2: if (b->offset+n+0 > len) return JSONB_BUFFER;
              b->stack[b->depth] = 3;
              break;
-    case  3: if (b->offset+n+2 >= len) return JSONB_BUFFER;
+    case  3: if (b->offset+n+2 > len) return JSONB_BUFFER;
              buf[b->offset++] = ',';
              b->stack[b->depth] = 2;
              n += colon = 1;
              break;
-    case  4: if (b->offset+n >= len) return JSONB_BUFFER;
+    case  4: if (b->offset+n+0 > len) return JSONB_BUFFER;
              b->stack[b->depth] = 5;
              break;
-    case  5: if (b->offset+n+1 >= len) return JSONB_BUFFER;
+    case  5: if (b->offset+n+1 > len) return JSONB_BUFFER;
              buf[b->offset++] = ',';
     }
 
@@ -266,16 +266,16 @@ jsonb_push_bool(struct jsonb *b, char *buf, size_t len, int v)
 
     switch (b->stack[b->depth]) {
     default: return JSONB_INVALID;
-    case  0: if (b->offset+n >= len) return JSONB_BUFFER;
+    case  0: if (b->offset+n+0 > len) return JSONB_BUFFER;
              b->stack[b->depth] = 6;
              break;
-    case  2: if (b->offset+n >= len) return JSONB_BUFFER;
+    case  2: if (b->offset+n+0 > len) return JSONB_BUFFER;
              b->stack[b->depth] = 3;
              break;
-    case  4: if (b->offset+n >= len) return JSONB_BUFFER;
+    case  4: if (b->offset+n+0 > len) return JSONB_BUFFER;
              b->stack[b->depth] = 5;
              break;
-    case  5: if (b->offset+n+1 >= len) return JSONB_BUFFER;
+    case  5: if (b->offset+n+1 > len) return JSONB_BUFFER;
              buf[b->offset++] = ',';
     }
 
@@ -294,16 +294,16 @@ jsonb_push_null(struct jsonb *b, char *buf, size_t len)
 {
     switch (b->stack[b->depth]) {
     default: return JSONB_INVALID;
-    case  0: if (b->offset+4 >= len) return JSONB_BUFFER;
+    case  0: if (b->offset+4 > len) return JSONB_BUFFER;
              b->stack[b->depth] = 6;
              break;
-    case  2: if (b->offset+4 >= len) return JSONB_BUFFER;
+    case  2: if (b->offset+4 > len) return JSONB_BUFFER;
              b->stack[b->depth] = 3;
              break;
-    case  4: if (b->offset+4 >= len) return JSONB_BUFFER;
+    case  4: if (b->offset+4 > len) return JSONB_BUFFER;
              b->stack[b->depth] = 5;
              break;
-    case  5: if (b->offset+5 >= len) return JSONB_BUFFER;
+    case  5: if (b->offset+5 > len) return JSONB_BUFFER;
              buf[b->offset++] = ',';
     }
 
@@ -343,16 +343,16 @@ jsonb_push_number(struct jsonb *b, char *buf, size_t len, double v)
 
     switch (b->stack[b->depth]) {
     default: return JSONB_INVALID;
-    case  0: if (b->offset+bestlen >= len) return JSONB_BUFFER;
+    case  0: if (b->offset+bestlen+0 > len) return JSONB_BUFFER;
              b->stack[b->depth] = 6;
              break;
-    case  2: if (b->offset+bestlen >= len) return JSONB_BUFFER;
+    case  2: if (b->offset+bestlen+0 > len) return JSONB_BUFFER;
              b->stack[b->depth] = 3;
              break;
-    case  4: if (b->offset+bestlen >= len) return JSONB_BUFFER;
+    case  4: if (b->offset+bestlen+0 > len) return JSONB_BUFFER;
              b->stack[b->depth] = 5;
              break;
-    case  5: if (b->offset+bestlen+1 >= len) return JSONB_BUFFER;
+    case  5: if (b->offset+bestlen+1 > len) return JSONB_BUFFER;
              buf[b->offset++] = ',';
     }
 
