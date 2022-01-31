@@ -174,7 +174,7 @@ jsonb_pop_array(struct jsonb *b, char *buf, size_t len)
  * Special characters in the string are automatically escaped for JSON.
  */
 static enum jsonb_result
-jsonb_push_string(struct jsonb *b, char *buf, size_t len, char *s, size_t slen)
+jsonb_push_string(struct jsonb *b, char *buf, size_t len, const char *s, size_t slen)
 {
     static const unsigned char lens[256] = {
         6,6,6,6,6,6,6,6,2,2,2,6,2,2,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
