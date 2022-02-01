@@ -1,0 +1,97 @@
+.TH COLS 1
+.SH NAME
+cols \- wrap standard input into columns
+.SH SYNOPSIS
+.B cols
+[\-\fBC\fR]
+[\-\fBh\fR]
+[\-\fBr\fR]
+[\-\fBW\fR INT]
+[\-\fBw\fR INT]
+.SH DESCRIPTION
+.B cols
+reads lines of UTF-8 input from standard input and wraps them into columns.
+It automatically adjusts the column width to accommodate the input.
+The output can be wrapped row-order or column-order, and it can be left-aligned or right-aligned.
+.SH OPTIONS
+.TP
+\fB\-C\fR
+Wrap input in column-order rather than row-order.
+.TP
+\fB\-h\fR
+Print basic usage information to standard output and exit.
+.TP
+\fB\-r\fR
+Right-align contents within columns rather than left-align.
+.TP
+\fB\-W\fR \fIwidth\fR
+Set the desired table width.
+Must be a positive integer.
+(default: 80)
+.TP
+\fB\-w\fR \fIwidth\fR
+Set the minimum column width.
+Must be a positive integer.
+Will be overridden if input is wider.
+.SH ENVIRONMENT
+.B cols
+is not affected by environment variables.
+.SH ENVIRONMENT
+.B cols
+is not affected by any files.
+It strictly operates on standard input and output.
+.SH EXAMPLES
+Wrap some numbers row-order, right-aligned:
+.PP
+.RS 2
+.nf
+.B $ seq 105 -1 1 | ./cols -rW60
+105 104 103 102 101 100  99  98  97  96  95  94  93  92  91
+ 90  89  88  87  86  85  84  83  82  81  80  79  78  77  76
+ 75  74  73  72  71  70  69  68  67  66  65  64  63  62  61
+ 60  59  58  57  56  55  54  53  52  51  50  49  48  47  46
+ 45  44  43  42  41  40  39  38  37  36  35  34  33  32  31
+ 30  29  28  27  26  25  24  23  22  21  20  19  18  17  16
+ 15  14  13  12  11  10   9   8   7   6   5   4   3   2   1
+.fi
+.RE
+.PP
+Wrap some numbers column-order, left-aligned:
+.PP
+.RS 2
+.nf
+.B $ seq 105 -1 1 | ./cols -CW60
+105 98  91  84  77  70  63  56  49  42  35  28  21  14  7
+104 97  90  83  76  69  62  55  48  41  34  27  20  13  6
+103 96  89  82  75  68  61  54  47  40  33  26  19  12  5
+102 95  88  81  74  67  60  53  46  39  32  25  18  11  4
+101 94  87  80  73  66  59  52  45  38  31  24  17  10  3
+100 93  86  79  72  65  58  51  44  37  30  23  16  9   2
+99  92  85  78  71  64  57  50  43  36  29  22  15  8   1
+.fi
+.RE
+.PP
+Unicode-aware column layout:
+.PP
+.RS 2
+.nf
+.B $ cols -W25 <alphabets
+A a B b C c D d E e F f G
+g H h I i J j K k L l M m
+N n O o P p Q q R r S s T
+t U u V v W w X x Y y Z z
+Α α Β β Γ γ Δ δ Ε ε Ζ ζ Η
+η Θ θ Ι ι Κ κ Λ λ Μ μ Ν ν
+Ξ ξ Ο ο Π π Ρ ρ Σ σ ς Τ τ
+Υ υ Φ φ Χ χ Ψ ψ Ω ω
+.fi
+.RE
+.SH "SEE ALSO"
+.BR columns (1), column (1)
+.SH AUTHORS
+Chris Wellons <wellons\[u0040]nullprogram.com>
+.SH BUGS
+.PP
+.B cols
+very roughly supports UTF-8 by assuming each code point has a display width of one.
+This works out well in many common cases, but it will not work with most CJK (i.e. double wide), glyphs composed of multiple code points (combining characters, etc.), or bidirectional text.

@@ -1,8 +1,8 @@
 # `cols`: wrap standard input into columns
 
-Reads lines of input from standard input and wraps it into columns,
-automatically adjusting the column width to accommodate the data. See
-"Examples" below for illustrations. The input can be display row-order or
+Reads lines of input from standard input and wraps them into columns,
+automatically adjusting the column width to accommodate the input. See
+"Examples" below for illustrations. The output can be row-order or
 column-order.
 
 Written in plain old ANSI C, so it works anywhere, from 16-bit DOS to
