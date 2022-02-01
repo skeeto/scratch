@@ -1,0 +1,111 @@
+.TH PRIPS 1
+.SH NAME
+prips \- print IPv4 address ranges
+.SH SYNOPSIS
+.B prips
+[\fIOPTION\fR]...
+\fIfirst-address\fR \fIlast-address\fR
+.br
+.B prips
+[\fIOPTION\fR]...
+\fICIDR-notation\fr
+.SH DESCRIPTION
+.B prips
+is like
+.B seq
+except that it prints IPv4 addresses in a range.
+It accepts either a pair of addresses to start and stop, or CIDR notation.
+It prints one address per line (default), or according to a chosen delimiter.
+Alternatively it can print the narrowest CIDR notation that covers the selected range.
+.SH OPTIONS
+.TP
+\fB\-c\fR
+Print output as a single line of CIDR notation.
+.TP
+\fB\-d\fR \fIdelim\fR
+Select the raw byte value to print between outputs.
+This must be a decimal integer in the range 0 to 255.
+(default: 10)
+.TP
+\fB\-f\fR <\fIdot\fR|\fIhex\fR|\fIdec\fR>
+Select output format for IP addresses.
+(default: dot)
+.TP
+\fB\-h\fR
+Print basic usage information to standard output and exit.
+.TP
+\fB\-i\fR \fIincr\fR
+Set the increment between addresses.
+Must be a positive integer.
+(default: 1)
+.TP
+\fB\-e\fR \fIspec\fR
+Append octets to an internal exclusion table (initially empty).
+Addresses matching the any of the excluded octets will not be output.
+The format is like an IPv4 address, but each octet is a comma-separated list of octets to be excluded.
+Trailing commas are permitted, and empty trailing octets may be omitted.
+This option may appear more than once.
+.SH ENVIRONMENT
+.B prips
+is not affected by environment variables.
+.SH FILES
+.B prips
+is not affected by any files.
+It only writes to standard output and standard error.
+.SH EXAMPLES
+
+.PP
+Print a range of addresses:
+.RS 2
+.nf
+$ prips 127.0.0.0 127.0.0.255
+.fi
+.RE
+
+.PP
+Same, but with CIDR notation:
+.RS 2
+.nf
+$ prips 127.0.0.0/24
+.fi
+.RE
+
+.PP
+Exclude 127.0.0.0 and 127.0.0.255:
+.RS 2
+.nf
+$ prips -e ...0,255 127.0.0.0/24
+.fi
+.RE
+
+.PP
+All but 127.0.0.0/8:
+.RS 2
+.nf
+$ prips -e 127... 0.0.0.0/0
+.fi
+.RE
+
+.PP
+Scan a local network:
+.RS 2
+.nf
+$ prips -e ...255 192.168.1.0/24 |
+      xargs -n1 -P16 host |
+      grep -v NXDOMAIN
+.fi
+.RE
+
+
+.SH "SEE ALSO"
+.BR ipsc(1),
+.BR gipsc(1)
+.SH HISTORY
+This
+.B prips
+is a feature-complete, written-from-scratch clone and drop-in replacement for the original implementation written by Daniel Kelly.
+It's designed to be more correct, more portable, and more efficient than the original.
+.SH AUTHORS
+Chris Wellons <wellons\[u0040]nullprogram.com>
+.SH BUGS
+No known bugs.
