@@ -3,6 +3,7 @@ CC      = cc
 CFLAGS  = -ansi -pedantic -O3 -Wall -Wextra
 LDFLAGS = -s
 LDLIBS  =
+PREFIX  = /usr/local
 
 cols$(EXE): cols.c
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ cols.c $(LDLIBS)
