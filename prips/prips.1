@@ -53,7 +53,6 @@ is not affected by environment variables.
 is not affected by any files.
 It only writes to standard output and standard error.
 .SH EXAMPLES
-
 .PP
 Print a range of addresses:
 .RS 2
@@ -61,7 +60,6 @@ Print a range of addresses:
 $ prips 127.0.0.0 127.0.0.255
 .fi
 .RE
-
 .PP
 Same, but with CIDR notation:
 .RS 2
@@ -69,7 +67,6 @@ Same, but with CIDR notation:
 $ prips 127.0.0.0/24
 .fi
 .RE
-
 .PP
 Exclude 127.0.0.0 and 127.0.0.255:
 .RS 2
@@ -77,7 +74,6 @@ Exclude 127.0.0.0 and 127.0.0.255:
 $ prips -e ...0,255 127.0.0.0/24
 .fi
 .RE
-
 .PP
 All but 127.0.0.0/8:
 .RS 2
@@ -85,7 +81,6 @@ All but 127.0.0.0/8:
 $ prips -e 127... 0.0.0.0/0
 .fi
 .RE
-
 .PP
 Scan a local network:
 .RS 2
@@ -95,8 +90,6 @@ $ prips -e ...255 192.168.1.0/24 |
       grep -v NXDOMAIN
 .fi
 .RE
-
-
 .SH "SEE ALSO"
 .BR ipsc(1),
 .BR gipsc(1)

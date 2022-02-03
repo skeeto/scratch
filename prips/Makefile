@@ -3,6 +3,7 @@ CC      = cc
 CFLAGS  = -ansi -pedantic -Os -Wall -Wextra
 LDFLAGS = -s
 LDLIBS  =
+PREFIX  = /usr/local
 
 prips$(EXE): prips.c
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ prips.c $(LDLIBS)
