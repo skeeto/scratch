@@ -1,0 +1,82 @@
+.TH PNGATTACH 1
+.SH NAME
+pngattach \- attach files to a PNG image as metadata
+.SH SYNOPSIS
+.B pngattach
+\fB-c\fR <\fIpng\fR >\fIpng\fR [\fIfile\fR]...
+.br
+.B pngattach
+\fB-d\fR <\fIpng\fR >\fIpng\fR [\fIfile\fR]...
+.br
+.B pngattach
+\fB-t\fR <\fIpng\fR
+.br
+.B pngattach
+\fB-x\fR <\fIpng\fR
+.SH DESCRIPTION
+.B pngattach
+attaches an arbitrary file to a PNG as metadata.
+It is intended for attaching the source scripts from which the image was rendered.
+Attachments take the form of private "atCh" PNG chunks.
+PNG data is always read and written on standard input and output.
+.SH OPTIONS
+.TP
+\fB\-c\fR
+Create or update attachments.
+[default mode]
+.TP
+\fB\-d\fR
+Delete attachments by name
+.TP
+\fB\-t\fR
+List all attached files.
+.TP
+\fB\-x\fR
+Extract all attached files.
+.TP
+\fB\-h\fR
+Print usage information to standard output and exit.
+.TP
+\fB\-O\fR
+Write/concatenate attachments to standard output rather than to their individual file names.
+.TP
+\fB\-u\fR
+Do not compress attachments.
+.TP
+\fB\-v\fR
+Print file names while extracting them (i.e. verbose).
+.SH ENVIRONMENT
+.B pngattach
+is not affected by environment variables.
+.SH FILES
+.B pngattach
+is not affected by any files.
+.SH EXAMPLES
+.PP
+Attach the input source to a PNG just as it's being rendered.
+.RS 2
+.nf
+.B $ dot -Tpng graph.dot | pngattach graph.dot >graph.png
+.fi
+.RE
+.PP
+Recovering the source file later:
+.RS 2
+.nf
+.B $ pngattach -x <graph.png
+.fi
+.RE
+.PP
+Or using standard output:
+.RS 2
+.nf
+.B $ pngattach -xO <graph.png >graph.dot
+.fi
+.RE
+.SH "SEE ALSO"
+.BR tar(1),
+.BR dot(1)
+.SH AUTHORS
+Chris Wellons <wellons\[u0040]nullprogram.com>
+.SH BUGS
+No known bugs.
