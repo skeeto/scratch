@@ -167,9 +167,10 @@ slurp(FILE *f, unsigned char **buf, size_t *len)
         }
         *buf = p;
 
-        size_t in = fread(*buf+*len, 1, cap-*len, f);
+        size_t z = cap - *len;
+        size_t in = fread(*buf+*len, 1, z, f);
         *len += in;
-        if (in < cap-*len) {
+        if (in < z) {
             if (feof(f)) {
                 return 0;
             }
