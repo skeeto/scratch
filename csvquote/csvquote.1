@@ -1,0 +1,50 @@
+.TH csvquote 1
+.SH NAME
+csvquote \- temporarily mutate CSV for easier processing by unix tools
+.SH SYNOPSIS
+.B csvquote
+[\-\fBS\fR]
+[\-\fBh\fR]
+[\-\fBu\fR]
+.SH DESCRIPTION
+.B csvquote
+converts LINE FEED (LF, U+000A) into RECORD SEPARATOR (RS, U+001E), and COMMA (U+002C) into UNIT SEPARATOR (US, U+001F) when these characters appear inside quoted CSV fields.
+This allows standard unix command line tools to more easily and correctly process CSV data.
+.SH OPTIONS
+.TP
+\fB\-S\fR
+Abort if the encoding would be irreversible (strict mode).
+.TP
+\fB\-h\fR
+Print help information to standard output and exit.
+.TP
+\fB\-u\fR
+Restore the original CSV data (reverse mode).
+.SH ENVIRONMENT
+.B csvquote
+is not affected by environment variables.
+.SH FILES
+.B csvquote
+is not affected by any files.
+It only writes to standard output and standard error.
+.SH EXAMPLES
+.PP
+.B awk
+field splitting normally cannot handle CSV, but it can when quoted:
+.RS 2
+.nf
+.B $ csvquote <data.csv |
+      awk -F, '{print $1 "," $2+$3}' |
+      csvquote -u >sum.csv
+.fi
+.RE
+.SH "SEE ALSO"
+.BR awk(1)
+.SH HISTORY
+This
+.B csvquote
+is a high performance clone of the original implementation by Dan Brown.
+.SH AUTHORS
+Chris Wellons <wellons\[u0040]nullprogram.com>
+.SH BUGS
+No known bugs.
