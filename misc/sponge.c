@@ -47,9 +47,8 @@ xgetopt(int argc, char * const argv[], const char *optstring)
 {
     static int optpos = 1;
     const char *arg;
-    (void)argc;
 
-    arg = argv[xoptind];
+    arg = xoptind < argc ? argv[xoptind] : 0;
     if (arg && strcmp(arg, "--") == 0) {
         xoptind++;
         return -1;

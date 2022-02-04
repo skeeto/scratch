@@ -277,12 +277,6 @@ xgetopt(int argc, char * const argv[], const char *optstring)
     static int optpos = 1;
     const char *arg;
 
-    /* Reset? */
-    if (xoptind == 0) {
-        xoptind = 1;
-        optpos = 1;
-    }
-
     arg = xoptind < argc ? argv[xoptind] : 0;
     if (arg && strcmp(arg, "--") == 0) {
         xoptind++;

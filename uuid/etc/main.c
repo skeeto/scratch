@@ -17,13 +17,7 @@ xgetopt(int argc, char * const argv[], const char *optstring)
     const char *arg;
     (void)argc;
 
-    /* Reset? */
-    if (optind == 0) {
-        optind = 1;
-        optpos = 1;
-    }
-
-    arg = argv[optind];
+    arg = optind < argc ? argv[optind] : 0;
     if (arg && strcmp(arg, "--") == 0) {
         optind++;
         return -1;
