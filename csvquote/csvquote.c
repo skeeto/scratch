@@ -268,7 +268,6 @@ xisalnum(int c)
 }
 
 static int xoptind = 1;
-static int xopterr = 1;
 static int xoptopt;
 static char *xoptarg;
 
@@ -277,7 +276,6 @@ xgetopt(int argc, char * const argv[], const char *optstring)
 {
     static int optpos = 1;
     const char *arg;
-    (void)argc;
 
     /* Reset? */
     if (xoptind == 0) {
@@ -285,7 +283,7 @@ xgetopt(int argc, char * const argv[], const char *optstring)
         optpos = 1;
     }
 
-    arg = argv[xoptind];
+    arg = xoptind < argc ? argv[xoptind] : 0;
     if (arg && strcmp(arg, "--") == 0) {
         xoptind++;
         return -1;
@@ -295,8 +293,6 @@ xgetopt(int argc, char * const argv[], const char *optstring)
         const char *opt = strchr(optstring, arg[optpos]);
         xoptopt = arg[optpos];
         if (!opt) {
-            if (xopterr && *optstring != ':')
-                fprintf(stderr, "%s: illegal option: %c\n", argv[0], xoptopt);
             return '?';
         } else if (opt[1] == ':') {
             if (arg[optpos + 1]) {
@@ -310,10 +306,7 @@ xgetopt(int argc, char * const argv[], const char *optstring)
                 optpos = 1;
                 return xoptopt;
             } else {
-                if (xopterr && *optstring != ':')
-                    fprintf(stderr, "%s: option requires an argument: %c\n",
-                            argv[0], xoptopt);
-                return *optstring == ':' ? ':' : '?';
+                return ':';
             }
         } else {
             if (!arg[++optpos]) {
@@ -325,33 +318,41 @@ xgetopt(int argc, char * const argv[], const char *optstring)
     }
 }
 
-static void
+static int
 usage(FILE *f)
 {
-    fprintf(f, "usage: csvquote [-Shu]\n");
-    fprintf(f, "Encodes standard input to standard output.\n");
-    fprintf(f, "  -S    abort if the encoding would be irreversible (strict)\n");
-    fprintf(f, "  -h    print this help message\n");
-    fprintf(f, "  -u    restore the original CSV (reverse)\n");
+    static const char usage[] =
+    "usage: csvquote [-Shu]\n"
+    "Encodes standard input to standard output.\n"
+    "  -S    abort if the encoding would be irreversible (strict)\n"
+    "  -h    print this help message\n"
+    "  -u    restore the original CSV (reverse)\n";
+    return fwrite(usage, sizeof(usage)-1, 1, f) && !fflush(f);
 }
 
-int main(int argc, char **argv)
+static const char *
+run(int argc, char **argv)
 {
     int option;
     int strict = 0;
+    static char missing[] = "missing argument: -?";
+    static char illegal[] = "illegal option: -?";
 
     encode_init(0x0a, 0x2c, 0x1e, 0x1f); // LF COMMA RS US
 
-    while ((option = xgetopt(argc, argv, "Shu")) != -1) {
+    while ((option = xgetopt(argc, argv, ":Shu")) != -1) {
         switch (option) {
         case 'S': strict = 1;
                   break;
-        case 'h': usage(stdout);
-                  return 0;
+        case 'h': return usage(stdout) ? 0 : "write error";
         case 'u': encode_init(0x1e, 0x1f, 0x0a, 0x2c); // RS US LF COMMA
                   break;
-        case '?': usage(stderr);
-                  return 1;
+        case ':': missing[sizeof(missing)-2] = xoptopt;
+                  usage(stderr);
+                  return missing;
+        case '?': illegal[sizeof(illegal)-2] = xoptopt;
+                  usage(stderr);
+                  return illegal;
         }
     }
 
@@ -360,25 +361,35 @@ int main(int argc, char **argv)
     for (;;) {
         int n = io_read();
         switch (n) {
-        case -1: fprintf(stderr, "csvquote: read error\n");
-                 return 1;
+        case -1: return "read error";
         case  0: return 0;
         }
 
         if (strict && check()) {
-            fprintf(stderr, "csvquote: ambiguous encoding\n");
-            return 1;
+            return "ambiguous encoding";
         }
 
         encode();
 
         if (io_write(n) == -1) {
-            fprintf(stderr, "csvquote: write error\n");
-            return 1;
+            return "write error";
         }
 
         if (n < (int)sizeof(buf)) {
             return 0;
         }
     }
+}
+
+int
+main(int argc, char **argv)
+{
+    const char *err = run(argc, argv);
+    if (err) {
+        fputs("csvquote: ", stderr);
+        fputs(err, stderr);
+        fputs("\n", stderr);
+        return 1;
+    }
+    return 0;
 }
