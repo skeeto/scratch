@@ -710,7 +710,6 @@ cmd_read(int flags)
 }
 
 static int xoptind = 1;
-static int xopterr = 1;
 static int xoptopt;
 static char *xoptarg;
 
@@ -719,9 +718,8 @@ xgetopt(int argc, char * const argv[], const char *optstring)
 {
     static int optpos = 1;
     const char *arg;
-    (void)argc;
 
-    arg = argv[xoptind];
+    arg = xoptind < argc ? argv[xoptind] : 0;
     if (arg && strcmp(arg, "--") == 0) {
         xoptind++;
         return -1;
@@ -731,8 +729,6 @@ xgetopt(int argc, char * const argv[], const char *optstring)
         const char *opt = strchr(optstring, arg[optpos]);
         xoptopt = arg[optpos];
         if (!opt) {
-            if (xopterr && *optstring != ':')
-                fprintf(stderr, "%s: illegal option: %c\n", argv[0], xoptopt);
             return '?';
         } else if (opt[1] == ':') {
             if (arg[optpos + 1]) {
@@ -746,11 +742,7 @@ xgetopt(int argc, char * const argv[], const char *optstring)
                 optpos = 1;
                 return xoptopt;
             } else {
-                if (xopterr && *optstring != ':')
-                    fprintf(stderr,
-                            "%s: option requires an argument: %c\n",
-                            argv[0], xoptopt);
-                return *optstring == ':' ? ':' : '?';
+                return ':';
             }
         } else {
             if (!arg[++optpos]) {
@@ -762,25 +754,27 @@ xgetopt(int argc, char * const argv[], const char *optstring)
     }
 }
 
-static void
+static int
 usage(FILE *f)
 {
-    fprintf(f, "usage: pngattach -c <PNG >PNG [FILE]...\n");
-    fprintf(f, "       pngattach -d <PNG >PNG [FILE]...\n");
-    fprintf(f, "       pngattach -t <PNG\n");
-    fprintf(f, "       pngattach -x <PNG\n");
-    fprintf(f, "  -c     create/update attachments (default)\n");
-    fprintf(f, "  -d     delete attachments by name\n");
-    fprintf(f, "  -h     print this usage message\n");
-    fprintf(f, "  -O     write attachments to standard output\n");
-    fprintf(f, "  -t     list attached files\n");
-    fprintf(f, "  -u     do not compress attachments\n");
-    fprintf(f, "  -v     print extracted file names (verbose)\n");
-    fprintf(f, "  -x     extract all PNG attachments\n");
+    static const char usage[] =
+    "usage: pngattach -c <PNG >PNG [FILE]...\n"
+    "       pngattach -d <PNG >PNG [FILE]...\n"
+    "       pngattach -t <PNG\n"
+    "       pngattach -x <PNG\n"
+    "  -c     create/update attachments (default)\n"
+    "  -d     delete attachments by name\n"
+    "  -h     print this usage message\n"
+    "  -O     write attachments to standard output\n"
+    "  -t     list attached files\n"
+    "  -u     do not compress attachments\n"
+    "  -v     print extracted file names (verbose)\n"
+    "  -x     extract all PNG attachments\n";
+    return fwrite(usage, sizeof(usage)-1, 1, f) && !fflush(f);
 }
 
-int
-main(int argc, char **argv)
+static const char *
+run(int argc, char **argv)
 {
     #ifdef _WIN32
     // set stdin/stdout to binary mode
@@ -789,15 +783,16 @@ main(int argc, char **argv)
     #endif
 
     int option;
+    char opts[2] = "?";
     int flags = FLAG_STORE;
     enum {MODE_WRITE, MODE_READ} mode = MODE_WRITE;
 
-    while ((option = xgetopt(argc, argv, "cdhOtuvx")) != -1) {
+    while ((option = xgetopt(argc, argv, ":cdhOtuvx")) != -1) {
         switch (option) {
         case 'c': flags |= FLAG_STORE;  break;
         case 'd': mode = MODE_WRITE;
                   flags &= ~FLAG_STORE; break;
-        case 'h': usage(stdout);        return 0;
+        case 'h': return usage(stdout) ? 0 : "write error";
         case 'O': flags |= FLAG_STDOUT; break;
         case 't': mode = MODE_READ;
                   flags |= FLAG_LIST;   break;
@@ -805,13 +800,18 @@ main(int argc, char **argv)
         case 'v': flags |= FLAG_LIST;   break;
         case 'x': mode = MODE_READ;
                   flags |= FLAG_DUMP;   break;
-        default : usage(stderr);        return 1;
+        case '?': usage(stderr);
+                  opts[0] = xoptopt;
+                  return errwrap("illegal option", opts);
+        case ':': usage(stderr);
+                  opts[0] = xoptopt;
+                  return errwrap("option requires an argument", opts);
         }
     }
 
     if (ISATTY(0)) {
         usage(stderr);
-        return 1;
+        return "expected PNG data on standard input";
     }
 
     const char *err = 0;
@@ -835,15 +835,26 @@ main(int argc, char **argv)
     }
 
     if (err) {
-        fprintf(stderr, "pngattach: %s\n", err);
-        return 1;
+        return err;
     }
 
     fflush(stdout);
     if (ferror(stdout)) {
-        fprintf(stderr, "pngattach: write error\n");
-        return 1;
+        return "write error";
     }
 
+    return 0;
+}
+
+int
+main(int argc, char **argv)
+{
+    const char *err = run(argc, argv);
+    if (err) {
+        fputs("pngattach: ", stderr);
+        fputs(err, stderr);
+        fputs("\n", stderr);
+        return 1;
+    }
     return 0;
 }
