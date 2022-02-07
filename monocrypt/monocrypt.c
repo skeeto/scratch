@@ -151,7 +151,7 @@ xgetopt(int argc, char * const argv[], const char *optstring)
     static int optpos = 1;
     const char *arg;
 
-    arg = xoptind ? argc ? argv[xoptind] : 0;
+    arg = xoptind < argc ? argv[xoptind] : 0;
     if (arg && strcmp(arg, "--") == 0) {
         xoptind++;
         return -1;
