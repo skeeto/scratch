@@ -342,7 +342,6 @@ print_by_row(char *buf, size_t buflen, struct conf conf)
                 io_push(0x0a);
             } else {
                 col++;
-                io_push(0x20);
             }
         }
 
@@ -412,10 +411,6 @@ print_by_col(char *buf, size_t buflen, struct conf conf)
                 size_t keep = -(b != 0x0a);
 
                 if (dlen & ~keep) {
-                    if (col) {
-                        io_push(0x20);
-                    }
-
                     pad = conf.cwidth - dlen;
                     switch (conf.align) {
                     case ALIGN_LEFT:
@@ -505,6 +500,7 @@ usage(FILE *f)
     "usage: cols [-Chr] [-W INT] [-w INT]\n"
     "  -C      print lines in column-order\n"
     "  -h      display usage information\n"
+    "  -p INT  padding between columns [1]\n"
     "  -r      right-align columns\n"
     "  -W INT  desired line width [80]\n"
     "  -w INT  desired column width [auto]\n";
@@ -520,7 +516,7 @@ run(int argc, char **argv)
     int option, r;
     long value;
     char *end, *buf;
-    size_t len;
+    size_t len, pad = 1;
     enum {MODE_RORDER, MODE_CORDER} mode = MODE_RORDER;
     static char missing[] = "missing argument: -?";
     static char illegal[] = "illegal option: -?";
@@ -531,7 +527,7 @@ run(int argc, char **argv)
     _setmode(1, 0x8000);
     #endif
 
-    while ((option = xgetopt(argc, argv, ":CW:hrw:")) != -1) {
+    while ((option = xgetopt(argc, argv, ":CW:hp:rw:")) != -1) {
         switch (option) {
         case 'C': mode = MODE_CORDER;
                   break;
@@ -543,6 +539,13 @@ run(int argc, char **argv)
                   conf.twidth = value;
                   break;
         case 'h': return usage(stdout) ? 0 : "write error";
+        case 'p': errno = 0;
+                  value = strtol(xoptarg, &end, 10);
+                  if (errno || *end || value < 1) {
+                      return "-p: invalid argument";
+                  }
+                  pad = value;
+                  break;
         case 'r': conf.align = ALIGN_RIGHT;
                   break;
         case 'w': errno = 0;
@@ -550,7 +553,7 @@ run(int argc, char **argv)
                   if (errno || *end || value < 1) {
                       return "-w: invalid argument";
                   }
-                  conf.cwidth = value - 1;
+                  conf.cwidth = value;
                   break;
         case ':': missing[sizeof(missing)-2] = xoptopt;
                   usage(stderr);
@@ -572,8 +575,8 @@ run(int argc, char **argv)
     }
 
     examine(buf, len, &conf);
-    conf.cwidth = conf.widest > conf.cwidth ? conf.widest : conf.cwidth;
-    conf.ncols = (conf.twidth + 1) / (conf.cwidth + 1);
+    conf.cwidth = conf.widest+pad > conf.cwidth ? conf.widest+pad : conf.cwidth;
+    conf.ncols = (conf.twidth + 1) / conf.cwidth;
     conf.ncols = conf.ncols ? conf.ncols : 1;
 
     switch (mode) {

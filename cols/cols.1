@@ -5,6 +5,7 @@ cols \- wrap standard input into columns
 .B cols
 [\-\fBC\fR]
 [\-\fBh\fR]
+[\-\fBp\fR INT]
 [\-\fBr\fR]
 [\-\fBW\fR INT]
 [\-\fBw\fR INT]
@@ -21,6 +22,12 @@ Wrap input in column-order rather than row-order.
 \fB\-h\fR
 Print basic usage information to standard output and exit.
 .TP
+\fB\-p\fR \fIcount\fR
+Set the number of padding characters between columns.
+Must be a positive integer.
+The width given by \fB-w\fR includes this padding, and so it only takes effect when the column width was determined automatically.
+(default: 1)
+.TP
 \fB\-r\fR
 Right-align contents within columns rather than left-align.
 .TP
@@ -30,7 +37,7 @@ Must be a positive integer.
 (default: 80)
 .TP
 \fB\-w\fR \fIwidth\fR
-Set the minimum column width.
+Set the minimum column width, including padding.
 Must be a positive integer.
 Will be overridden if input is wider.
 .SH ENVIRONMENT
