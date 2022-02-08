@@ -544,7 +544,7 @@ xstrchr(const char *s, int c)
     }
 }
 
-static int xoptind = 1;
+static int xoptind;
 static int xoptopt;
 static char *xoptarg;
 
@@ -556,7 +556,8 @@ xgetopt(int argc, char * const argv[], const char *optstring)
     static int optpos = 1;
     const char *arg;
 
-    arg = xoptind < argc ? argv[xoptind] : 0;
+    xoptind = xoptind ? xoptind : !!argc;
+    arg = argv[xoptind];
     if (arg && arg[0] == '-' && arg[1] == '-' && !arg[2]) {
         xoptind++;
         return -1;
