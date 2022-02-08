@@ -709,7 +709,7 @@ cmd_read(int flags)
     }
 }
 
-static int xoptind = 1;
+static int xoptind;
 static int xoptopt;
 static char *xoptarg;
 
@@ -719,7 +719,8 @@ xgetopt(int argc, char * const argv[], const char *optstring)
     static int optpos = 1;
     const char *arg;
 
-    arg = xoptind < argc ? argv[xoptind] : 0;
+    xoptind = xoptind ? xoptind : !!argc;
+    arg = argv[xoptind];
     if (arg && strcmp(arg, "--") == 0) {
         xoptind++;
         return -1;
@@ -822,7 +823,7 @@ run(int argc, char **argv)
             err = "binary data cannot be written to a terminal";
             break;
         }
-        err = cmd_write(argv + xoptind, flags);
+        err = cmd_write(argv+xoptind, flags);
         break;
 
     case MODE_READ:
