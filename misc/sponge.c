@@ -37,7 +37,7 @@ slurp(FILE *f, size_t *len)
     }
 }
 
-static int xoptind = 1;
+static int xoptind;
 static int xopterr = 1;
 static int xoptopt;
 static char *xoptarg;
@@ -48,7 +48,8 @@ xgetopt(int argc, char * const argv[], const char *optstring)
     static int optpos = 1;
     const char *arg;
 
-    arg = xoptind < argc ? argv[xoptind] : 0;
+    xoptind = xoptind ? xoptind : !!argc;
+    arg = argv[xoptind];
     if (arg && strcmp(arg, "--") == 0) {
         xoptind++;
         return -1;
