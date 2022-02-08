@@ -350,6 +350,11 @@ run(int argc, char **argv)
         }
     }
 
+    if (argc > xoptind) {
+        usage(stderr);
+        return "too many arguments";
+    }
+
     io_init();
 
     for (;;) {
