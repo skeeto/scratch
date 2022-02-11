@@ -37,7 +37,6 @@ parse_roll(int state, long roll[3], int b)
     case 3: case 4: case 5:  /* second digit or delimiter */
         switch (b) {
         default : return ROLL_INVALID;
-        case  0 : return state >= 4 ? 0 : ROLL_INVALID;
         case '0': case '1': case '2': case '3': case '4':
         case '5': case '6': case '7': case '8': case '9':
             roll += state - 3;
@@ -51,6 +50,8 @@ parse_roll(int state, long roll[3], int b)
             return state == 3 ? 1 : ROLL_INVALID;
         case '+':
             return state == 4 ? 2 : ROLL_INVALID;
+        case  0 :
+            return state >= 4 ? 0 : ROLL_INVALID;
         }
     }
     return *(volatile int *)0 = 0;
