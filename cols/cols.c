@@ -14,7 +14,6 @@
  *
  * This is free and unencumbered software released into the public domain.
  */
-#include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -446,49 +445,48 @@ print_by_col(char *buf, size_t buflen, struct conf conf)
     return io_flush();
 }
 
-static int xoptind = 1;
-static int xoptopt;
-static char *xoptarg;
+struct xgetopt { char *optarg; int optind, optopt, optpos; };
 
 /* Like getopt(3) but never prints error messages.
  */
 static int
-xgetopt(int argc, char * const argv[], const char *optstring)
+xgetopt(struct xgetopt *x, int argc, char **argv, const char *optstring)
 {
-    static int optpos = 1;
-    const char *arg;
-
-    arg = xoptind < argc ? argv[xoptind] : 0;
+    char *arg = argv[!x->optind ? (x->optind += !!argc) : x->optind];
     if (arg && arg[0] == '-' && arg[1] == '-' && !arg[2]) {
-        xoptind++;
+        x->optind++;
         return -1;
-    } else if (!arg || arg[0] != '-' || !isalnum(arg[1])) {
+    } else if (!arg || arg[0] != '-' || ((arg[1] < '0' || arg[1] > '9') &&
+                                         (arg[1] < 'A' || arg[1] > 'Z') &&
+                                         (arg[1] < 'a' || arg[1] > 'z'))) {
         return -1;
     } else {
-        const char *opt = strchr(optstring, arg[optpos]);
-        xoptopt = arg[optpos];
-        if (!opt) {
+        while (*optstring && arg[x->optpos+1] != *optstring) {
+            optstring++;
+        }
+        x->optopt = arg[x->optpos+1];
+        if (!*optstring) {
             return '?';
-        } else if (opt[1] == ':') {
-            if (arg[optpos + 1]) {
-                xoptarg = (char *)arg + optpos + 1;
-                xoptind++;
-                optpos = 1;
-                return xoptopt;
-            } else if (argv[xoptind + 1]) {
-                xoptarg = (char *)argv[xoptind + 1];
-                xoptind += 2;
-                optpos = 1;
-                return xoptopt;
+        } else if (optstring[1] == ':') {
+            if (arg[x->optpos+2]) {
+                x->optarg = arg + x->optpos + 2;
+                x->optind++;
+                x->optpos = 0;
+                return x->optopt;
+            } else if (argv[x->optind+1]) {
+                x->optarg = argv[x->optind+1];
+                x->optind += 2;
+                x->optpos = 0;
+                return x->optopt;
             } else {
                 return ':';
             }
         } else {
-            if (!arg[++optpos]) {
-                xoptind++;
-                optpos = 1;
+            if (!arg[++x->optpos+1]) {
+                x->optind++;
+                x->optpos = 0;
             }
-            return xoptopt;
+            return x->optopt;
         }
     }
 }
@@ -512,6 +510,7 @@ usage(FILE *f)
 const char *
 run(int argc, char **argv)
 {
+    struct xgetopt x = {0};
     struct conf conf = CONF_DEFAULT;
     int option, r;
     long value;
@@ -527,12 +526,12 @@ run(int argc, char **argv)
     _setmode(1, 0x8000);
     #endif
 
-    while ((option = xgetopt(argc, argv, ":CW:hp:rw:")) != -1) {
+    while ((option = xgetopt(&x, argc, argv, ":CW:hp:rw:")) != -1) {
         switch (option) {
         case 'C': mode = MODE_CORDER;
                   break;
         case 'W': errno = 0;
-                  value = strtol(xoptarg, &end, 10);
+                  value = strtol(x.optarg, &end, 10);
                   if (errno || *end || value < 1) {
                       return "-W: invalid argument";
                   }
@@ -540,7 +539,7 @@ run(int argc, char **argv)
                   break;
         case 'h': return usage(stdout) ? 0 : "write error";
         case 'p': errno = 0;
-                  value = strtol(xoptarg, &end, 10);
+                  value = strtol(x.optarg, &end, 10);
                   if (errno || *end || value < 1) {
                       return "-p: invalid argument";
                   }
@@ -549,22 +548,22 @@ run(int argc, char **argv)
         case 'r': conf.align = ALIGN_RIGHT;
                   break;
         case 'w': errno = 0;
-                  value = strtol(xoptarg, &end, 10);
+                  value = strtol(x.optarg, &end, 10);
                   if (errno || *end || value < 1) {
                       return "-w: invalid argument";
                   }
                   conf.cwidth = value;
                   break;
-        case ':': missing[sizeof(missing)-2] = xoptopt;
+        case ':': missing[sizeof(missing)-2] = x.optopt;
                   usage(stderr);
                   return missing;
-        case '?': illegal[sizeof(illegal)-2] = xoptopt;
+        case '?': illegal[sizeof(illegal)-2] = x.optopt;
                   usage(stderr);
                   return illegal;
         }
     }
 
-    if (argc > xoptind) {
+    if (argc > x.optind) {
         usage(stderr);
         return "too many arguments";
     }
