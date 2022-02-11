@@ -23,7 +23,7 @@
  * The roll array may be initialized to any value.
  */
 static int
-parse_roll(int state, long roll[3], int b)
+roll_parse(int state, long roll[3], int b)
 {
     switch (state) {
     case 0: case 1: case 2:  /* first digit */
@@ -76,7 +76,7 @@ main(void)
         case EOF: if (!state) return 0;  /* fallthrough */
         case '\t': case '\r': case '\n': case ' ':
             if (!state) continue;
-            if (parse_roll(state, roll, 0) < 0) {
+            if (roll_parse(state, roll, 0) < 0) {
                 fprintf(stderr, "<stdin>:%lld: invalid input\n", lineno);
                 return 1;
             }
@@ -94,7 +94,7 @@ main(void)
             break;
 
         default:
-            state = parse_roll(state, roll, c);
+            state = roll_parse(state, roll, c);
             if (state < 0) {
                 fprintf(stderr, "<stdin>:%lld: invalid input\n", lineno);
                 return 1;
