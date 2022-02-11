@@ -520,74 +520,48 @@ errwrap(const char *pre, const char *suf)
     return dst;
 }
 
-/* Same as isalnum(3), but without locale.
- */
-static int
-xisalnum(int c)
-{
-    return (c >= '0' && c <= '9') ||
-           (c >= 'A' && c <= 'Z') ||
-           (c >= 'a' && c <= 'z');
-}
-
-/* Same as strchr(3).
- */
-static const char *
-xstrchr(const char *s, int c)
-{
-    for (c = (char)c;; s++) {
-        if (*s == c) {
-            return s;
-        } else if (!*s) {
-            return 0;
-        }
-    }
-}
-
-static int xoptind;
-static int xoptopt;
-static char *xoptarg;
+struct xgetopt { char *optarg; int optind, optopt, optpos; };
 
 /* Like getopt(3) but never prints error messages.
  */
 static int
-xgetopt(int argc, char * const argv[], const char *optstring)
+xgetopt(struct xgetopt *x, int argc, char **argv, const char *optstring)
 {
-    static int optpos = 1;
-    const char *arg;
-
-    xoptind = xoptind ? xoptind : !!argc;
-    arg = argv[xoptind];
+    char *arg = argv[!x->optind ? (x->optind += !!argc) : x->optind];
     if (arg && arg[0] == '-' && arg[1] == '-' && !arg[2]) {
-        xoptind++;
+        x->optind++;
         return -1;
-    } else if (!arg || arg[0] != '-' || !xisalnum(arg[1])) {
+    } else if (!arg || arg[0] != '-' || ((arg[1] < '0' || arg[1] > '9') &&
+                                         (arg[1] < 'A' || arg[1] > 'Z') &&
+                                         (arg[1] < 'a' || arg[1] > 'z'))) {
         return -1;
     } else {
-        const char *opt = xstrchr(optstring, arg[optpos]);
-        xoptopt = arg[optpos];
-        if (!opt) {
+        while (*optstring && arg[x->optpos+1] != *optstring) {
+            optstring++;
+        }
+        x->optopt = arg[x->optpos+1];
+        if (!*optstring) {
             return '?';
-        } else if (opt[1] == ':') {
-            if (arg[optpos + 1]) {
-                xoptarg = (char *)arg + optpos + 1;
-                xoptind++;
-                optpos = 1;
-                return xoptopt;
-            } else if (argv[xoptind + 1]) {
-                xoptarg = (char *)argv[xoptind + 1];
-                xoptind += 2;
-                optpos = 1;
-                return xoptopt;
+        } else if (optstring[1] == ':') {
+            if (arg[x->optpos+2]) {
+                x->optarg = arg + x->optpos + 2;
+                x->optind++;
+                x->optpos = 0;
+                return x->optopt;
+            } else if (argv[x->optind+1]) {
+                x->optarg = argv[x->optind+1];
+                x->optind += 2;
+                x->optpos = 0;
+                return x->optopt;
             } else {
                 return ':';
             }
         } else {
-            if (!arg[++optpos]) {
-                xoptind++;
-                optpos = 1;
+            if (!arg[++x->optpos+1]) {
+                x->optind++;
+                x->optpos = 0;
             }
-            return xoptopt;
+            return x->optopt;
         }
     }
 }
@@ -611,6 +585,7 @@ usage(int fd)
 const char *
 run(int argc, char **argv)
 {
+    struct xgetopt x = {0};
     const char *err;
     int option;
     char opterr[] = {'-', 0, 0};
@@ -622,50 +597,50 @@ run(int argc, char **argv)
     enum format fmt = FORMAT_DOT;
     unsigned long beg, end, mask;
 
-    while ((option = xgetopt(argc, argv, ":cd:f:hi:e:")) != -1) {
+    while ((option = xgetopt(&x, argc, argv, ":cd:f:hi:e:")) != -1) {
         switch (option) {
         case 'c':
             print_cidr = 1;
             break;
         case 'd':
-            delim = uint32_parse(xoptarg, 255, &err);
+            delim = uint32_parse(x.optarg, 255, &err);
             if (err) {
-                return errwrap(errwrap("-d", err), xoptarg);
+                return errwrap(errwrap("-d", err), x.optarg);
             }
             break;
         case 'f':
-            if (!(fmt = format_parse(xoptarg))) {
-                return errwrap("-f: invalid format", xoptarg);
+            if (!(fmt = format_parse(x.optarg))) {
+                return errwrap("-f: invalid format", x.optarg);
             } break;
         case 'h':
             return usage(1) ? 0 : "write error";
         case 'i':
-            increment = uint32_parse(xoptarg, 0xffffffff, &err);
+            increment = uint32_parse(x.optarg, 0xffffffff, &err);
             if (err) {
-                return errwrap("-i: invalid increment", xoptarg);
+                return errwrap("-i: invalid increment", x.optarg);
             }
             if (!increment) {
-                return errwrap("-i: must be non-zero", xoptarg);
+                return errwrap("-i: must be non-zero", x.optarg);
             }
             break;
         case 'e':
             exclude = 1;
-            if (!exclude_parse(exclude_table, xoptarg)) {
-                return errwrap("-e: invalid table", xoptarg);
+            if (!exclude_parse(exclude_table, x.optarg)) {
+                return errwrap("-e: invalid table", x.optarg);
             }
             break;
         case ':':
-            opterr[1] = xoptopt;
+            opterr[1] = x.optopt;
             return errwrap(opterr, "option requires an argument");
         case '?':
             usage(2);
-            opterr[1] = xoptopt;
+            opterr[1] = x.optopt;
             return errwrap("illegal option", opterr);
         }
     }
 
-    argv += xoptind;
-    switch (argc - xoptind) {
+    argv += x.optind;
+    switch (argc - x.optind) {
     case 1:  /* CIDR */
         if (!cidr_parse(argv[0], &beg, &mask)) {
             return errwrap("invalid CIDR IP address", argv[0]);
