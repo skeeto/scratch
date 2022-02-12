@@ -98,7 +98,7 @@ xwrite(int fd, const char *buf, int len)
 }
 
 #elif defined(_WIN32)
-#include <windows.h>
+#  include <windows.h>
 
 /* Minimalist build (Windows)
  *   $ make CFLAGS="-Os -ffreestanding"
@@ -111,7 +111,7 @@ xwrite(int fd, const char *buf, int len)
 #      pragma comment(lib, "kernel32")
 #      pragma comment(lib, "shell32")
 #      pragma comment(linker, "/subsystem:console")
-#   endif
+#  endif
 int
 mainCRTStartup(void)
 {
@@ -158,7 +158,7 @@ xwrite(int fd, const char *buf, int len)
 }
 
 #else
-#include <stdio.h>
+#  include <stdio.h>
 
 static int
 xwrite(int fd, const char *buf, int len)
