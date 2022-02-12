@@ -14,7 +14,6 @@
  *
  * This is free and unencumbered software released into the public domain.
  */
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -124,7 +123,7 @@ slurp(size_t *len)
         z = fread(buf+*len, 1, w, stdin);
         *len += z;
         if (z < w) {
-            if (feof(stdin)) {
+            if (!ferror(stdin)) {
                 /* Guaranteed newline simplifies processing */
                 buf[(*len)++] = 0x0a;
                 if (cap - *len < OVERCOPY) {
@@ -146,6 +145,27 @@ slurp(size_t *len)
     *len = 0;
     free(buf);
     return 0;
+}
+
+/* Parse an unsigned 31-bit value. Only digits are permitted.
+ * Returns -1 for invalid input and -2 on overflow.
+ */
+static long
+parse_u31(char *buf)
+{
+    size_t n;
+    unsigned long r = 0;
+    for (n = 0; buf[n]; n++) {
+        int c = buf[n] - '0';
+        if (c < 0 || c > 9) {
+            return -1;
+        }
+        if (r > (0x7fffffffUL - c)/10) {
+            return -2;
+        }
+        r = r*10 + c;
+    }
+    return n ? (long)r : -1;
 }
 
 /* Examine the buffer, counting the lines and finding the widest display
@@ -365,14 +385,17 @@ print_by_col(char *buf, size_t buflen, struct conf conf)
 {
     size_t col, r;
     size_t nrows;
-    size_t *cursors;
+    size_t *cursors = 0;
 
-    cursors = calloc(conf.ncols, sizeof(*cursors));
+    if (conf.ncols < (size_t)-1/sizeof(*cursors)) {
+        cursors = realloc(0, conf.ncols*sizeof(*cursors));
+    }
     if (!cursors) {
         return 0;
     }
 
     /* Advance each cursor to the top of each column. */
+    cursors[0] = 0;
     nrows = (conf.nlines + conf.ncols - 1) / conf.ncols;
     for (col = 1; col < conf.ncols; col++) {
         /* Don't care about lengths, just counting non-empty lines. */
@@ -514,7 +537,7 @@ run(int argc, char **argv)
     struct conf conf = CONF_DEFAULT;
     int option, r;
     long value;
-    char *end, *buf;
+    char *buf;
     size_t len, pad = 1;
     enum {MODE_RORDER, MODE_CORDER} mode = MODE_RORDER;
     static char missing[] = "missing argument: -?";
@@ -530,26 +553,23 @@ run(int argc, char **argv)
         switch (option) {
         case 'C': mode = MODE_CORDER;
                   break;
-        case 'W': errno = 0;
-                  value = strtol(x.optarg, &end, 10);
-                  if (errno || *end || value < 1) {
+        case 'W': value = parse_u31(x.optarg);
+                  if (value < 1) {
                       return "-W: invalid argument";
                   }
                   conf.twidth = value;
                   break;
         case 'h': return usage(stdout) ? 0 : "write error";
-        case 'p': errno = 0;
-                  value = strtol(x.optarg, &end, 10);
-                  if (errno || *end || value < 1) {
+        case 'p': value = parse_u31(x.optarg);
+                  if (value < 1) {
                       return "-p: invalid argument";
                   }
                   pad = value;
                   break;
         case 'r': conf.align = ALIGN_RIGHT;
                   break;
-        case 'w': errno = 0;
-                  value = strtol(x.optarg, &end, 10);
-                  if (errno || *end || value < 1) {
+        case 'w': value = parse_u31(x.optarg);
+                  if (value < 1) {
                       return "-w: invalid argument";
                   }
                   conf.cwidth = value;
@@ -591,7 +611,11 @@ main(int argc, char **argv)
 {
     const char *err = run(argc, argv);
     if (err) {
-        fprintf(stderr, "cols: %s\n", err);
+        size_t len;
+        for (len = 0; err[len]; len++);
+        fwrite("cols: ", sizeof("cols :"), 1, stderr);
+        fwrite(err, len, 1, stderr);
+        fwrite("\n", 1, 1, stderr);
         return 1;
     }
     return 0;
