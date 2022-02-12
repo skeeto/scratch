@@ -66,3 +66,20 @@ Unicode-aware column layout:
     η Θ θ Ι ι Κ κ Λ λ Μ μ Ν ν
     Ξ ξ Ο ο Π π Ρ ρ Σ σ ς Τ τ
     Υ υ Φ φ Χ χ Ψ ψ Ω ω
+
+## Special, minimalist builds
+
+This program is highly portable and requires little runtime. On Windows it
+can be built without linking against a C runtime.
+
+Mingw-w64:
+
+    $ make CC=x86_64-w64-mingw32-gcc \
+           CFLAGS="-Os -ffreestanding" \
+           LDFLAGS="-s -nostdlib" \
+           LDLIBS="-lkernel32 -lshell32" \
+           EXE=.exe
+
+MSVC:
+
+    C:\>cl /Os /GS- cols.c

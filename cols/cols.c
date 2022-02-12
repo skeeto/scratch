@@ -14,9 +14,111 @@
  *
  * This is free and unencumbered software released into the public domain.
  */
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+
+#if _MSC_VER || (_WIN32 && !__STDC_HOSTED__)
+/* Minimalist build (Windows) */
+#  include <windows.h>
+#  define main oldmain
+#  define stdin  (void *)1
+#  define stdout (void *)2
+#  define stderr (void *)3
+#  define free(p)
+#  define fflush(f) 0
+#  define realloc xrealloc
+#  define memcpy CopyMemory
+#  if defined(_MSC_VER)
+#      pragma comment(lib, "kernel32")
+#      pragma comment(lib, "shell32")
+#      pragma comment(linker, "/subsystem:console")
+#  endif
+typedef SIZE_T size_t;
+typedef void FILE;
+
+static int ferrors[3];
+static int ferror(FILE *f) { return ferrors[(SIZE_T)f-1]; }
+
+static size_t
+fread(void *buf, size_t size, size_t nmemb, FILE *f)
+{
+    int fd = (SIZE_T)f - 1;
+    HANDLE h = GetStdHandle(-10-fd);
+    DWORD n, g, w = size * nmemb;
+    for (g = 0; g < w;) {
+        if (!ReadFile(h, (char *)buf+g, w-g, &n, 0)) {
+            if (GetLastError() != ERROR_BROKEN_PIPE) {
+                ferrors[fd] = 1;
+                return 0;
+            }
+            break;
+        }
+        if (!n) {
+            break;
+        }
+        g += n;
+    }
+    return g / size;
+}
+
+static size_t
+fwrite(const void *buf, size_t size, size_t nmemb, FILE *f)
+{
+    int fd = (SIZE_T)f - 1;
+    HANDLE h = GetStdHandle(-10-fd);
+    DWORD n, g, w = size * nmemb;
+    for (g = 0; g < w;) {
+        if (!WriteFile(h, (char *)buf+g, w-g, &n, 0)) {
+            ferrors[fd] |= 2;
+            return 0;
+        }
+        if (!n) {
+            break;
+        }
+        g += n;
+    }
+    return g / size;
+}
+
+static void *
+xrealloc(void *p, size_t n)
+{
+    HANDLE h = GetProcessHeap();
+    return p ? HeapReAlloc(h, 0, p, n) : HeapAlloc(h, 0, n);
+}
+
+int
+mainCRTStartup(void)
+{
+    size_t len;
+    int argc, i;
+    wchar_t **wargv;
+    char **argv, *buf, *p;
+    int main(int, char **);
+
+    wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
+
+    len = (1 + argc)*sizeof(*argv);
+    for (i = 0; i < argc; i++) {
+        len += WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, 0, 0, 0, 0);
+    }
+    buf = LocalAlloc(0, len);
+
+    argv = (char **)buf;
+    p = buf + (1 + argc)*sizeof(*argv);
+    for (i = 0; i < argc; i++) {
+        argv[i] = p;
+        p += WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, p, buf+len-p, 0, 0);
+    }
+    argv[argc] = 0;
+
+    LocalFree(wargv);
+    return main(argc, argv);
+}
+
+#else /* standard build */
+#  include <stdio.h>
+#  include <stdlib.h>
+#  include <string.h>
+#endif
 
 /* Block size used in xmemcpy(). Input and output buffers must have at
  * least this much overhead in order to accommodate over-copying.
@@ -543,7 +645,7 @@ run(int argc, char **argv)
     static char missing[] = "missing argument: -?";
     static char illegal[] = "illegal option: -?";
 
-    #ifdef _WIN32
+    #if _WIN32 && !_MSC_VER && __STDC_HOSTED__
     int _setmode(int, int);
     _setmode(0, 0x8000);
     _setmode(1, 0x8000);
