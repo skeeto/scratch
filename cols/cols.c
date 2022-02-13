@@ -211,7 +211,7 @@ slurp(size_t *len)
     size_t cap, z, w;
     char *buf = 0;
 
-    for (*len = 0, cap = 1<<11; cap; cap *= 2) {
+    for (*len = 0, cap = 1<<12; cap; cap *= 2) {
         void *p = realloc(buf, cap);
         if (!p) {
             *len = 0;
