@@ -70,8 +70,8 @@ The original does not check for errors, so you won't know when it fails:
 
 This program is incredibly portable and requires no runtime, only needing
 access to its command line arguments and a write system call. It can be
-built for Linux (x86-64) and Windows (any) without linking against libc or
-a CRT.
+built for Linux (x86-64, Aarch64) and Windows (any) without linking
+against libc or a CRT.
 
 Linux (x86-64 and Aarch64):
 
