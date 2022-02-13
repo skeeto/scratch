@@ -15,7 +15,7 @@
  * This is free and unencumbered software released into the public domain.
  */
 
-#if defined(__linux__) && !__STDC_HOSTED__
+#if __linux__ && !__STDC_HOSTED__
 /* Minimalist build (Linux) */
 #  define stdin  (void *)1
 #  define stdout (void *)2
@@ -28,7 +28,7 @@ typedef void FILE;
 static int ferrors[3];
 static int ferror(FILE *f) { return ferrors[(long)f-1]; }
 
-#  if defined(__amd64)
+#  if __amd64
 __asm (
     ".global _start\n"
     "_start:\n"
@@ -151,7 +151,7 @@ realloc(void *p, size_t size)
 #  define free(p)
 #  define fflush(f) 0
 #  define realloc xrealloc
-#  if defined(_MSC_VER)
+#  if _MSC_VER
 #      pragma comment(lib, "kernel32")
 #      pragma comment(lib, "shell32")
 #      pragma comment(linker, "/subsystem:console")
