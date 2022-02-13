@@ -25,7 +25,6 @@
 #  define free(p)
 #  define fflush(f) 0
 #  define realloc xrealloc
-#  define memcpy CopyMemory
 #  if defined(_MSC_VER)
 #      pragma comment(lib, "kernel32")
 #      pragma comment(lib, "shell32")
@@ -355,8 +354,9 @@ xmemcpy(char *dst, const char *src, size_t len)
     char buf[OVERCOPY];
     size_t n = 0;
     do {
-        memcpy(buf, src+n, sizeof(buf));
-        memcpy(dst+n, buf, sizeof(buf));
+        int i;
+        for (i = 0 ; i < OVERCOPY; i++) buf[i] = src[i];
+        for (i = 0 ; i < OVERCOPY; i++) dst[i] = buf[i];
         n += sizeof(buf);
     } while (n < len);
 }
