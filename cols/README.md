@@ -69,8 +69,17 @@ Unicode-aware column layout:
 
 ## Special, minimalist builds
 
-This program is highly portable and requires little runtime. On Windows it
-can be built without linking against a C runtime.
+This program is highly portable and requires little runtime. It can be
+built for Linux (x86-64) and Windows (any) without linking against libc or
+a CRT.
+
+Linux (x86-64):
+
+    $ make CFLAGS="-Os -fno-pie -ffreestanding" \
+           LDFLAGS="-s -no-pie -nostdlib -Wl,--omagic"
+
+Note: `--omagic` binaries are much smaller but less compatible, so you may
+want to exclude this option.
 
 Mingw-w64:
 

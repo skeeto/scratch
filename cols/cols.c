@@ -15,7 +15,132 @@
  * This is free and unencumbered software released into the public domain.
  */
 
-#if _MSC_VER || (_WIN32 && !__STDC_HOSTED__)
+#if defined(__linux__) && !__STDC_HOSTED__
+/* Minimalist build (Linux) */
+#  define stdin  (void *)1
+#  define stdout (void *)2
+#  define stderr (void *)3
+#  define free(p)
+#  define fflush(f) 0
+typedef unsigned long size_t;
+typedef void FILE;
+
+static int ferrors[3];
+static int ferror(FILE *f) { return ferrors[(long)f-1]; }
+
+#  if defined(__amd64)
+__asm (
+    ".global _start\n"
+    "_start:\n"
+    "   movl  (%rsp), %edi\n"
+    "   lea   8(%rsp), %rsi\n"
+    "   call  main\n"
+    "   movl  %eax, %edi\n"
+    "   movl  $60, %eax\n"
+    "   syscall\n"
+);
+
+static long
+read(int fd, void *buf, size_t len)
+{
+    long r;
+    __asm volatile (
+        "syscall"
+        : "=a"(r)
+        : "a"(0), "D"(fd), "S"(buf), "d"(len)
+        : "rcx", "r11", "memory"
+    );
+    return r;
+}
+
+static long
+write(int fd, const void *buf, size_t len)
+{
+    long r;
+    __asm volatile (
+        "syscall"
+        : "=a"(r)
+        : "a"(1), "D"(fd), "S"(buf), "d"(len)
+        : "rcx", "r11", "memory"
+    );
+    return r;
+}
+
+static long
+mmap_anon(size_t len)
+{
+    long r;
+    __asm volatile (
+        "mov  $0x22, %%r10d\n"  /* MAP_PRIVATE|MAP_ANONYMOUS */
+        "mov  $-1,   %%r8d\n"
+        "xor  %%r9d, %%r9d\n"
+        "syscall"
+        : "=a"(r)
+        : "a"(9), "D"(0L), "S"(len), "d"(3)
+        : "rcx", "r8", "r9", "r10", "r11", "memory"
+    );
+    return r;
+}
+
+static long
+mremap(void *p, size_t old, size_t new)
+{
+    long r;
+    __asm volatile (
+        "mov  1, %%r10d\n"  /* MREMAP_MAYMOVE */
+        "syscall"
+        : "=a"(r)
+        : "a"(25), "D"(p), "S"(old), "d"(new)
+        : "rcx", "r10", "r11", "memory"
+    );
+    return r;
+}
+#  endif
+
+static size_t
+fread(const void *buf, size_t size, size_t nmemb, FILE *f)
+{
+    int fd = (long)f - 1;
+    size_t w = size*nmemb;
+    size_t g = 0;
+    while (g < w) {
+        long r = read(fd, (char *)buf+g, w-g);
+        if (r < 0) {
+            ferrors[fd] = 1;
+            return 0;
+        }
+        if (!r) return g/size;
+        g += r;
+    }
+    return nmemb;
+}
+
+static size_t
+fwrite(const void *buf, size_t size, size_t nmemb, FILE *f)
+{
+    int fd = (long)f - 1;
+    size_t w = size*nmemb;
+    size_t g = 0;
+    while (g < w) {
+        long r = write(fd, (char *)buf+g, w-g);
+        if (r < 0) {
+            ferrors[fd] = 1;
+            return 0;
+        }
+        g += r;
+    }
+    return nmemb;
+}
+
+static void *
+realloc(void *p, size_t size)
+{
+    /* In all cases in this program, old size is half new size. */
+    long r = p ? mremap(p, size/2, size) : mmap_anon(size);
+    return (unsigned long)r > -4096UL ? 0 : (void *)r;
+}
+
+#elif _MSC_VER || (_WIN32 && !__STDC_HOSTED__)
 /* Minimalist build (Windows) */
 #  include <windows.h>
 #  define main oldmain
