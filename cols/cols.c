@@ -156,7 +156,6 @@ realloc(void *p, size_t size)
 #      pragma comment(lib, "shell32")
 #      pragma comment(linker, "/subsystem:console")
 #  endif
-typedef SIZE_T size_t;
 typedef void FILE;
 
 static int ferrors[3];
