@@ -135,8 +135,9 @@ fwrite(const void *buf, size_t size, size_t nmemb, FILE *f)
 static void *
 realloc(void *p, size_t size)
 {
-    /* In all cases in this program, old size is half new size. */
-    long r = p ? mremap(p, size/2, size) : mmap_anon(size);
+    static size_t old;
+    long r = p ? mremap(p, old, size) : mmap_anon(size);
+    old = size;  /* this program only realloc()s a single buffer */
     return (unsigned long)r > -4096UL ? 0 : (void *)r;
 }
 
