@@ -162,6 +162,25 @@ main(void)
     return 0;
 }
 
+#elif defined(FUZZ)
+#include <assert.h>
+#include <stdio.h>
+
+int
+main(void)
+{
+    unsigned short cmd[32767];
+    char buf[CMDLINE_BUF_MAX];
+    char *argv[CMDLINE_ARGV_MAX];
+    cmd[fread(cmd, 2, 32766, stdin)] = 0;
+    int argc = cmdline_to_argv8(cmd, argv, buf);
+    for (int i = 0; i < argc; i++) {
+        assert(argv[i]);
+        assert(argv[i] >= buf && argv[i] < buf+sizeof(buf)-1);
+    }
+    assert(!argv[argc]);
+}
+
 #elif defined(DEMO)
 #include <stdio.h>
 #include <string.h>
