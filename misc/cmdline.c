@@ -118,14 +118,58 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv, char *buf)
 }
 
 
-#if TEST
+#if defined(TEST)
 #include <stdio.h>
 #include <string.h>
 
 int
 main(void)
 {
-    wchar_t *cmd = cmdline_fetch();
+    static const struct { char cmd[16], argv[3][8]; } tests[] = {
+        {"\"abc\" d e",          {"abc",      "d",     "e"}},
+        {"a\\\\\\b d\"e f\"g h", {"a\\\\\\b", "de fg", "h"}},
+        {"a\\\\\\\"b c d",       {"a\\\"b",   "c",     "d"}},
+        {"a\\\\\\\\\"b c\" d e", {"a\\\\b c", "d",     "e"}},
+    };
+    char buf[CMDLINE_BUF_MAX];
+    char *argv[CMDLINE_ARGV_MAX];
+    int fails = 0;
+
+    for (int i = 0; i < (int)(sizeof(tests)/sizeof(*tests)); i++) {
+        unsigned short cmd[sizeof(tests[i].cmd)];
+        for (int j = 0; j < (int)sizeof(tests[i].cmd); j++) {
+            cmd[j] = tests[i].cmd[j];
+        }
+
+        int argc = cmdline_to_argv8(cmd, argv, buf);
+        if (argc != 3) {
+            printf("FAIL: argc, want 3, got %d\n", argc);
+            fails++;
+        }
+        for (int j = 0; j < 3; j++) {
+            const char *want = tests[i].argv[j];
+            if (strcmp(want, argv[j])) {
+                printf("FAIL: argv[%d], want %s, got %s\n", j, want, argv[j]);
+                fails++;
+            }
+        }
+    }
+
+    if (fails) {
+        return 1;
+    }
+    puts("All tests pass.");
+    return 0;
+}
+
+#elif defined(DEMO)
+#include <stdio.h>
+#include <string.h>
+
+int
+main(void)
+{
+    unsigned short *cmd = cmdline_fetch();
     static char buf[CMDLINE_BUF_MAX];
     static char *argv[CMDLINE_ARGV_MAX];
     int argc = cmdline_to_argv8(cmd, argv, buf);
