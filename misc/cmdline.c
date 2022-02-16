@@ -34,13 +34,13 @@ cmdline_fetch(void)
 // case for a Windows command string, and so no further allocation is
 // necessary.
 //
-// Unlike CommandLineToArgvW, when the command line string is empty,
+// Unlike CommandLineToArgvW, when the command line string is empty
 // this function does not invent an artificial argv[0] based on the
 // calling module file name.
 static int
 cmdline_to_argv8(const unsigned short *cmd, char **argv, char *buf)
 {
-    int argc = 1;   // worst case: argv[0] is an empty string
+    int argc  = 1;  // worst case: argv[0] is an empty string
     int state = 1;  // begin as though inside a token
     int slash = 0;
 
@@ -96,6 +96,7 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv, char *buf)
                 case 0x5c: slash++;
                 }
         }
+
         switch (c & 0x1f0880) {
         case 0x00000: *buf++ = 0x00 | ((c >>  0)     ); break;
         case 0x00080: *buf++ = 0xc0 | ((c >>  6)     );
@@ -111,6 +112,8 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv, char *buf)
         }
     }
 
+    *buf = 0;
+    argv[argc] = 0;
     return argc;
 }
 
