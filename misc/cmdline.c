@@ -1,10 +1,11 @@
 // cmdline: low-level command line utilities for Windows x86 and x64
 // This is free and unencumbered software released into the public domain.
 
+#define CMDLINE_CMD_MAX  32767  // worst case command line length
 #define CMDLINE_ARGV_MAX 16384  // worst case argv length
 #define CMDLINE_BUF_MAX  98299  // worst case UTF-8 encoding
 
-// Like GetCommandLineW(), but fetch the static string directly from the
+// Like GetCommandLineW, but fetch the static string directly from the
 // Process Environment Block (PEB) via the Thread Information Block (TIB).
 static unsigned short *
 cmdline_fetch(void)
@@ -25,7 +26,7 @@ cmdline_fetch(void)
 }
 
 // Convert a command line to a WTF-8 argv following the same rules as
-// CommandLineToArgvW(). Populates argv with pointers into buf (scratch
+// CommandLineToArgvW. Populates argv with pointers into buf (scratch
 // space) and returns argc (always > 0).
 //
 // Expects cmd has no more than 32,767 elements including the null
@@ -37,6 +38,8 @@ cmdline_fetch(void)
 // Unlike CommandLineToArgvW, when the command line string is empty
 // this function does not invent an artificial argv[0] based on the
 // calling module file name.
+//
+// If the input is UTF-16, then the output is UTF-8.
 static int
 cmdline_to_argv8(const unsigned short *cmd, char **argv, char *buf)
 {
@@ -94,7 +97,7 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv, char *buf)
                            state -= 2;
                            continue;
                 case 0x5c: slash++;
-                }
+                } break;
         }
 
         switch (c & 0x1f0880) {
@@ -115,6 +118,101 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv, char *buf)
     *buf = 0;
     argv[argc] = 0;
     return argc;
+}
+
+// Convert a WTF-8 argv into a Windows command line string. Returns the
+// length not including the null terminator, or zero if the command line
+// does not fit. The output buffer length must be 1 < len <= 32,767. It
+// produces the shortest possible encoding. The smallest possible output
+// length is 1.
+//
+// This function is essentially the inverse of CommandLineToArgvW.
+//
+// If the input is UTF-8, then the output is UTF-16.
+static int
+cmdline_from_argv8(unsigned short *cmd, int len, char **argv)
+{
+    unsigned short *p = cmd;
+    unsigned short *e = cmd + len;
+
+    for (char **arg = argv; *arg; arg++) {
+        if (*arg != *argv) {
+            *p++ = 0x20;
+            if (p == e) return 0;
+        } else if (!**arg) {
+            continue;  // empty argv[0] special case
+        }
+
+        int quoted = !*arg;
+        for (char *s = *arg; *s && !quoted; s++) {
+            quoted |= *s == 0x09;
+            quoted |= *s == 0x20;
+        }
+        if (quoted) {
+            *p++ = 0x22;
+            if (p == e) return 0;
+        }
+
+        int state = 0;
+        int slash = 0;
+        for (char *s = *arg; *s; s++) {
+            switch (state) {
+            case 0: switch (s[0]) {  // passthrough
+                    case 0x22: *p++ = 0x5c;
+                               if (p == e) return 0;
+                    default  : break;
+                    case 0x5c: slash = 1;
+                               state = 1;
+                    } break;
+            case 1: switch (s[0]) {  // backslash sequence
+                    case 0x22: for (int i = 0; i < slash+1; i++) {
+                                   *p++ = 0x5c;
+                                   if (p == e) return 0;
+                               } // fallthrough
+                    default  : state = 0;
+                               break;
+                    case 0x5c: slash++;
+                    } break;
+            }
+
+            int c;
+            switch (s[0]&0xf0) {
+            default  : *p++ = s[0];
+                       break;
+            case 0xc0:
+            case 0xd0: *p++ = (s[0]&0x1f) << 6 |
+                              (s[1]&0x3f) << 0;
+                       s += 1;
+                       break;
+            case 0xe0: *p++ = (s[0]&0x0f) << 12 |
+                              (s[1]&0x3f) <<  6 |
+                              (s[2]&0x3f) <<  0;
+                       s += 2;
+                       break;
+            case 0xf0: c    = (s[0]&0x0f) << 18 |
+                              (s[1]&0x3f) << 12 |
+                              (s[2]&0x3f) <<  6 |
+                              (s[3]&0x3f) <<  0;
+                       c -= 0x10000;
+                       *p++ = 0xd800 | (c >>  10);
+                       if (p == e) return 0;
+                       *p++ = 0xdc00 | (c & 1023);
+                       s += 3;
+            }
+            if (p == e) return 0;
+        }
+
+        if (quoted) {
+            *p++ = 0x22;
+            if (p == e) return 0;
+        }
+    }
+
+    if (p == cmd) {
+        *p++ = 0x20;
+    }
+    *p = 0;
+    return p - cmd;
 }
 
 
@@ -185,21 +283,35 @@ main(void)
 #include <stdio.h>
 #include <string.h>
 
+#include <io.h>
+#include <fcntl.h>
+#include <windows.h>
+
 int
 main(void)
 {
+    _setmode(1, _O_U8TEXT);
+
     unsigned short *cmd = cmdline_fetch();
+    wprintf(L"cmd = %ls\n", cmd, stdout);
+
     static char buf[CMDLINE_BUF_MAX];
     static char *argv[CMDLINE_ARGV_MAX];
     int argc = cmdline_to_argv8(cmd, argv, buf);
 
-    printf("argc = %d\n", argc);
+    wprintf(L"argc = %d\n", argc);
     for (int i = 0; i < argc; i++) {
-        printf("argv[%d] = %s (%d)", i, argv[i], (int)strlen(argv[i]));
+        unsigned short tmp[CMDLINE_CMD_MAX];
+        MultiByteToWideChar(CP_UTF8, 0, argv[i], -1, tmp, CMDLINE_CMD_MAX);
+        wprintf(L"argv[%d] = %-20ls (%d)", i, tmp, (int)strlen(argv[i]));
         for (char *c = argv[i]; *c; c++) {
-            printf(" %02x", *c&0xff);
+            wprintf(L" %02x", *c&0xff);
         }
-        putchar('\n');
+        fputwc('\n', stdout);
     }
+
+    unsigned short recmd[CMDLINE_CMD_MAX];
+    cmdline_from_argv8(recmd, CMDLINE_CMD_MAX, argv);
+    wprintf(L"recmd = %ls\n", recmd, stdout);
 }
 #endif
