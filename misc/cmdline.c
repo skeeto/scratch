@@ -39,21 +39,27 @@ cmdline_fetch(void)
 // the calling module file name. To implement this behavior yourself,
 // test if cmd[0] is zero and then act accordingly.
 //
-// Follows CommandLineToArgvW's post-2008 undocumented quoting behavior,
-// where adjacent quoted parts are delimited by a quote in the output.
-// Example: '"""x"""' parses to '"x"' (actual behavior) rather than 'x'
-// (documented behavior).
+// Follows CommandLineToArgvW's post-2008 undocumented quoting behavior
+// regarding the first argument and sequences of quotes.
 //
 // If the input is UTF-16, then the output is UTF-8.
 static int
 cmdline_to_argv8(const unsigned short *cmd, char **argv)
 {
     int argc  = 1;  // worst case: argv[0] is an empty string
-    int state = 2;  // begin as though inside a token
+    int state = 1;  // begin as though inside a token
+    int quote = 0;
     int slash = 0;
     char *buf = (char *)(argv + 16384);  // second half: byte buffer
 
     argv[0] = buf;
+    if (cmd[0] == 0x22 && cmd[1] == 0x22) {
+        // first argument special quoting rules
+        *buf++ = 0;
+        cmd += 2;
+        argv[argc++] = buf;
+    }
+
     while (*cmd) {
         int c = *cmd++;
         if (c>>10 == 0x36 && *cmd>>10 == 0x37) {  // surrogates?
@@ -65,38 +71,36 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv)
                 case 0x09:
                 case 0x20: continue;
                 case 0x22: argv[argc++] = buf;
-                           state = 3;
+                           state = 2;
                            continue;
                 case 0x5c: argv[argc++] = buf;
                            slash = 1;
-                           state = 4;
+                           state = 3;
                            break;
                 default  : argv[argc++] = buf;
-                           state = 2;
+                           state = 1;
                 } break;
-        case 1: switch (c) {  // just exited quoted token
-                case 0x22: *buf++ = 0x22;
-                } // fallthrough
-        case 2: switch (c) {  // inside unquoted token
+        case 1: switch (c) {  // inside unquoted token
                 case 0x09:
                 case 0x20: *buf++ = 0;
                            state = 0;
                            continue;
-                case 0x22: state = 3;
+                case 0x22: state = 2;
+                           continue;
+                case 0x5c: slash = 1;
+                           state = 3;
+                           break;
+                } break;
+        case 2: switch (c) {  // inside quoted token
+                case 0x22: quote = 2;
+                           state = 5;
                            continue;
                 case 0x5c: slash = 1;
                            state = 4;
                            break;
                 } break;
-        case 3: switch (c) {  // inside quoted token
-                case 0x22: state = 1;
-                           continue;
-                case 0x5c: slash = 1;
-                           state = 5;
-                           break;
-                } break;
-        case 4:
-        case 5: switch (c) {  // backslash sequence
+        case 3:
+        case 4: switch (c) {  // backslash sequence
                 case 0x22: buf -= (1 + slash) >> 1;
                            if (slash & 1) {
                                state -= 2;
@@ -106,6 +110,15 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv)
                            state -= 2;
                            continue;
                 case 0x5c: slash++;
+                } break;
+        case 5: switch (c) {  // quote sequence
+                default  : cmd--;
+                           state = 1 + quote%2;
+                           continue;
+                case 0x22: switch (++quote) {
+                           default: continue;
+                           case  3: quote = 0;
+                           }
                 } break;
         }
 
@@ -242,12 +255,17 @@ main(void)
         char cmd[16];
         char argv[3][8];
     } tests[] = {
-        {"\"abc\" d e",          {"abc",      "d",       "e"}},
-        {"a\\\\\\b d\"e f\"g h", {"a\\\\\\b", "de fg",   "h"}},
-        {"a\\\\\\\"b c d",       {"a\\\"b",   "c",       "d"}},
-        {"a\\\\\\\\\"b c\" d e", {"a\\\\b c", "d",       "e"}},
-        {"a \"b\"\"c\" d",       {"a",        "b\"c",    "d"}},
-        {"a \"\"\"b c\"\"\" d",  {"a",        "\"b c\"", "d"}},
+        {"\"abc\" d e",          {"abc",      "d",       "e"  }},
+        {"a\\\\\\b d\"e f\"g h", {"a\\\\\\b", "de fg",   "h"  }},
+        {"a\\\\\\\"b c d",       {"a\\\"b",   "c",       "d"  }},
+        {"a\\\\\\\\\"b c\" d e", {"a\\\\b c", "d",       "e"  }},
+        {" a b",                 {"",         "a",       "b"  }},
+        {"a \"b\"\"c\" d\" e",   {"a",        "b\"c d",  "e"  }},
+        {"a \"\"\"b c\"\"\" ",   {"a",        "\"b",     "c\""}},
+        {"a \"b\"\"\"c\" d",     {"a",        "b\"c",    "d"  }},
+        {"a b\"\"\"\"\"c d",     {"a",        "b\"c",    "d"  }},
+        {"a b\"\"\"\"\"\"c d",   {"a",        "b\"\"c",  "d"  }},
+        {"\"\"a b\" c",          {"",         "a",       "b c"}},
     };
     for (int i = 0; i < (int)(sizeof(tests)/sizeof(*tests)); i++) {
         unsigned short cmd[sizeof(tests[i].cmd)];
