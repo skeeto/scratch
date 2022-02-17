@@ -123,8 +123,8 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv, char *buf)
 // Convert a WTF-8 argv into a Windows command line string. Returns the
 // length not including the null terminator, or zero if the command line
 // does not fit. The output buffer length must be 1 < len <= 32,767. It
-// produces the shortest possible encoding. The smallest possible output
-// length is 1.
+// computes an optimally-short encoding, and the smallest output length
+// is 1.
 //
 // This function is essentially the inverse of CommandLineToArgvW.
 //
@@ -217,22 +217,28 @@ cmdline_from_argv8(unsigned short *cmd, int len, char **argv)
 
 
 #if defined(TEST)
+// These tests can be run on non-Windows systems.
 #include <stdio.h>
 #include <string.h>
 
 int
 main(void)
 {
-    static const struct { char cmd[16], argv[3][8]; } tests[] = {
+    int fails = 0;
+    char buf[CMDLINE_BUF_MAX];
+    char *argv[CMDLINE_ARGV_MAX];
+    unsigned short cmd[CMDLINE_CMD_MAX];
+
+    // Test basic argument splitting
+    static const struct {
+        char cmd[16];
+        char argv[3][8];
+    } tests[] = {
         {"\"abc\" d e",          {"abc",      "d",     "e"}},
         {"a\\\\\\b d\"e f\"g h", {"a\\\\\\b", "de fg", "h"}},
         {"a\\\\\\\"b c d",       {"a\\\"b",   "c",     "d"}},
         {"a\\\\\\\\\"b c\" d e", {"a\\\\b c", "d",     "e"}},
     };
-    char buf[CMDLINE_BUF_MAX];
-    char *argv[CMDLINE_ARGV_MAX];
-    int fails = 0;
-
     for (int i = 0; i < (int)(sizeof(tests)/sizeof(*tests)); i++) {
         unsigned short cmd[sizeof(tests[i].cmd)];
         for (int j = 0; j < (int)sizeof(tests[i].cmd); j++) {
@@ -253,6 +259,40 @@ main(void)
         }
     }
 
+    static const struct {
+        unsigned short cmd[4];
+        char wtf8[8];
+    } tests16[] = {
+        {{0xd800},         {0xed, 0xa0, 0x80}},
+        {{0xdcff},         {0xed, 0xb3, 0xbf}},
+        {{0xdbc4, 0xde34}, {0xf4, 0x81, 0x88, 0xb4}},
+        {{0xde34, 0xdbc4}, {0xed, 0xb8, 0xb4, 0xed, 0xaf, 0x84}},
+        {{0x03c0},         {0xcf, 0x80}},
+    };
+
+    // Test ill-formed UTF-16 to WTF-8
+    for (int i = 0; i < (int)(sizeof(tests16)/sizeof(*tests16)); i++) {
+        cmdline_to_argv8(tests16[i].cmd, argv, buf);
+        if (strcmp(argv[0], tests16[i].wtf8)) {
+            printf("FAIL: [%d] ill-formed UTF-16 to WTF-8\n", i);
+            fails++;
+        }
+    }
+
+    // Test WTF-8 to ill-formed UTF-16
+    for (int i = 0; i < (int)(sizeof(tests16)/sizeof(*tests16)); i++) {
+        char *argv[] = {(char *)tests16[i].wtf8, 0};
+        cmdline_from_argv8(cmd, CMDLINE_CMD_MAX, argv);
+        int match = 1;
+        for (int j = 0; match && (cmd[j] || tests16[i].cmd[j]); j++) {
+            match = cmd[j] == tests16[i].cmd[j];
+        }
+        if (!match) {
+            printf("FAIL: [%d] WTF-8 to ill-formed UTF-16\n", i);
+            fails++;
+        }
+    }
+
     if (fails) {
         return 1;
     }
@@ -261,6 +301,7 @@ main(void)
 }
 
 #elif defined(FUZZ)
+// Fuzzing can be done on non-Windows systems.
 #include <assert.h>
 #include <stdio.h>
 
