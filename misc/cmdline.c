@@ -47,19 +47,12 @@ static int
 cmdline_to_argv8(const unsigned short *cmd, char **argv)
 {
     int argc  = 1;  // worst case: argv[0] is an empty string
-    int state = 1;  // begin as though inside a token
+    int state = 6;  // special argv[0] state
     int quote = 0;
     int slash = 0;
     char *buf = (char *)(argv + 16384);  // second half: byte buffer
 
     argv[0] = buf;
-    if (cmd[0] == 0x22 && cmd[1] == 0x22) {
-        // first argument special quoting rules
-        *buf++ = 0;
-        cmd += 2;
-        argv[argc++] = buf;
-    }
-
     while (*cmd) {
         int c = *cmd++;
         if (c>>10 == 0x36 && *cmd>>10 == 0x37) {  // surrogates?
@@ -119,6 +112,25 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv)
                            default: continue;
                            case  3: quote = 0;
                            }
+                } break;
+        case 6: switch (c) {  // begin argv[0]
+                case 0x09:
+                case 0x20: *buf++ = 0;
+                           state = 0;
+                           continue;
+                case 0x22: state = 8;
+                           continue;
+                default  : state = 7;
+                } break;
+        case 7: switch (c) {  // unquoted argv[0]
+                case 0x09:
+                case 0x20: *buf++ = 0;
+                           state = 0;
+                           continue;
+                } break;
+        case 8: switch (c) {  // quoted argv[0]
+                case 0x22: *buf++ = 0;
+                           state = 0;
                 } break;
         }
 
@@ -255,17 +267,18 @@ main(void)
         char cmd[16];
         char argv[3][8];
     } tests[] = {
-        {"\"abc\" d e",          {"abc",      "d",       "e"  }},
-        {"a\\\\\\b d\"e f\"g h", {"a\\\\\\b", "de fg",   "h"  }},
-        {"a\\\\\\\"b c d",       {"a\\\"b",   "c",       "d"  }},
-        {"a\\\\\\\\\"b c\" d e", {"a\\\\b c", "d",       "e"  }},
-        {" a b",                 {"",         "a",       "b"  }},
-        {"a \"b\"\"c\" d\" e",   {"a",        "b\"c d",  "e"  }},
-        {"a \"\"\"b c\"\"\" ",   {"a",        "\"b",     "c\""}},
-        {"a \"b\"\"\"c\" d",     {"a",        "b\"c",    "d"  }},
-        {"a b\"\"\"\"\"c d",     {"a",        "b\"c",    "d"  }},
-        {"a b\"\"\"\"\"\"c d",   {"a",        "b\"\"c",  "d"  }},
-        {"\"\"a b\" c",          {"",         "a",       "b c"}},
+        {"\"abc\" d e",           {"abc",      "d",        "e"  }},
+        {"a\\\\\\b d\"e f\"g h",  {"a\\\\\\b", "de fg",    "h"  }},
+        {"a b\\\\\\\"c d",        {"a",        "b\\\"c",   "d"  }},
+        {"a b\\\\\\\\\"c d\" e ", {"a",        "b\\\\c d", "e", }},
+        {" a b",                  {"",         "a",        "b"  }},
+        {"a \"b\"\"c\" d\" e",    {"a",        "b\"c d",   "e"  }},
+        {"a \"\"\"b c\"\"\" ",    {"a",        "\"b",      "c\""}},
+        {"a \"b\"\"\"c\" d",      {"a",        "b\"c",     "d"  }},
+        {"a b\"\"\"\"\"c d",      {"a",        "b\"c",     "d"  }},
+        {"a b\"\"\"\"\"\"c d",    {"a",        "b\"\"c",   "d"  }},
+        {"\"\"a b\" c",           {"",         "a",        "b c"}},
+        {"\\\\\\\" \\\\\\\" c",   {"\\\\\\\"", "\\\"",     "c"  }},
     };
     for (int i = 0; i < (int)(sizeof(tests)/sizeof(*tests)); i++) {
         unsigned short cmd[sizeof(tests[i].cmd)];
