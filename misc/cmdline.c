@@ -245,13 +245,14 @@ main(void)
 
         int argc = cmdline_to_argv8(cmd, argv);
         if (argc != 3) {
-            printf("FAIL: argc, want 3, got %d\n", argc);
+            printf("FAIL: [%d] argc, want 3, got %d\n", i, argc);
             fails++;
         }
         for (int j = 0; j < 3; j++) {
             const char *want = tests[i].argv[j];
-            if (strcmp(want, argv[j])) {
-                printf("FAIL: argv[%d], want %s, got %s\n", j, want, argv[j]);
+            if (!argv[j] || strcmp(want, argv[j])) {
+                printf("FAIL: [%d] argv[%d], want %s, got %s\n",
+                       i, j, want, argv[j] ? argv[j] : "(null)");
                 fails++;
             }
         }
