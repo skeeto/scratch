@@ -1,9 +1,8 @@
 // cmdline: low-level command line utilities for Windows x86 and x64
 // This is free and unencumbered software released into the public domain.
 
-#define CMDLINE_CMD_MAX  32767  // worst case command line length
-#define CMDLINE_ARGV_MAX 16384  // worst case argv length
-#define CMDLINE_BUF_MAX  98299  // worst case UTF-8 encoding
+#define CMDLINE_CMD_MAX  32767  // max command line length on Windows
+#define CMDLINE_ARGV_MAX (16384+(98298+(int)sizeof(char*))/(int)sizeof(char*))
 
 // Like GetCommandLineW, but fetch the static string directly from the
 // Process Environment Block (PEB) via the Thread Information Block (TIB).
@@ -26,14 +25,13 @@ cmdline_fetch(void)
 }
 
 // Convert a command line to a WTF-8 argv following the same rules as
-// CommandLineToArgvW. Populates argv with pointers into buf (scratch
-// space) and returns argc (always > 0).
+// CommandLineToArgvW. Populates argv with pointers into itself and
+// returns argc (always > 0).
 //
 // Expects cmd has no more than 32,767 elements including the null
-// terminator, argv has at least CMDLINE_ARGV_MAX elements, and buf has
-// least CMDLINE_BUF_MAX elements. These are each the worst possible
-// case for a Windows command string, and so no further allocation is
-// necessary.
+// terminator, and argv has at least CMDLINE_ARGV_MAX elements. These
+// are the worst possible cases for a Windows command string, and so no
+// further allocation is ever necessary.
 //
 // Unlike CommandLineToArgvW, when the command line string is empty
 // this function does not invent an artificial argv[0] based on the
@@ -41,11 +39,12 @@ cmdline_fetch(void)
 //
 // If the input is UTF-16, then the output is UTF-8.
 static int
-cmdline_to_argv8(const unsigned short *cmd, char **argv, char *buf)
+cmdline_to_argv8(const unsigned short *cmd, char **argv)
 {
     int argc  = 1;  // worst case: argv[0] is an empty string
     int state = 1;  // begin as though inside a token
     int slash = 0;
+    char *buf = (char *)(argv + 16384);  // second half: byte buffer
 
     argv[0] = buf;
     while (*cmd) {
@@ -225,7 +224,6 @@ int
 main(void)
 {
     int fails = 0;
-    char buf[CMDLINE_BUF_MAX];
     char *argv[CMDLINE_ARGV_MAX];
     unsigned short cmd[CMDLINE_CMD_MAX];
 
@@ -245,7 +243,7 @@ main(void)
             cmd[j] = tests[i].cmd[j];
         }
 
-        int argc = cmdline_to_argv8(cmd, argv, buf);
+        int argc = cmdline_to_argv8(cmd, argv);
         if (argc != 3) {
             printf("FAIL: argc, want 3, got %d\n", argc);
             fails++;
@@ -271,8 +269,8 @@ main(void)
     };
 
     // Test ill-formed UTF-16 to WTF-8
-    for (int i = 0; i < (int)(sizeof(tests16)/sizeof(*tests16)); i++) {
-        cmdline_to_argv8(tests16[i].cmd, argv, buf);
+    for (int i = 1; i < (int)(sizeof(tests16)/sizeof(*tests16)); i++) {
+        cmdline_to_argv8(tests16[i].cmd, argv);
         if (strcmp(argv[0], tests16[i].wtf8)) {
             printf("FAIL: [%d] ill-formed UTF-16 to WTF-8\n", i);
             fails++;
@@ -309,13 +307,13 @@ int
 main(void)
 {
     unsigned short cmd[32767];
-    char buf[CMDLINE_BUF_MAX];
     char *argv[CMDLINE_ARGV_MAX];
     cmd[fread(cmd, 2, 32766, stdin)] = 0;
-    int argc = cmdline_to_argv8(cmd, argv, buf);
+    int argc = cmdline_to_argv8(cmd, argv);
     for (int i = 0; i < argc; i++) {
         assert(argv[i]);
-        assert(argv[i] >= buf && argv[i] < buf+sizeof(buf)-1);
+        assert(argv[i] >= (char *)argv);
+        assert(argv[i] < (char *)argv+sizeof(argv)-1);
     }
     assert(!argv[argc]);
 }
@@ -336,9 +334,8 @@ main(void)
     unsigned short *cmd = cmdline_fetch();
     wprintf(L"cmd = %ls\n", cmd, stdout);
 
-    static char buf[CMDLINE_BUF_MAX];
     static char *argv[CMDLINE_ARGV_MAX];
-    int argc = cmdline_to_argv8(cmd, argv, buf);
+    int argc = cmdline_to_argv8(cmd, argv);
 
     wprintf(L"argc = %d\n", argc);
     for (int i = 0; i < argc; i++) {
