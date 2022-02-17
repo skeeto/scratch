@@ -159,7 +159,7 @@ cmdline_from_argv8(unsigned short *cmd, int len, char **argv)
             case 0: switch (s[0]) {  // passthrough
                     case 0x22: *p++ = 0x5c;
                                if (p == e) return 0;
-                    default  : break;
+                               break;
                     case 0x5c: slash = 1;
                                state = 1;
                     } break;
@@ -192,7 +192,7 @@ cmdline_from_argv8(unsigned short *cmd, int len, char **argv)
                               (s[1]&0x3f) << 12 |
                               (s[2]&0x3f) <<  6 |
                               (s[3]&0x3f) <<  0;
-                       c -= 0x10000;
+                       c -= 0x10000;  // surrogates
                        *p++ = 0xd800 | (c >>  10);
                        if (p == e) return 0;
                        *p++ = 0xdc00 | (c & 1023);
@@ -306,9 +306,9 @@ main(void)
 int
 main(void)
 {
-    unsigned short cmd[32767];
+    unsigned short cmd[CMDLINE_CMD_MAX];
     char *argv[CMDLINE_ARGV_MAX];
-    cmd[fread(cmd, 2, 32766, stdin)] = 0;
+    cmd[fread(cmd, 2, CMDLINE_CMD_MAX-1, stdin)] = 0;
     int argc = cmdline_to_argv8(cmd, argv);
     for (int i = 0; i < argc; i++) {
         assert(argv[i]);
