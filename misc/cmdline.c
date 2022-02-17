@@ -48,7 +48,6 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv)
 {
     int argc  = 1;  // worst case: argv[0] is an empty string
     int state = 6;  // special argv[0] state
-    int quote = 0;
     int slash = 0;
     char *buf = (char *)(argv + 16384);  // second half: byte buffer
 
@@ -85,8 +84,7 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv)
                            break;
                 } break;
         case 2: switch (c) {  // inside quoted token
-                case 0x22: quote = 2;
-                           state = 5;
+                case 0x22: state = 5;
                            continue;
                 case 0x5c: slash = 1;
                            state = 4;
@@ -104,14 +102,11 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv)
                            continue;
                 case 0x5c: slash++;
                 } break;
-        case 5: switch (c) {  // quote sequence
+        case 5: switch (c) {  // quoted token exit
                 default  : cmd--;
-                           state = 1 + quote%2;
+                           state = 1;
                            continue;
-                case 0x22: switch (++quote) {
-                           default: continue;
-                           case  3: quote = 0;
-                           }
+                case 0x22: state = 1;
                 } break;
         case 6: switch (c) {  // begin argv[0]
                 case 0x09:
