@@ -24,25 +24,32 @@ cmdline_fetch(void)
     return cmd;
 }
 
-// Convert a command line to a WTF-8 argv following the same rules as
-// CommandLineToArgvW. Populates argv with pointers into itself and
-// returns argc (always > 0).
+// Convert an ill-formed-UTF-16 command line to a WTF-8 argv following
+// field splitting semantics identical to CommandLineToArgvW, including
+// undocumented behavior. Populates argv with pointers into itself and
+// returns argc, which is always positive.
 //
-// Expects cmd has no more than 32,767 elements including the null
-// terminator, and argv has at least CMDLINE_ARGV_MAX elements. These
-// are the worst possible cases for a Windows command string, and so no
-// further allocation is ever necessary.
+// Expects that cmd has no more than 32,767 (CMDLINE_CMD_MAX) elements
+// including the null terminator, and argv has at least CMDLINE_ARGV_MAX
+// elements. This covers the worst possible cases for a Windows command
+// string, so no further allocation is ever necessary.
 //
-// Unlike CommandLineToArgvW, when the command line string is empty
-// this function does not invent an artificial argv[0] based on the
-// calling module file name.
+// Unlike CommandLineToArgvW, when the command line string is zero
+// length this function does not invent an artificial argv[0] based on
+// the calling module file name. To implement this behavior yourself,
+// test if cmd[0] is zero and then act accordingly.
+//
+// Follows CommandLineToArgvW's post-2008 undocumented quoting behavior,
+// where adjacent quoted parts are delimited by a quote in the output.
+// Example: '"""x"""' parses to '"x"' (actual behavior) rather than 'x'
+// (documented behavior).
 //
 // If the input is UTF-16, then the output is UTF-8.
 static int
 cmdline_to_argv8(const unsigned short *cmd, char **argv)
 {
     int argc  = 1;  // worst case: argv[0] is an empty string
-    int state = 1;  // begin as though inside a token
+    int state = 2;  // begin as though inside a token
     int slash = 0;
     char *buf = (char *)(argv + 16384);  // second half: byte buffer
 
@@ -58,35 +65,38 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv)
                 case 0x09:
                 case 0x20: continue;
                 case 0x22: argv[argc++] = buf;
-                           state = 2;
+                           state = 3;
                            continue;
                 case 0x5c: argv[argc++] = buf;
                            slash = 1;
-                           state = 3;
+                           state = 4;
                            break;
                 default  : argv[argc++] = buf;
-                           state = 1;
+                           state = 2;
                 } break;
-        case 1: switch (c) {  // inside unquoted token
+        case 1: switch (c) {  // just exited quoted token
+                case 0x22: *buf++ = 0x22;
+                } // fallthrough
+        case 2: switch (c) {  // inside unquoted token
                 case 0x09:
                 case 0x20: *buf++ = 0;
                            state = 0;
                            continue;
-                case 0x22: state = 2;
-                           continue;
-                case 0x5c: slash = 1;
-                           state = 3;
-                           break;
-                } break;
-        case 2: switch (c) {  // inside quoted token
-                case 0x22: state = 1;
+                case 0x22: state = 3;
                            continue;
                 case 0x5c: slash = 1;
                            state = 4;
                            break;
                 } break;
-        case 3:
-        case 4: switch (c) {  // backslash sequence
+        case 3: switch (c) {  // inside quoted token
+                case 0x22: state = 1;
+                           continue;
+                case 0x5c: slash = 1;
+                           state = 5;
+                           break;
+                } break;
+        case 4:
+        case 5: switch (c) {  // backslash sequence
                 case 0x22: buf -= (1 + slash) >> 1;
                            if (slash & 1) {
                                state -= 2;
@@ -232,10 +242,12 @@ main(void)
         char cmd[16];
         char argv[3][8];
     } tests[] = {
-        {"\"abc\" d e",          {"abc",      "d",     "e"}},
-        {"a\\\\\\b d\"e f\"g h", {"a\\\\\\b", "de fg", "h"}},
-        {"a\\\\\\\"b c d",       {"a\\\"b",   "c",     "d"}},
-        {"a\\\\\\\\\"b c\" d e", {"a\\\\b c", "d",     "e"}},
+        {"\"abc\" d e",          {"abc",      "d",       "e"}},
+        {"a\\\\\\b d\"e f\"g h", {"a\\\\\\b", "de fg",   "h"}},
+        {"a\\\\\\\"b c d",       {"a\\\"b",   "c",       "d"}},
+        {"a\\\\\\\\\"b c\" d e", {"a\\\\b c", "d",       "e"}},
+        {"a \"b\"\"c\" d",       {"a",        "b\"c",    "d"}},
+        {"a \"\"\"b c\"\"\" d",  {"a",        "\"b c\"", "d"}},
     };
     for (int i = 0; i < (int)(sizeof(tests)/sizeof(*tests)); i++) {
         unsigned short cmd[sizeof(tests[i].cmd)];
