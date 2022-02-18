@@ -480,8 +480,8 @@ xmemcpy(char *dst, const char *src, size_t len)
     size_t n = 0;
     do {
         int i;
-        for (i = 0 ; i < OVERCOPY; i++) buf[i] = src[i];
-        for (i = 0 ; i < OVERCOPY; i++) dst[i] = buf[i];
+        for (i = 0 ; i < OVERCOPY; i++) buf[i] = src[i+n];
+        for (i = 0 ; i < OVERCOPY; i++) dst[i+n] = buf[i];
         n += sizeof(buf);
     } while (n < len);
 }
