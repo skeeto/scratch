@@ -39,8 +39,8 @@ cmdline_fetch(void)
 // the calling module file name. To implement this behavior yourself,
 // test if cmd[0] is zero and then act accordingly.
 //
-// Follows CommandLineToArgvW's post-2008 undocumented quoting behavior
-// regarding the first argument and sequences of quotes.
+// This implementation follows CommandLineToArgvW's undocumented quoting
+// behavior and its special first argument handling.
 //
 // If the input is UTF-16, then the output is UTF-8.
 static int
@@ -129,7 +129,7 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv)
                 } break;
         }
 
-        switch (c & 0x1f0880) {
+        switch (c & 0x1f0880) {  // WTF-8/UTF-8 encoding
         case 0x00000: *buf++ = 0x00 | ((c >>  0)     ); break;
         case 0x00080: *buf++ = 0xc0 | ((c >>  6)     );
                       *buf++ = 0x80 | ((c >>  0) & 63); break;
@@ -205,7 +205,7 @@ cmdline_from_argv8(unsigned short *cmd, int len, char **argv)
             }
 
             int c;
-            switch (s[0]&0xf0) {
+            switch (s[0]&0xf0) {  // ill-formed UTF-16 encoding
             default  : *p++ = s[0];
                        break;
             case 0xc0:
