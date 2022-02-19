@@ -126,6 +126,7 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv)
         case 8: switch (c) {  // quoted argv[0]
                 case 0x22: *buf++ = 0;
                            state = 0;
+                           continue;
                 } break;
         }
 
