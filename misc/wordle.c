@@ -1,20 +1,20 @@
 // Tiny, compressed Wordle utility library
 //
 // This library has two representations of the 77,832-byte uncompressed
-// World list:
+// Wordle list:
 //
 // * words_next: 35,388-byte compressed block, 51-byte coding table, and
 //   about 80 bytes of decompression instructions. Decompresses words
 //   one at a time, so the entire list does not need to be decompressed
-//   at once. Words are compressed letter-wise using a 26-element
+//   at once. Words are compressed letter-wise using a simple 26-element
 //   Huffman table.
 //
 // * words_decompress: 20,620-byte compressed block, 554-byte coding
 //   table, and about 200 bytes of decompression instructions. It's
-//   substantially smaller, but the entire word list is decompressed at
-//   once. It compresses the list column-wise, and the compression
-//   stream is composed of pairs of run-length encoding tokens encoded
-//   with Huffman encoding.
+//   substantially smaller and beats most generic compressors, but the
+//   entire word list is decompressed at once. It compresses the list
+//   column-wise, and the compression stream is composed of pairs of
+//   run-length encoding tokens encoded with Huffman encoding.
 //
 // Also includes a run-time 64kB hash table for fast, efficient checks
 // against the word list.
@@ -29,7 +29,7 @@
 // destination. Returns the next iteration state. The initial state is
 // zero. Do not exceed WORDS_TOTAL iterations.
 static int32_t
-words_next(char *word, int32_t state)
+words_next(char word[5], int32_t state)
 {
     static const uint32_t words[8847] = {
         0xbc924192,0xa460ea4a,0x94d452a6,0x6a2966a2,0xac9a8ade,0x75148ba8,
