@@ -38,6 +38,19 @@ this, changing the format to more closely match the 2017 dataset:
 
 The conversion process takes a couple of minutes on typical hardware.
 
+## Sample output
+
+The first few lines of the converted output:
+
+    timestamp,user,color,x,y
+    45850315,804018,14,42,42
+    45862671,804019,3,999,999
+    45866626,804020,7,44,42
+    45871703,804021,21,2,2
+    45884409,804022,7,23,23
+    45890544,804023,6,420,420
+    45917836,804024,10,110,37
+
 ## Rendering
 
 The rendering program expects input in the smart format. The full pipeline
