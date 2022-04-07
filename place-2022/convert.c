@@ -142,15 +142,15 @@ main(void)
         int32_t i = nevents++;
         int tlen = strchr(line, ',') - line;
 
-	int32_t d = line[9] - '1';
-	int32_t h = 10*(line[11]-'0') + line[12] - '0';
-	int32_t m = 10*(line[14]-'0') + line[15] - '0';
-	int32_t s = 10*(line[17]-'0') + line[18] - '0';
+        int32_t d = line[9] - '1';
+        int32_t h = 10*(line[11]-'0') + line[12] - '0';
+        int32_t m = 10*(line[14]-'0') + line[15] - '0';
+        int32_t s = 10*(line[17]-'0') + line[18] - '0';
         int32_t f = 0;
         switch (tlen) {
         case 23: break;
-	case 25: f = 100*(line[20]-'0'); break;
-	case 26: f = 100*(line[20]-'0') + 10*(line[21]-'0'); break;
+        case 25: f = 100*(line[20]-'0'); break;
+        case 26: f = 100*(line[20]-'0') + 10*(line[21]-'0'); break;
         case 27: f = 100*(line[20]-'0') + 10*(line[21]-'0') + line[22] - '0';
         }
         events[i].ts = d*(24*60*60*1000) +
