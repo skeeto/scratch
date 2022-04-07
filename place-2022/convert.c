@@ -91,20 +91,25 @@ to_index(int32_t color)
     return t[(color * UINT32_C(0x775d1eb3)) >> 26];
 }
 
-// Parse an image coordinate pair. Input pointer must be just inside the
-// first quote.
-static void
-parse_coord(const char *c, int16_t *xy)
+// Parse a coordinate/rectangle. Returns the number of elements (2, 4).
+// The input pointer must be just inside the first quote.
+static int
+parse_coord(const char *s, int *c)
 {
-    xy[0] = xy[1] = 0;
-    for (int i = 0; i < 2; i++) {
-        for (;; c++) {
-            unsigned v = *c - '0';
-            if (v > 9) {
-                c++;
+    int i = c[0] = 0;
+    for (;;) {
+        for (;; s++) {
+            switch (*s) {
+            case '0': case '1': case '2': case '3': case '4':
+            case '5': case '6': case '7': case '8': case '9':
+                c[i] = 10*c[i] + *s - '0';
+                break;
+            case '"':
+                return i + 1;
+            case ',':
+                c[++i] = 0;
                 break;
             }
-            xy[i] = xy[i]*10 + v;
         }
     }
 }
@@ -163,10 +168,25 @@ main(void)
 
         events[i].color = to_index(parse_color(line + tlen + 1 + 88 + 1 + 1));
 
-        int16_t xy[2];
-        parse_coord(line + tlen + 1 + 88 + 1 + 7 + 1 + 1, xy);
-        events[i].x = xy[0];
-        events[i].y = xy[1];
+        int coord[4];
+        int n = parse_coord(line + tlen + 1 + 88 + 1 + 7 + 1 + 1, coord);
+        switch (n) {
+        case 2: events[i].x = coord[0];
+                events[i].y = coord[1];
+                break;
+        case 4: nevents--;  // redo the current event
+                int j = i - 1;
+                for (int x = coord[0]; x <= coord[2]; x++) {
+                    for (int y = coord[1]; y <= coord[3]; y++) {
+                        j = nevents++;
+                        events[j].ts    = events[i].ts;
+                        events[j].user  = events[i].user;
+                        events[j].color = events[i].color;
+                        events[j].x     = x;
+                        events[j].y     = y;
+                    }
+                }
+        }
     }
 
     qsort(events, nevents, sizeof(*events), int32_cmp);
