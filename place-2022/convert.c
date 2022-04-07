@@ -82,7 +82,7 @@ to_index(int32_t color)
     //   493ac1 515252 51e9f4 6a5cff 6d001a 6d482f 7eed56 811e9f
     //   898d90 94b3ff 9c6926 b44ac0 be0039 d4d7d9 de107f e4abff
     //   ff3881 ff4500 ff99aa ffa800 ffb470 ffd635 fff8b8 ffffff
-    static unsigned char t[64] = {
+    static const unsigned char t[64] = {
         +0, 19,  0,  0, 11,  0, 24,  0, 29,  0,  4, 13, 12,  0, 31, 10,
         +0, 28,  0,  0,  1,  0,  0, 20,  0,  0, 14,  0, 23,  0,  0, 26,
         +0, 15,  0,  0,  0, 30,  0, 18,  0,  0, 22, 25, 27,  0,  5,  2,
