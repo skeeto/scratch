@@ -121,13 +121,13 @@ int32_cmp(const void *p0, const void *p1)
 int
 main(void)
 {
-    static struct {
+    struct {
         int32_t ts;     // ~29 bits
         int32_t user;   // ~24 bits
         int16_t x;      //  11 bits
         int16_t y;      //  11 bits
         int8_t color;   //   5 bits
-    } events[1<<28];
+    } *events = malloc((1L<<28) * sizeof(*events));
     int32_t nevents = 0;
 
     #if _WIN32
@@ -181,6 +181,7 @@ main(void)
                events[i].y);
     }
 
+    free(events);
     fflush(stdout);
     return ferror(stdout);
 }
