@@ -58,7 +58,7 @@ looks like so:
 
     $ gunzip <2022_place_canvas_history.csv.gzip |
           ./convert | ./render |
-          ffmpeg -framerate 60 -i - 2022_place.mp4
+          ffmpeg -framerate 60 -i - -c:v libx264 -pix_fmt yuv420p place.mp4
 
 As with conversion, the bottleneck is `gunzip`.
 
