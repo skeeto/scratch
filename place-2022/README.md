@@ -8,7 +8,7 @@ unfriendly format:
   less effective.
 
 * User IDs are 88-byte, uncompressible hashes. With 10,381,125 distinct
-  users, *at best* around 10% of the 11GB dataset is just these useless,
+  users, *at best* around 10% of the 12GB dataset is just these useless,
   random hashes. This also has knock-on effects that makes compression
   less efficient. A big waste.
 
@@ -17,10 +17,11 @@ unfriendly format:
 
 * The coordinate field embeds another CSV, and so must be parsed twice.
 
-The compressed data is 11GB, uncompressing to 20GB — 160,353,104 placement
-entries. With just a little more thought, this can be reduced to just 1GB
-compressed without any information loss. The `convert` program does this,
-changing the format to more closely match the 2017 dataset:
+The compressed data is 12GB, uncompressing to 20GB — 160,353,104 placement
+entries. Recompressing with `zstd` gets it down to 5.3GB, plus it's much
+faster. With a little more thought, this can be further reduced to just
+1.2GB compressed without information loss. The `convert` program does
+this, changing the format to more closely match the 2017 dataset:
 
 * The data is sorted, making it immediately useful.
 
