@@ -36,8 +36,8 @@ this, changing the format to more closely match the 2017 dataset:
 
 * Colors are converted into a 32-element palette index (0-31).
 
-* Moderator rectangles — 20 in total — are unrolled into individual,
-  simultaneous events.
+* Moderation rectangles — 20 in total — are removed since, due to an
+  export error, these events contain incorrect coordinates.
 
 The conversion process takes a couple of minutes on typical hardware.
 

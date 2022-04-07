@@ -174,18 +174,7 @@ main(void)
         case 2: events[i].x = coord[0];
                 events[i].y = coord[1];
                 break;
-        case 4: nevents--;  // redo the current event
-                int j = i - 1;
-                for (int x = coord[0]; x <= coord[2]; x++) {
-                    for (int y = coord[1]; y <= coord[3]; y++) {
-                        j = nevents++;
-                        events[j].ts    = events[i].ts;
-                        events[j].user  = events[i].user;
-                        events[j].color = events[i].color;
-                        events[j].x     = x;
-                        events[j].y     = y;
-                    }
-                }
+        case 4: nevents--;  // revert the event (bad data)
         }
     }
 
