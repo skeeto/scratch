@@ -12,8 +12,9 @@ unfriendly format:
   random hashes. This also has knock-on effects that makes compression
   less efficient. A big waste.
 
-* Timestamps are a variable-width, human-readable format that is tricky to
-  parse. In the 2017 dataset it's just a unix epoch counter.
+* Timestamps are a variable-width, variable-precision, non-standard,
+  human-readable format that is tricky to parse. In the 2017 dataset it's
+  just a unix epoch counter.
 
 * The coordinate field embeds another CSV, and so must be parsed twice.
 
