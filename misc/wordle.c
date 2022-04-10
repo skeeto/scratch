@@ -1,23 +1,14 @@
 // Tiny, compressed Wordle utility library
 //
-// This library has two representations of the 77,832-byte uncompressed
-// Wordle list:
-//
-// * words_next: 35,388-byte compressed block, 51-byte coding table, and
-//   about 80 bytes of decompression instructions. Decompresses words
-//   one at a time, so the entire list does not need to be decompressed
-//   at once. Words are compressed letter-wise using a simple 26-element
-//   Huffman table.
-//
-// * words_decompress: 20,620-byte compressed block, 554-byte coding
-//   table, and about 200 bytes of decompression instructions. It's
-//   substantially smaller and beats most generic compressors, but the
-//   entire word list is decompressed at once. It compresses the list
-//   column-wise, and the compression stream is composed of pairs of
-//   run-length encoding tokens encoded with Huffman encoding.
+// This library compresses the 77,832-byte official Wordle list to a
+// 16,659-byte table and ~200 bytes of decompression instructions. It
+// decompresses words one at a time, so the entire list does not need to
+// be decompressed at once.
 //
 // Also includes a run-time 64kB hash table for fast, efficient checks
 // against the word list.
+//
+// Ref: http://nullprogram.com/blog/2022/03/07/
 //
 // This is free and unencumbered software released into the public domain.
 #include <stdint.h>
