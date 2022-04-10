@@ -35,9 +35,7 @@ words_next(char word[5], int64_t state)
     // from zero. Each delta is a 4-bit length (1-15, 18) followed by that
     // many bits of delta. Uses high-bit-first bit order.
     //
-    // The state carries up to 7 leftover bits between iterations, tracks a
-    // byte offset into the delta-encoding table, and remembers the previous
-    // word.
+    // The state tracks a delta-encoding table bit offset and the last word.
     static const unsigned char words[16659] = {
         201,115,221,126,223,209,197,+79,+44,+ 4,112,+49,195,+79,109,237,+12,
         249,224,199,+29,+40,223,154,+51,+89,+63,+44,255,241,145,169,208,+86,
@@ -1020,21 +1018,22 @@ words_next(char word[5], int64_t state)
         162,152,144,250,164,121,119,230,174,117,+82,121,180,123,+ 0,+85,113,
         + 6,+86,+46,149,+21,178,173,+30,111,209,197,186,251,101,172,+88
     };
-    int     off  = (state >>  0) & 0xffff; // 15 bits
-    int32_t bits = (state >> 16) & 0x00ff; //  7 bits (25 bits working)
-    int     len  = (state >> 24) & 0x00ff; //  3 bits
-    int32_t code = (state >> 32)         ; // 24 bits
+    int32_t off  = state >>  0;  // 18 bits
+    int32_t code = state >> 32;  // 24 bits
+    int     idx  = off >> 3;
+    int32_t bits = words[idx];
+    int     len  = 8 - (off & 7);
 
     // Decode delta bit length (4 bits)
     for (len -= 4; len < 0; len += 8) {
-        bits = bits<<8 | words[off++];
+        bits = bits<<8 | words[++idx];
     }
     int dlen = (bits >> len) & 15;
     dlen = dlen==15 ? 18 : dlen+1;  // 1-15, 18
 
     // Decode delta (1-18 bits)
     for (len -= dlen; len < 0; len += 8) {
-        bits = bits<<8 | words[off++];
+        bits = bits<<8 | words[++idx];
     }
 
     // Decode word using base-26
@@ -1046,8 +1045,7 @@ words_next(char word[5], int64_t state)
     word[3] = 'a' + code/(26)          % 26;
     word[4] = 'a' + code               % 26;
 
-    bits &= 0xff;  // mask out discarded bits
-    return off | (int64_t)bits<<16 | (int64_t)len<<24 | (int64_t)code<<32;
+    return ((idx<<3) + 8 - len) | (int64_t)code<<32;
 }
 
 // Create a hash table of the word list. The table must be initialized
