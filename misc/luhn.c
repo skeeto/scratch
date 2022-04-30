@@ -1,10 +1,36 @@
 // Luhn algorithm credit card check using 64-bit SWAR
 // This is free and unencumbered software released into the public domain.
+#if __SSE2__
+#  include <emmintrin.h>
+#endif
 
-// Is this 16-digit credit card number valid?
+// Compute the Luhn algorithm sum of a 16-digit ASCII string.
 static int
 luhn(const char *s)
 {
+    #if __SSE2__
+    __m128i r = _mm_loadu_si128((void *)s);
+
+    // decode ASCII
+    r = _mm_sub_epi8(r, _mm_set1_epi8(0x30));
+
+    // double every other digit
+    __m128i m = _mm_set1_epi16(0x00ff);
+    r = _mm_add_epi8(r, _mm_and_si128(r, m));
+
+    // extract and add tens digit
+    __m128i t = _mm_set1_epi16(0x0006);
+    t = _mm_add_epi8(r, t);
+    t = _mm_srai_epi32(t, 4);
+    t = _mm_and_si128(t, _mm_set1_epi8(1));
+    r = _mm_add_epi8(r, t);
+
+    // horizontal sum
+    r = _mm_sad_epu8(r, _mm_set1_epi32(0));
+    r = _mm_add_epi32(r, _mm_shuffle_epi32(r, 2));
+    return _mm_cvtsi128_si32(r) % 10;
+
+    #else
     // Load two 64-bit little endian integers, operate as SWAR
     unsigned char *p = (unsigned char *)s;
     unsigned long long hi =
@@ -17,16 +43,18 @@ luhn(const char *s)
         (unsigned long long)p[10] << 16 | (unsigned long long)p[11] << 24 |
         (unsigned long long)p[12] << 32 | (unsigned long long)p[13] << 40 |
         (unsigned long long)p[14] << 48 | (unsigned long long)p[15] << 56;
-    hi -= 0x3030303030303030;  // decode ASCII characters
+    hi -= 0x3030303030303030;  // decode ASCII
     lo -= 0x3030303030303030;
     hi += hi & 0x00ff00ff00ff00ff;  // double every other digit
     lo += lo & 0x00ff00ff00ff00ff;
     hi += (hi + 0x0006000600060006)>>4 & 0x0001000100010001;  // add tens
     lo += (lo + 0x0006000600060006)>>4 & 0x0001000100010001;
-    hi += hi >> 32; lo += lo >> 32;  // channel-wise sum
-    hi += hi >> 16; lo += lo >> 16;
-    hi += hi >>  8; lo += lo >>  8;
-    return !(((hi&255) + (lo&255)) % 10);  // sum SWAR results and check
+    hi += lo;
+    hi += hi >> 32;  // channel-wise sum
+    hi += hi >> 16;
+    hi += hi >>  8;
+    return (hi&255) % 10;  // extract lowest lane
+    #endif
 }
 
 #if TEST
@@ -42,16 +70,16 @@ luhn_simple(const char *s)
         n += v;
         n += v >= 10;
     }
-    return !(n%10);
+    return n % 10;
 }
 
 int
 main(void)
 {
-    assert(luhn("5555555555554444"));
-    assert(luhn("5105105105105100"));
-    assert(luhn("4111111111111111"));
-    assert(luhn("4012888888881881"));
+    assert(0 == luhn("5555555555554444"));
+    assert(0 == luhn("5105105105105100"));
+    assert(0 == luhn("4111111111111111"));
+    assert(0 == luhn("4012888888881881"));
 
     #pragma omp parallel for
     for (long i = 0; i < 1L<<26; i++) {
@@ -110,12 +138,12 @@ main(void)
 
     long n = 1L << 28;
     double start = now();
-    long r = 0;
+    unsigned r = 1;
     for (long i = 0; i < n; i++) {
         uint32_t n = i;
         r += luhn(cards[(n*0x1c5bf891U)>>30]);  // random draw
     }
-    volatile long sink = r; (void)sink;
+    volatile unsigned sink = r; (void)sink;
     printf("%.3f M-ops/s\n", n / 1e6 / (now() - start));
 }
 #endif
