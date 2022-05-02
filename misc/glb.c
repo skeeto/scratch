@@ -21,19 +21,18 @@ struct hdr {
 static char errbuf[64];
 
 /* Decrypt a buffer in place. Returns the state such that decryption can
- * continue with more input. Use DECRYPT_INIT for the initial state. Except
- * for the final call, length must be divisible by 8.
+ * continue with more input. Use zero for the initial state. Except for the
+ * final call, length must be divisible by 8.
  */
 static int
 decrypt(unsigned char *buf, long len, int state)
 {
-    #define DECRYPT_INIT '2'
-    static const unsigned char key[8] = "2768GLB3";
+    static const unsigned char key[8] = "dihjy~te";
     long i;
     for (i = 0; i < len; i++) {
         int t = buf[i];
         buf[i] = t - key[i&7] - state;
-        state = t;
+        state = t - '2';
     }
     return state;
 }
@@ -59,7 +58,7 @@ load_hdr(struct hdr *hdr, long i)
         return errbuf;
     }
 
-    decrypt(buf, 28, DECRYPT_INIT);
+    decrypt(buf, 28, 0);
     hdr->flags = load_u32le(buf+0);
     hdr->off   = load_u32le(buf+4);
     hdr->len   = load_u32le(buf+8);
@@ -146,7 +145,7 @@ cmd_extract(long entry)
     long len;
     struct hdr hdr;
     const char *err;
-    int state = DECRYPT_INIT;
+    int state = 0;
     static unsigned char buf[1<<12];  /* size must be divisible by 8 */
 
     if (fseek(stdin, 28*(1 + entry), 0)) {
@@ -237,7 +236,7 @@ run(int argc, char **argv)
     if (!fread(buf, 28, 1, stdin)) {
         return "unexpected end of input";
     }
-    decrypt(buf, 28, DECRYPT_INIT);
+    decrypt(buf, 28, 0);
     if (load_u32le(buf) || memcmp(buf+8, empty, 20)) {
         return "input not in GLB format";
     }
