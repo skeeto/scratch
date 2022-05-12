@@ -14,28 +14,28 @@ import (
 
 var (
 	//go:embed qualifiers.list
-	qualifiersFull string
-	qualifiers     = strings.Split(qualifiersFull, "\n")
+	_qualifiers string
+	qualifiers     = strings.Split(_qualifiers[:len(_qualifiers)-1], "\n")
 
 	//go:embed species.list
-	speciesFull string
-	species     = strings.Split(speciesFull, "\n")
+	_species string
+	species     = strings.Split(_species[:len(_species)-1], "\n")
 
 	//go:embed prefixes.list
-	prefixesFull string
-	prefixes     = strings.Split(prefixesFull, "\n")
+	_prefixes string
+	prefixes     = strings.Split(_prefixes[:len(_prefixes)-1], "\n")
 
 	//go:embed suffixes.list
-	suffixesFull string
-	suffixes     = strings.Split(suffixesFull, "\n")
+	_suffixes string
+	suffixes     = strings.Split(_suffixes[:len(_suffixes)-1], "\n")
 
 	//go:embed colors.list
-	colorsFull string
-	colors     = strings.Split(colorsFull, "\n")
+	_colors string
+	colors     = strings.Split(_colors[:len(_colors)-1], "\n")
 
 	//go:embed actual.list
-	actualFull string
-	actual     = strings.Split(actualFull, "\n")
+	_actual string
+	actual     = strings.Split(_actual[:len(_actual)-1], "\n")
 )
 
 func generate(r *rand.Rand) string {
