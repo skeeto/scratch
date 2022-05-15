@@ -61,7 +61,7 @@
 #  define WHAT_ATOMICS "C11"
 #elif __GNUC__
 #  define WHAT_ATOMICS "GNUC"
-#  define QUEUE_VENDOR 1
+#  define ATOMIC_VENDOR 1
 #  define _Atomic
 #  define ATOMIC_LOAD(q)       __atomic_load_n(q, __ATOMIC_ACQUIRE)
 #  define ATOMIC_RLOAD(q)      __atomic_load_n(q, __ATOMIC_RELAXED)
@@ -72,7 +72,7 @@
         q, e, d, 0, __ATOMIC_RELEASE, __ATOMIC_RELAXED)
 #elif _MSC_VER
 #  define WHAT_ATOMICS "MSC"
-#  define QUEUE_VENDOR 1
+#  define ATOMIC_VENDOR 1
 #  include <winnt.h>
 #  define _Atomic volatile
 #  define ATOMIC_LOAD(a)       *(a)      // MSC volatile has atomic semantics
@@ -91,7 +91,7 @@
 static int
 queue_push(_Atomic uint32_t *q, int exp)
 {
-    #if QUEUE_VENDOR
+    #if ATOMIC_VENDOR
     uint32_t r = ATOMIC_LOAD(q);
     #else
     uint32_t r = *q;
@@ -101,7 +101,7 @@ queue_push(_Atomic uint32_t *q, int exp)
     int tail = r>>16 & mask;
     int next = (head + 1u) & mask;
     if (r & 0x8000) {  // avoid overflow on commit
-        #if QUEUE_VENDOR
+        #if ATOMIC_VENDOR
         ATOMIC_AND(q, ~0x8000);
         #else
         *q &= ~0x8000;
@@ -115,7 +115,7 @@ queue_push(_Atomic uint32_t *q, int exp)
 static void
 queue_push_commit(_Atomic uint32_t *q)
 {
-    #if QUEUE_VENDOR
+    #if ATOMIC_VENDOR
     ATOMIC_ADD(q, 1);
     #else
     *q += 1;
@@ -130,7 +130,7 @@ queue_push_commit(_Atomic uint32_t *q)
 static int
 queue_pop(_Atomic uint32_t *q, int exp)
 {
-    #if QUEUE_VENDOR
+    #if ATOMIC_VENDOR
     uint32_t r = ATOMIC_LOAD(q);
     #else
     uint32_t r = *q;
@@ -146,7 +146,7 @@ queue_pop(_Atomic uint32_t *q, int exp)
 static void
 queue_pop_commit(_Atomic uint32_t *q)
 {
-    #if QUEUE_VENDOR
+    #if ATOMIC_VENDOR
     ATOMIC_ADD(q, 0x10000);
     #else
     *q += 0x10000;
@@ -160,7 +160,7 @@ queue_pop_commit(_Atomic uint32_t *q)
 static int
 queue_mpop(_Atomic uint32_t *q, int exp, uint32_t *save)
 {
-    #if QUEUE_VENDOR
+    #if ATOMIC_VENDOR
     uint32_t r = *save = ATOMIC_LOAD(q);
     #else
     uint32_t r = *save = *q;
@@ -177,7 +177,7 @@ queue_mpop(_Atomic uint32_t *q, int exp, uint32_t *save)
 static _Bool
 queue_mpop_commit(_Atomic uint32_t *q, uint32_t save)
 {
-    #if QUEUE_VENDOR
+    #if ATOMIC_VENDOR
     return ATOMIC_CAS(q, &save, save+0x10000);
     #else
     return atomic_compare_exchange_strong(q, &save, save+0x10000);
@@ -214,7 +214,7 @@ worker(void *arg)
             do {
                 i = queue_mpop(q, QEXP, &save);
             } while (i < 0);
-            #if QUEUE_VENDOR
+            #if ATOMIC_VENDOR
             v = ATOMIC_RLOAD(t->slots+i);
             #else
             v = atomic_load_explicit(t->slots+i, memory_order_relaxed);
@@ -261,7 +261,7 @@ main(void)
         sum += x;
         #if NTHR == 1
         slots[i] = x;
-        #elif QUEUE_VENDOR
+        #elif ATOMIC_VENDOR
         ATOMIC_STORE(slots+i, x);
         #else
         atomic_store_explicit(slots+i, x, memory_order_relaxed);
