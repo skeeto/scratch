@@ -8,7 +8,7 @@ package main
 //
 // static int queue_pop(uint32_t *q, int exp)
 // {
-//     uint32_t r = __atomic_load_n(q, __ATOMIC_ACQUIRE);
+//     uint32_t r = __atomic_load_n(q, __ATOMIC_SEQ_CST);
 //     uint32_t M = (1 << exp) - 1;
 //     uint32_t h = r     & M;
 //     uint32_t t = r>>16 & M;
@@ -17,7 +17,7 @@ package main
 //
 // static int queue_commit(uint32_t *q)
 // {
-//     __atomic_fetch_add(q, 0x10000, __ATOMIC_RELEASE);
+//     __atomic_fetch_add(q, 0x10000, __ATOMIC_SEQ_CST);
 // }
 //
 // static uint64_t consumer(uint32_t *q, int exp, const uint64_t *slots)
