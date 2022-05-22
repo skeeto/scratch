@@ -71,7 +71,7 @@ struct dir {
 
 // Large source trees have on the order of cumulatively 10,000 runes of
 // directory names. The very largest have on the order of 100,000 runes.
-#define BUF_MAX (INT32_C(1)<<20)
+#define BUF_MAX (INT32_C(1)<<22)
 struct buf {
     int32_t len;
     wchar_t buf[BUF_MAX];
@@ -89,21 +89,21 @@ buf_push(struct buf *b, wchar_t *s)
     }
     memcpy(b->buf+off, s, len*sizeof(*s));
     b->len += len;
-    return len<<20 | off;
+    return len<<22 | off;
 }
 
 // Decode a buffer string length from an encoded off/len.
 static int
 str_len(int32_t s)
 {
-    return s >> 20;
+    return s >> 22;
 }
 
 // Decode a buffer string offset from an encoded off/len.
 static int32_t
 str_off(int32_t s)
 {
-    return s & 0xfffff;
+    return s & 0x3fffff;
 }
 
 // Return 1 if the null-terminated string has a source file extension.
