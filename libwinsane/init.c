@@ -9,6 +9,4 @@ winsane_init(void)
 {
     _setmode(0, _O_BINARY);
     _setmode(1, _O_BINARY);
-    SetConsoleCP(CP_UTF8);  // maybe will work someday
-    SetConsoleOutputCP(CP_UTF8);
 }
