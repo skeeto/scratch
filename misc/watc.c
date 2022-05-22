@@ -133,15 +133,13 @@ issource(wchar_t *w)
     return t[h&15] == h;
 }
 
-// Reconstruct a path to a chosen directory, returning its length.
-static int
-buildpath(wchar_t *w, wchar_t *buf, struct dir *dirs, int32_t i)
+// Construct a path to a given file.
+static void
+buildpath(wchar_t *w, wchar_t *buf, struct dir *dirs, int32_t d, int32_t f)
 {
-    wchar_t *beg = w;
-
     int n = 0;
     int32_t chain[MAX_PATH/2];
-    for (int j = i; j > 0; j = dirs[j].link) {
+    for (int32_t j = d; j > 0; j = dirs[j].link) {
         chain[n++] = j;
     }
 
@@ -153,18 +151,12 @@ buildpath(wchar_t *w, wchar_t *buf, struct dir *dirs, int32_t i)
         w += len;
         *w++ = '\\';
     }
-    *w = 0;
 
-    return (int)(w - beg);
-}
+    int len = str_len(f);
+    int32_t off = str_off(f);
+    memcpy(w, buf+off, len*(sizeof(*w)));
+    w += len;
 
-// Append a null-terminated file name to a given path.
-static void
-catfile(wchar_t *w, wchar_t *f)
-{
-    while (*f) {
-        *w++ = *f++;
-    }
     *w = 0;
 }
 
@@ -208,7 +200,7 @@ countlines(wchar_t *filename)
 }
 
 static void
-process(wchar_t *path, struct dir *dirs, int32_t i)
+processfile(wchar_t *path, struct dir *dirs, int32_t i)
 {
     int32_t c = countlines(path);
     if (c < 0) {
@@ -227,7 +219,7 @@ process(wchar_t *path, struct dir *dirs, int32_t i)
 static void
 propagate(struct dir *dirs, int32_t i)
 {
-    for (int j = dirs[i].link; j >= 0; j = dirs[j].link) {
+    for (int32_t j = dirs[i].link; j >= 0; j = dirs[j].link) {
         dirs[j].nbytes += dirs[i].nbytes;
         dirs[j].nlines += dirs[i].nlines;
     }
@@ -237,16 +229,17 @@ propagate(struct dir *dirs, int32_t i)
 // Ref: https://nullprogram.com/blog/2022/05/14/
 #define QUEUE_LEN (1<<15)
 struct queue {
-    struct dir *d;
+    wchar_t *buf;
+    struct dir *dirs;
     uint32_t q;
     wchar_t p[QUEUE_LEN][MAX_PATH];
-    int32_t i[QUEUE_LEN];
+    int32_t d[QUEUE_LEN];
 };
 
 // Insert a path and directory index into the front of the queue. Returns 0
 // if the queue is full.
 static int
-queue_send(struct queue *q, int32_t idx, wchar_t *path)
+queue_send(struct queue *q, int32_t idx, int32_t name)
 {
     uint32_t r = ATOMIC_LOAD(&q->q);
     int mask = QUEUE_LEN - 1;
@@ -257,13 +250,8 @@ queue_send(struct queue *q, int32_t idx, wchar_t *path)
         return 0;
     }
 
-    // Individual, relaxed stores will be unlocked and unfenced
-    if (path) {
-        for (int i = 0; i < MAX_PATH; i++) {
-            ATOMIC_RSTORE((volatile wchar_t *)q->p[head]+i, path[i]);
-        }
-    }
-    ATOMIC_RSTORE((volatile int32_t *)q->i+head, idx);
+    ATOMIC_RSTORE((volatile int32_t *)q->p+head, name);
+    ATOMIC_RSTORE((volatile int32_t *)q->d+head, idx);
 
     if (r & 0x8000) {  // avoid overflow on commit
         ATOMIC_AND(&q->q, ~0x8000);
@@ -275,7 +263,7 @@ queue_send(struct queue *q, int32_t idx, wchar_t *path)
 // Pop a path and directory index from the back of the queue. Returns 0 if
 // the queue is empty.
 static int
-queue_recv(struct queue *q, int32_t *idx, wchar_t *path)
+queue_recv(struct queue *q, int32_t *idx, int32_t *name)
 {
     uint32_t r;
     do {
@@ -288,10 +276,8 @@ queue_recv(struct queue *q, int32_t *idx, wchar_t *path)
         }
 
         // Individual, relaxed loads will be unlocked and unfenced
-        for (int i = 0; i < MAX_PATH; i++) {
-            path[i] = ATOMIC_RLOAD((volatile wchar_t *)q->p[tail]+i);
-        }
-        *idx = ATOMIC_RLOAD((volatile int32_t *)q->i+tail);
+        *name = ATOMIC_RLOAD((volatile int32_t *)q->p+tail);
+        *idx = ATOMIC_RLOAD((volatile int32_t *)q->d+tail);
 
     } while (!ATOMIC_CAS(&q->q, &r, r+0x10000));
     return 1;
@@ -303,15 +289,18 @@ static unsigned __stdcall
 worker(void *arg)
 {
     struct queue *q = arg;
-    struct dir *d = q->d;
+    wchar_t *buf = q->buf;
+    struct dir *dirs = q->dirs;
     for (;;) {
-        int32_t i;
-        wchar_t path[MAX_PATH];
-        while (!queue_recv(q, &i, path));
-        if (i == -1) {
+        int32_t d;
+        int32_t name;
+        while (!queue_recv(q, &d, &name));
+        if (d == -1) {
             return 0;
         }
-        process(path, d, i);
+        wchar_t path[MAX_PATH];
+        buildpath(path, buf, dirs, d, name);
+        processfile(path, dirs, d);
     }
 }
 
@@ -570,8 +559,9 @@ wmain(int argc, wchar_t **argv)
     static struct dir dirs[DIRS_MAX];
     static struct queue queue;
 
-    // Allocate special truncation name
+    // Allocate special strings
     int32_t other = buf_push(&buf, L"(other)");
+    int32_t glob = buf_push(&buf, L"*");
 
     // Initialize queue with root directory
     int32_t ndirs = 1;
@@ -586,19 +576,19 @@ wmain(int argc, wchar_t **argv)
     // Spin up N-1 worker threads. The current thread will also participate
     // in the work queue as a consumer.
     HANDLE thr[NTHREADS-1];
-    queue.d = dirs;
+    queue.buf = buf.buf;
+    queue.dirs = dirs;
     for (int i = 0; i < nthreads-1; i++) {
         thr[i] = (HANDLE)_beginthreadex(0, 0, worker, &queue, 0, 0);
     }
 
     for (int32_t i = 0; i < ndirs; i++) {
         wchar_t path[MAX_PATH];
-        int base = buildpath(path, buf.buf, dirs, i);
-        catfile(path+base, L"*");
+        buildpath(path, buf.buf, dirs, i, glob);
+
         WIN32_FIND_DATAW d;
         HANDLE h = FindFirstFileW(path, &d);
         if (h == INVALID_HANDLE_VALUE) {
-            path[base] = 0;
             fwprintf(stderr, L"watc: traversal failure: %ls\n", path);
             continue;
         }
@@ -627,18 +617,24 @@ wmain(int argc, wchar_t **argv)
                 dirs[c].name = name;
 
             } else if (issource(d.cFileName)) {
+                int32_t name = buf_push(&buf, d.cFileName);
+                if (name < 0) {
+                    fwprintf(stderr, L"watc: out of memory\n");
+                    return 1;
+                }
+
                 dirs[i].nbytes += d.nFileSizeLow;
                 dirs[i].nbytes += (uint64_t)d.nFileSizeHigh << 32;
 
-                catfile(path+base, d.cFileName);
-                if (!queue_send(&queue, i, path)) {
-                    process(path, dirs, i);
+                if (!queue_send(&queue, i, name)) {
+                    wchar_t tmp[MAX_PATH];
+                    buildpath(tmp, buf.buf, dirs, i, name);
+                    processfile(tmp, dirs, i);
                 }
             }
         } while (FindNextFileW(h, &d));
 
         if (GetLastError() != ERROR_NO_MORE_FILES) {
-            path[base] = 0;
             fwprintf(stderr, L"watc: traversal failure: %ls\n", path);
             return 1;
         }
@@ -647,12 +643,14 @@ wmain(int argc, wchar_t **argv)
 
     // Turn into a consumer until the queue empties
     for (;;) {
-        int i;
-        wchar_t path[MAX_PATH];
-        if (!queue_recv(&queue, &i, path)) {
+        int32_t i;
+        int32_t name;
+        if (!queue_recv(&queue, &i, &name)) {
             break;
         }
-        process(path, dirs, i);
+        wchar_t path[MAX_PATH];
+        buildpath(path, buf.buf, dirs, i, name);
+        processfile(path, dirs, i);
     }
 
     // Wait for worker threads to complete
