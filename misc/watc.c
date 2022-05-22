@@ -586,17 +586,17 @@ wmain(int argc, wchar_t **argv)
         wchar_t path[MAX_PATH];
         buildpath(path, buf.buf, dirs, i, glob);
 
-        WIN32_FIND_DATAW d;
-        HANDLE h = FindFirstFileW(path, &d);
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW(path, &fd);
         if (h == INVALID_HANDLE_VALUE) {
             fwprintf(stderr, L"watc: traversal failure: %ls\n", path);
             continue;
         }
 
         do {
-            DWORD a = d.dwFileAttributes;
+            DWORD a = fd.dwFileAttributes;
 
-            if (d.cFileName[0] == '.' || (a & FILE_ATTRIBUTE_HIDDEN)) {
+            if (fd.cFileName[0] == '.' || (a & FILE_ATTRIBUTE_HIDDEN)) {
                 continue;
             }
 
@@ -609,22 +609,22 @@ wmain(int argc, wchar_t **argv)
                 }
                 dirs[c].link = i;
 
-                int32_t name = buf_push(&buf, d.cFileName);
+                int32_t name = buf_push(&buf, fd.cFileName);
                 if (name < 0) {
                     fwprintf(stderr, L"watc: out of memory\n");
                     return 1;
                 }
                 dirs[c].name = name;
 
-            } else if (issource(d.cFileName)) {
-                int32_t name = buf_push(&buf, d.cFileName);
+            } else if (issource(fd.cFileName)) {
+                int32_t name = buf_push(&buf, fd.cFileName);
                 if (name < 0) {
                     fwprintf(stderr, L"watc: out of memory\n");
                     return 1;
                 }
 
-                dirs[i].nbytes += d.nFileSizeLow;
-                dirs[i].nbytes += (uint64_t)d.nFileSizeHigh << 32;
+                dirs[i].nbytes += fd.nFileSizeLow;
+                dirs[i].nbytes += (uint64_t)fd.nFileSizeHigh << 32;
 
                 if (!queue_send(&queue, i, name)) {
                     wchar_t tmp[MAX_PATH];
@@ -632,7 +632,7 @@ wmain(int argc, wchar_t **argv)
                     processfile(tmp, dirs, i);
                 }
             }
-        } while (FindNextFileW(h, &d));
+        } while (FindNextFileW(h, &fd));
 
         if (GetLastError() != ERROR_NO_MORE_FILES) {
             fwprintf(stderr, L"watc: traversal failure: %ls\n", path);
