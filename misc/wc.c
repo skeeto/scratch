@@ -165,7 +165,7 @@ add(struct counts *dst, struct counts *src)
 	dst->w += src->w;
 	dst->r += src->r;
 	dst->c += src->c;
-	dst->m += src->m;
+	dst->m  = src->m > dst->m ? src-> m : dst->m;
 }
 
 static void
