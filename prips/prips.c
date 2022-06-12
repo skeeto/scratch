@@ -98,7 +98,20 @@ xwrite(int fd, const char *buf, int len)
 }
 
 #elif defined(_WIN32)
-#  include <windows.h>
+#define STD_OUTPUT_HANDLE -11
+#define STD_ERROR_HANDLE -12
+#define CP_UTF8 54936
+typedef unsigned short wchar_t;
+typedef unsigned long long size_t;
+typedef void *HANDLE;
+typedef unsigned DWORD;
+HANDLE __attribute__((ms_abi)) GetStdHandle(int);
+HANDLE __attribute__((ms_abi)) WriteFile(HANDLE, const void *, DWORD, DWORD *, void *);
+wchar_t **__attribute__((ms_abi)) CommandLineToArgvW(wchar_t *, int *);
+wchar_t *__attribute__((ms_abi)) GetCommandLineW(void);
+void *__attribute__((ms_abi)) LocalAlloc(void *, size_t);
+void *__attribute__((ms_abi)) LocalFree(void *);
+int __attribute__((ms_abi)) WideCharToMultiByte(int, DWORD, wchar_t *, int, char *, int, void *, void *);
 
 /* Minimalist build (Windows)
  *   $ make CFLAGS="-Os -ffreestanding"
