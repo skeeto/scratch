@@ -398,8 +398,8 @@ print(struct dir *dirs, wchar_t *buf, int32_t other, struct config cfg)
             int32_t td = stack[t].d;
             int32_t ti = stack[t].i;
             wchar_t tc = ti<dirs[td].nsubdirs ? cfg.charset[0] : ' ';
-            fputwc(tc,   stdout);
-            fputwc(L' ', stdout);
+            wprintf(L"%lc", tc);
+            wprintf(L"%lc", L' ');
         }
 
         int last;
@@ -421,8 +421,8 @@ print(struct dir *dirs, wchar_t *buf, int32_t other, struct config cfg)
             }
             last = i == dirs[d].nsubdirs-1;
         }
-        fputwc(last ? cfg.charset[1] : cfg.charset[2], stdout);
-        fputwc(cfg.charset[3], stdout);
+        wprintf(L"%lc", last ? cfg.charset[1] : cfg.charset[2]);
+        wprintf(L"%lc", cfg.charset[3]);
         printstat(dirs+c, buf);
     }
 }
@@ -492,7 +492,7 @@ usage(FILE *f)
     L"  -d LIMIT   max depth to print\n"
     L"  -h         print this help message\n"
     L"  -n LIMIT   max individuals to print\n";
-    fputws(usage, f);
+    fwprintf(f, usage);
 }
 
 int
