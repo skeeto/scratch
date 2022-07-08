@@ -33,11 +33,11 @@ recip_len(int32_t n)
 
 int main(void)
 {
-    int32_t sieve[(MAXN + 31)/32] = {0};
+    uint32_t sieve[(MAXN + 31)/32] = {0};
     for (int32_t n = 2; n < MAXN; n++) {
-        if (!(sieve[n>>5] & (1 << (n&31)))) {
+        if (!(sieve[n>>5] & (UINT32_C(1) << (n&31)))) {
             for (int32_t i = 2*n; i < MAXN; i += n) {
-                sieve[i>>5] |= 1 << (i&31);
+                sieve[i>>5] |= UINT32_C(1) << (i&31);
             }
         }
     }
@@ -45,14 +45,14 @@ int main(void)
     int32_t lens[MAXN];
     #pragma omp parallel for schedule(dynamic)
     for (int32_t n = 2; n < MAXN; n++) {
-        if (!(sieve[n>>5] & (1 << (n&31)))) {
+        if (!(sieve[n>>5] & (UINT32_C(1) << (n&31)))) {
             lens[n] = recip_len(n);
         }
     }
 
     int32_t c = 0;
     for (int32_t n = 2; n < MAXN; n++) {
-        if (!(sieve[n>>5] & (1 << (n&31)))) {
+        if (!(sieve[n>>5] & (UINT32_C(1) << (n&31)))) {
             printf("%6ld%7ld %s", (long)n, (long)lens[n],
                    c++%5 == 4 ? "\n" : "| ");
         }
