@@ -89,7 +89,7 @@ main(void)
 
         long d = float16_64(w);
         if (isnan(w) ? !isnan(f16[d]) : d != i) {
-            printf("%.17g w=%04lx g=%04x %.17g\n", w, i, d, f16[d]);
+            printf("%.17g w=%04lx g=%04lx %.17g\n", w, i, d, f16[d]);
             return 1;
         }
     }
