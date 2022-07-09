@@ -56,8 +56,8 @@ main(void)
             }
             for (int x = 0; x < w; x++) {
                 int ri = y*w*3 + (x+rshift+w)%w*3 + 0, rj = y*w*3 + x*3 + 0;
-                int gi = y*w*3 + (x+rshift+w)%w*3 + 1, gj = y*w*3 + x*3 + 1;
-                int bi = y*w*3 + (x+rshift+w)%w*3 + 2, bj = y*w*3 + x*3 + 2;
+                int gi = y*w*3 + (x+gshift+w)%w*3 + 1, gj = y*w*3 + x*3 + 1;
+                int bi = y*w*3 + (x+bshift+w)%w*3 + 2, bj = y*w*3 + x*3 + 2;
                 bufo[ri < rj ? ri : rj] = bufo[ri < rj ? rj : ri];
                 bufo[gi < gj ? gi : gj] = bufo[gi < gj ? gj : gi];
                 bufo[bi < bj ? bi : bj] = bufo[bi < bj ? bj : bi];
