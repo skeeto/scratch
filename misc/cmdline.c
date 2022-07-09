@@ -372,7 +372,7 @@ main(void)
     _setmode(1, _O_U8TEXT);
 
     unsigned short *cmd = cmdline_fetch();
-    wprintf(L"cmd = %ls\n", cmd, stdout);
+    wprintf(L"cmd = %ls\n", cmd);
 
     static char *argv[CMDLINE_ARGV_MAX];
     int argc = cmdline_to_argv8(cmd, argv);
@@ -390,6 +390,6 @@ main(void)
 
     unsigned short recmd[CMDLINE_CMD_MAX];
     cmdline_from_argv8(recmd, CMDLINE_CMD_MAX, argv);
-    wprintf(L"recmd = %ls\n", recmd, stdout);
+    wprintf(L"recmd = %ls\n", recmd);
 }
 #endif
