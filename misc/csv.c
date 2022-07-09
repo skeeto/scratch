@@ -313,6 +313,7 @@ csv_it(const struct csv_idx *idx,
 static int
 csv_it_next(struct csv_it *it, struct csv_slice *s)
 {
+    const unsigned char *csv = it->csv;
     size_t mask = it->idx->len - 1;
     for (;;) {
         // Multiple matches are stored along the hash table itself, so
@@ -324,7 +325,7 @@ csv_it_next(struct csv_it *it, struct csv_slice *s)
             return 0;
         }
 
-        const unsigned char *field = it->csv + it->idx->slots[i].off;
+        const unsigned char *field = csv + it->idx->slots[i].off;
         size_t len = it->idx->slots[i].len;
         if (csv_field_equal(field, len, it->key, it->keylen)) {
             *s = it->idx->slots[i].row;
