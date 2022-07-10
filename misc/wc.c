@@ -253,7 +253,7 @@ process(HANDLE h, struct counts *counts)
 		DWORD z;
 
 		if (!ReadFile(h, buf, sizeof(buf), &z, 0)) {
-            if (GetLastError() != ERROR_BROKEN_PIPE) {
+			if (GetLastError() != ERROR_BROKEN_PIPE) {
 				return 0;
 			}
 			return 1;
@@ -289,50 +289,50 @@ process(HANDLE h, struct counts *counts)
 }
 
 struct wgetopt {
-    wchar_t *optarg;
-    int optind, optopt, optpos;
+	wchar_t *optarg;
+	int optind, optopt, optpos;
 };
 
 static int
 wgetopt(struct wgetopt *x, int argc, wchar_t **argv, char *optstring)
 {
-    wchar_t *arg = argv[!x->optind ? (x->optind += !!argc) : x->optind];
-    if (arg && arg[0] == '-' && arg[1] == '-' && !arg[2]) {
-        x->optind++;
-        return -1;
-    } else if (!arg || arg[0] != '-' || ((arg[1] < '0' || arg[1] > '9') &&
-                                         (arg[1] < 'A' || arg[1] > 'Z') &&
-                                         (arg[1] < 'a' || arg[1] > 'z'))) {
-        return -1;
-    } else {
-        while (*optstring && arg[x->optpos+1] != *optstring) {
-            optstring++;
-        }
-        x->optopt = arg[x->optpos+1];
-        if (!*optstring) {
-            return '?';
-        } else if (optstring[1] == ':') {
-            if (arg[x->optpos+2]) {
-                x->optarg = arg + x->optpos + 2;
-                x->optind++;
-                x->optpos = 0;
-                return x->optopt;
-            } else if (argv[x->optind+1]) {
-                x->optarg = argv[x->optind+1];
-                x->optind += 2;
-                x->optpos = 0;
-                return x->optopt;
-            } else {
-                return ':';
-            }
-        } else {
-            if (!arg[++x->optpos+1]) {
-                x->optind++;
-                x->optpos = 0;
-            }
-            return x->optopt;
-        }
-    }
+	wchar_t *arg = argv[!x->optind ? (x->optind += !!argc) : x->optind];
+	if (arg && arg[0] == '-' && arg[1] == '-' && !arg[2]) {
+		x->optind++;
+		return -1;
+	} else if (!arg || arg[0] != '-' || ((arg[1] < '0' || arg[1] > '9') &&
+	                                     (arg[1] < 'A' || arg[1] > 'Z') &&
+	                                     (arg[1] < 'a' || arg[1] > 'z'))) {
+		return -1;
+	} else {
+		while (*optstring && arg[x->optpos+1] != *optstring) {
+			optstring++;
+		}
+		x->optopt = arg[x->optpos+1];
+		if (!*optstring) {
+			return '?';
+		} else if (optstring[1] == ':') {
+			if (arg[x->optpos+2]) {
+				x->optarg = arg + x->optpos + 2;
+				x->optind++;
+				x->optpos = 0;
+				return x->optopt;
+			} else if (argv[x->optind+1]) {
+				x->optarg = argv[x->optind+1];
+				x->optind += 2;
+				x->optpos = 0;
+				return x->optopt;
+			} else {
+				return ':';
+			}
+		} else {
+			if (!arg[++x->optpos+1]) {
+				x->optind++;
+				x->optpos = 0;
+			}
+			return x->optopt;
+		}
+	}
 }
 
 static int
@@ -384,10 +384,10 @@ wmain(int argc, wchar_t **argv)
 		case 'm': which |= FLAG_RUNES; break;
 		case 'w': which |= FLAG_WORDS; break;
 		case '?': buf_str(berr, "wc: invalid option: -");
-				  buf_rune(berr, (wchar_t)wgo.optopt);
-				  buf_rune(berr, '\n');
-				  usage(berr);
-				  return 1;
+		          buf_rune(berr, (wchar_t)wgo.optopt);
+		          buf_rune(berr, '\n');
+		          usage(berr);
+		          return 1;
 		}
 	}
 	nargs = argc - wgo.optind;
