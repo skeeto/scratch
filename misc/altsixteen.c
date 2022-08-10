@@ -17,12 +17,9 @@
 #include <stdio.h>
 #include <stdint.h>
 
-// Bit array tracking states already visited.
-static uint32_t seen[1L<<27];
-
 // Try to mark a state as visited, returning 1 if unvisited.
 static int
-mark(uint32_t s)
+mark(uint32_t *seen, uint32_t s)
 {
     uint32_t b = (uint32_t)1 << (s&31);
     uint32_t x = seen[s>>5];
@@ -180,11 +177,12 @@ main(void)
 {
     uint32_t start = decode("1332022030311132");
     int32_t head = 0, tail = 0;
+    static uint32_t seen[1L<<27];   // bit array of visited states
     static uint32_t queue[1L<<26];  // BFS queue, fixed size is an estimate
-    static int32_t link[1L<<26];    // linked lists (tree) to the root state
+    static int32_t  link[1L<<26];   // linked lists (tree) to the root state
 
     queue[head++] = start;
-    mark(start);
+    mark(seen, start);
     while (tail != head) {
         uint32_t c = queue[tail];
         if (done(c)) {
@@ -195,7 +193,7 @@ main(void)
         uint32_t m[32];
         int len = moves(m, c);
         for (int i = 0; i < len; i++) {
-            if (mark(m[i])) {
+            if (mark(seen, m[i])) {
                 link[head] = parent;
                 queue[head++] = m[i];
             }
