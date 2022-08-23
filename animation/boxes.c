@@ -45,15 +45,15 @@ init(struct sim *s, unsigned long long *rng)
 
     // Populate with boxes
     for (int i = 0; i < 7*N; i++) {
-        s->grid[i/H][i%W] = i%7 ? B_PASSIVE : B_ACTIVE;
+        s->grid[i/W][i%W] = i%7 ? B_PASSIVE : B_ACTIVE;
     }
 
     // Shuffle the boxes
     for (int i = W*H-1; i > 1; i--) {
         int j = r32(rng) % (i + 1);
-        char swap = s->grid[j/H][j%W];
-        s->grid[j/H][j%W] = s->grid[i/H][i%W] ;
-        s->grid[i/H][i%W] = swap;
+        char swap = s->grid[j/W][j%W];
+        s->grid[j/W][j%W] = s->grid[i/W][i%W] ;
+        s->grid[i/W][i%W] = swap;
     }
 
     // Find all the active boxes
@@ -71,7 +71,7 @@ init(struct sim *s, unsigned long long *rng)
 int
 main(void)
 {
-    struct sim s[1];
+    static struct sim s[1];
     unsigned long long rng[1] = {time(0)};
 
     #ifdef _WIN32
