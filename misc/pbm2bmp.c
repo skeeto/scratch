@@ -203,6 +203,7 @@ main(int argc, char **argv)
 {
     #if _WIN32
     int _setmode(int, int);
+    _setmode(0, 0x8000);
     _setmode(1, 0x8000);
     #endif
 
