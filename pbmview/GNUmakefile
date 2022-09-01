@@ -3,7 +3,7 @@ CROSS   =
 CC      = $(CROSS)gcc
 CFLAGS  = -std=c99 -Wall -Wextra -Wpedantic -Wno-missing-field-initializers -O3
 LDFLAGS = -mwindows -s
-LDLIBS  = -ldwmapi -lshlwapi
+LDLIBS  = -lshlwapi
 WINDRES = $(CROSS)windres
 
 pbmview.exe: pbmview.c icon.o

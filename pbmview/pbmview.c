@@ -4,18 +4,16 @@
 // Monitors for changes and automatically refreshes.
 //
 // Usage: $ pbmview.exe path\to\image.ppm
-// Build: $ cc -s -O3 -mwindows -o pbmview.exe pbmview.c -ldwmapi -lshlwapi
+// Build: $ cc -s -O3 -mwindows -o pbmview.exe pbmview.c -lshlwapi
 //        $ cl /O2 pbmview.c
 //
 // This is free and unencumbered software released into the public domain.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <dwmapi.h>
 #include <shellapi.h>
 #include <shlwapi.h>
 
 #ifdef _MSC_VER
-#  pragma comment(lib, "dwmapi.lib")
 #  pragma comment(lib, "gdi32.lib")
 #  pragma comment(lib, "shell32.lib")
 #  pragma comment(lib, "shlwapi.lib")
@@ -523,12 +521,6 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         SetStretchBltMode(hdc, HALFTONE);
         SetBrushOrgEx(hdc, 0, 0, 0);
         ReleaseDC(hwnd, hdc);
-
-        #if _WIN32_WINNT >= NTDDI_WIN7
-        // Disable rounded corners (hides pixels)
-        DWORD v = 1;
-        DwmSetWindowAttribute(hwnd, 33, &v, 4);
-        #endif
 
         if (s->image) {
             GetWindowPlacement(hwnd, &s->wp);
