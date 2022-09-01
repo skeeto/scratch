@@ -1,8 +1,8 @@
 # Netpbm Viewer for Windows
 
-Fast. Lightweight. Useful when writing programs that output Netpbm images.
-Supports P2, P3, P5, and P6 at 255 maxdepth. Monitors for changes and
-automatically refreshes. Works on Windows XP and later.
+Fast. Lightweight. Minimalistic. Supports P2, P3, P5, and P6 at 255
+maxdepth. Monitors for changes and automatically refreshes. Drag-and-drop.
+Windows XP and later.
 
 * <kbd>f</kbd>: toggle fullscreen
 * <kbd>q</kbd> / <kbd>ESC</kbd>: exit the program
@@ -12,6 +12,23 @@ If the input is unreadable for any reason, it does nothing — not even
 reporting errors — until the image file is updated with useful image
 contents. Only displays one image at a time and cannot navigate an image
 gallery.
+
+## Usage
+
+Pass the image path as an argument, or supply no arguments and instead use
+drag-and-drop. This interface works well as a file association for Netpbm
+file extensions.
+
+Automatic reload is particularly useful when writing programs that output
+Netpbm images. For example, when developing a program that outputs Netpbm
+on standard output, in GDB use `run` like so:
+
+    gdb> run >output.ppm
+
+Then open `output.ppm` in `pbmview` and leave it open. Each time you run
+the program (`r`), the viewer will automatically display the new image.
+The viewer will actively watch for the image file to be created if it does
+not yet exist.
 
 ## Build
 
@@ -25,11 +42,6 @@ compiling, set `CROSS`.
 Uses `StretchDIBits` with `HALFTONE` scaling, a naive algorithm that is
 not [gamma-aware][] and produces artifacts, especially in older versions
 of Windows.
-
-Probably has some stateful issues when moving between fullscreen,
-maximized, and normal.
-
-Drag-and-drop is not yet implemented.
 
 
 [gamma-aware]: http://www.ericbrasseur.org/gamma.html?i=1

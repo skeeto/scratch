@@ -1,7 +1,7 @@
 // Netpbm Viewer for Windows
 //
-// Fast. Lightweight. Supports P2, P3, P5, and P6 at 255 maxdepth. Monitors for
-// changes and automatically refreshes.
+// Fast. Lightweight. Supports P2, P3, P5, and P6 at 255 maxdepth.
+// Monitors for changes and automatically refreshes.
 //
 // Usage: $ pbmview.exe path\to\image.ppm
 // Build: $ cc -s -O3 -mwindows -o pbmview.exe pbmview.c -ldwmapi -lshlwapi
@@ -93,20 +93,346 @@ netpbm_parse(int state, int c, struct netpbm *pbm, long max)
     }
 }
 
+// Decode an ASCII byte value from src to dst, returning updated src. Returns
+// null on invalid input.
+static unsigned char *
+asciibyte(unsigned char *dst, unsigned char *src, unsigned char *end)
+{
+    for (int n = 0, b = 0; ;) {
+        if (src == end) {
+            if (!n) {
+                return 0;
+            }
+            *dst = (unsigned char)b;
+            return src;
+        }
+
+        unsigned char c = *src++;
+        switch (c) {
+        default:
+            return 0;
+        case '\t': case ' ' : case '\r': case '\n':
+            if (n) {
+                *dst = (unsigned char)b;
+                return src;
+            }
+            continue;
+        case '0': case '1': case '2': case '3': case '4':
+        case '5': case '6': case '7': case '8': case '9':
+            b = b*10 + c - '0';
+            if (b > 255 || ++n > 3) {
+                return 0;
+            }
+        }
+    }
+}
+
+// A parsed Netpbm image ready to be blitted to a DC. Image data is
+// allocated just beyond this structure.
 struct image {
     BITMAPINFO info;
     RGBQUAD palette[256];
     unsigned char *pbm, *pixels;
 } image;
 
+static void
+image_free(struct image *im)
+{
+    if (im) {
+        VirtualFree(im, 0, MEM_RELEASE);
+    }
+}
+
+static struct image *
+newimage(wchar_t *path)
+{
+    HANDLE h = CreateFileW(
+        path,
+        GENERIC_READ,
+        FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+        0,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        0
+    );
+    if (h == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+
+    DWORD hi, lo = GetFileSize(h, &hi);
+    if (hi || (int)lo < 0) {
+        // reject files >2GiB
+        CloseHandle(h);
+        return 0;
+    }
+    int len = lo;
+
+    struct image *im = VirtualAlloc(
+        0, sizeof(*im)+len,
+        MEM_COMMIT, PAGE_READWRITE
+    );
+    if (!im) {
+        CloseHandle(h);
+        return 0;
+    }
+    im->pbm = (unsigned char *)im + sizeof(*im);
+    im->info.bmiHeader.biSize = sizeof(im->info);
+    im->info.bmiHeader.biPlanes = 1;
+    im->info.bmiHeader.biBitCount = 24;
+    im->info.bmiHeader.biCompression = BI_RGB;
+
+    // Fill PGM palette
+    for (int i = 0; i < 256; i++) {
+        im->palette[i].rgbBlue = i;
+        im->palette[i].rgbGreen = i;
+        im->palette[i].rgbRed = i;
+    }
+
+    DWORD n;
+    if (!ReadFile(h, im->pbm, len, &n, 0) || len != (int)n) {
+        image_free(im);
+        CloseHandle(h);
+        return 0;
+    }
+    CloseHandle(h);
+
+    struct netpbm pbm = {0};
+    for (int ps = 0, off = 0, done = 0; !done;) {
+        if (off >= len) {
+            image_free(im);
+            return 0;
+        }
+        ps = netpbm_parse(ps, im->pbm[off++], &pbm, 1000000);
+        switch (ps) {
+        case PGM_OVERFLOW:
+        case PGM_INVALID:
+            image_free(im);
+            return 0;
+        case PGM_DONE:
+            if (pbm.dims[2] != 255) {
+                // Unsupported depth
+                image_free(im);
+                return 0;
+            }
+            im->info.bmiHeader.biWidth = pbm.dims[0];
+            im->info.bmiHeader.biHeight = -pbm.dims[1];
+            im->pixels = im->pbm + off;
+            done = 1;
+        }
+    }
+
+    switch (pbm.type) {
+    default: {
+        // Unsupported format
+        image_free(im);
+        return 0;
+    } break;
+
+    case 2: {
+        im->info.bmiHeader.biBitCount = 8;
+        im->info.bmiHeader.biClrUsed = 256;
+        long long npixels = 1LL * pbm.dims[0] * pbm.dims[1];
+        unsigned char *src = im->pixels;
+        unsigned char *end = src + len;
+        for (long long i = 0; i < npixels; i++) {
+            src = asciibyte(im->pixels+i, src, end);
+            if (!src) {
+                image_free(im);
+                return 0;
+            }
+        }
+    } break;
+
+    case 3: {
+        long long npixels = 3LL * pbm.dims[0] * pbm.dims[1];
+        unsigned char *src = im->pixels;
+        unsigned char *end = src + len;
+        for (long long i = 0; i < npixels; i++) {
+            src = asciibyte(im->pixels+i, src, end);
+            if (!src) {
+                image_free(im);
+                return 0;
+            }
+        }
+    } break;
+
+    case 5: {
+        im->info.bmiHeader.biBitCount = 8;
+        im->info.bmiHeader.biClrUsed = 256;
+        // Already in correct format
+    } break;
+
+    case 6: {
+        // Already in correct format
+    } break;
+    }
+    return im;
+}
+
+// Viewer state, shared between window procedure and a monitor thread.
+// The monitor thread sends updated images to the window procedure using
+// an atomic exchange on the "next" pointer. The path is allocated just
+// beyond the end of this structure.
 struct state {
     wchar_t *path;
     struct image *image;
     void *volatile next;
     HWND hwnd;
     WINDOWPLACEMENT wp;
+
+    #define STATE_LOADED (1 << 0)
+    int flags;
 };
 
+static void
+state_free(struct state *s)
+{
+    VirtualFree(s, 0, MEM_RELEASE);
+}
+
+// Create a new state, making a copy of the path.
+static struct state *
+newstate(wchar_t *path)
+{
+    struct state *s = VirtualAlloc(0, 1<<12, MEM_COMMIT, PAGE_READWRITE);
+    if (s) {
+        s->path = (wchar_t *)((char *)s + sizeof(*s));
+        s->path[0] = 0;
+        size_t len = wcslen(path) + 1;
+        if (len <= MAX_PATH) {
+            memcpy(s->path, path, len*2);
+        }
+    }
+    return s;
+}
+
+// Force the image to be loaded immediately on this thread. Must be
+// called before starting the monitor thread.
+static void
+state_syncload(struct state *s)
+{
+    s->flags |= STATE_LOADED;
+    s->image = newimage(s->path);
+}
+
+// Send the possibly-null image to render thread. Returns 1 if a
+// shutdown was requested.
+static int
+state_send(struct state *s, struct image *im)
+{
+    void *prev = InterlockedExchangePointer(&s->next, im);
+    if (prev == s) {
+        return 1;
+    }
+    image_free(prev);
+    if (im) {
+        RedrawWindow(s->hwnd, 0, 0, RDW_INVALIDATE|RDW_UPDATENOW);
+    }
+    return 0;
+}
+
+static DWORD WINAPI
+state_monitor(void *arg)
+{
+    struct state *s = arg;
+
+    if (!(s->flags & STATE_LOADED)) {
+        if (state_send(s, newimage(s->path))) {
+            return 0;
+        }
+    }
+
+    size_t filelen, pathlen = wcslen(s->path) + 1;
+    wchar_t dir[MAX_PATH], file[MAX_PATH];
+    if (pathlen > MAX_PATH) {
+        return 0;
+    }
+
+    memcpy(file, s->path, pathlen*2);
+    PathStripPathW(file);
+    filelen = wcslen(file);
+    CharUpperBuffW(file, filelen);
+
+    // PathRemoveFileSpecW and PathCchRemoveFileSpec are defective and
+    // behave incorrectly with paths containing slashes. Convert to
+    // backslashes as a workaround.
+    for (int i = 0;; i++) {
+        dir[i] = s->path[i]=='/' ? '\\' : s->path[i];
+        if (!s->path[i]) {
+            break;
+        }
+    }
+    PathRemoveFileSpecW(dir);
+    if (!dir[0]) {
+        dir[0] = '.';
+        dir[1] = 0;
+    }
+
+    // Poll until directory exists
+    HANDLE h;
+    for (;; Sleep(1000)) {
+        h = CreateFileW(
+                dir,
+                FILE_LIST_DIRECTORY,
+                FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+                0,
+                OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS,
+                0
+                );
+        if (h != INVALID_HANDLE_VALUE) {
+            break;
+        }
+    }
+
+    for (;;) {
+        DWORD len, fni[1<<10];
+        DWORD filter = FILE_NOTIFY_CHANGE_LAST_WRITE |
+                       FILE_NOTIFY_CHANGE_FILE_NAME |
+                       FILE_NOTIFY_CHANGE_CREATION;
+        ReadDirectoryChangesW(h, fni, sizeof(fni), 0, filter, &len, 0, 0);
+        for (FILE_NOTIFY_INFORMATION *p = (void *)fni;;) {
+            if (p->FileNameLength/2 == filelen) {
+                // Normalize for case-insensitive path comparison
+                CharUpperBuffW(p->FileName, filelen);
+                if (!memcmp(file, p->FileName, p->FileNameLength)) {
+                    if (state_send(s, newimage(s->path))) {
+                        state_free(s);
+                        return 0;
+                    }
+                }
+            }
+            if (!p->NextEntryOffset) {
+                break;
+            }
+            p = (FILE_NOTIFY_INFORMATION *)((char *)p + p->NextEntryOffset);
+        }
+    }
+}
+
+// Create a monitor thread to watch for image changes. Each time the
+// image changes, and is valid, it will update the "next" pointer with
+// the new image and then signal the window through a redraw.
+static void
+state_start(struct state *s, HWND hwnd)
+{
+    s->hwnd = hwnd;
+    CreateThread(0, 1<<16, state_monitor, s, 0, 0);
+}
+
+// Request monitor thread to shutdown the next time it wakes. The
+// monitor will destroy the state when it shuts down.
+static void
+state_stop(struct state *s)
+{
+    // Signal a shutdown by placing the state in the "next" pointer.
+    // This sentinel is a pointer guaranteed not to be mistaken for
+    // either image or null.
+    void *prev = InterlockedExchangePointer(&s->next, (void *)s);
+    image_free(prev);
+}
+
+// Compute the ideal window size for the given image.
 static void
 ideal_rect(RECT *r, struct image *im)
 {
@@ -188,8 +514,15 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         CREATESTRUCT *cs = (CREATESTRUCT *)lparam;
         s = (struct state *)cs->lpCreateParams;
         SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)s);
+        state_start(s, hwnd);
 
+        GetWindowPlacement(hwnd, &s->wp);
         DragAcceptFiles(hwnd, 1);
+
+        HDC hdc = GetDC(hwnd);
+        SetStretchBltMode(hdc, HALFTONE);
+        SetBrushOrgEx(hdc, 0, 0, 0);
+        ReleaseDC(hwnd, hdc);
 
         #if _WIN32_WINNT >= NTDDI_WIN7
         // Disable rounded corners (hides pixels)
@@ -220,7 +553,7 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         if (im) {
             // Received new image
             if (s->image) {
-                VirtualFree(s->image, 0, MEM_RELEASE);
+                image_free(s->image);
             }
             s->image = im;
         } else {
@@ -250,7 +583,8 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         }
 
         double a = w / h;
-        double t = (double)im->info.bmiHeader.biWidth / -im->info.bmiHeader.biHeight;
+        double t = (double)im->info.bmiHeader.biWidth /
+                          -im->info.bmiHeader.biHeight;
         int xpad = 0, ypad = 0;
         if (a < t) {
             ypad = h - w/t;
@@ -278,7 +612,14 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
     case WM_DROPFILES: {
         wchar_t path[MAX_PATH];
         if (DragQueryFileW((HDROP)wparam, 0, path, sizeof(path))) {
-            // TODO
+            struct state *ns = newstate(path);
+            if (ns) {
+                ns->wp = s->wp;
+                state_stop(s);
+                s = ns;
+                SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)ns);
+                state_start(ns, hwnd);
+            }
         }
     } break;
 
@@ -295,6 +636,7 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             if (s->image) {
                 LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
                 ideal_rect(&s->wp.rcNormalPosition, s->image);
+                s->wp.showCmd = SW_NORMAL;
                 if (style & WS_OVERLAPPEDWINDOW) {
                     SetWindowPlacement(hwnd, &s->wp);
                 } else {
@@ -316,229 +658,6 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
     return 0;
 }
 
-// Decode an ASCII byte value from src to dst, returning updated src. Returns
-// null on invalid input.
-static unsigned char *
-asciibyte(unsigned char *dst, unsigned char *src, unsigned char *end)
-{
-    for (int n = 0, b = 0; ;) {
-        if (src == end) {
-            if (!n) {
-                return 0;
-            }
-            *dst = (unsigned char)b;
-            return src;
-        }
-
-        unsigned char c = *src++;
-        switch (c) {
-        default:
-            return 0;
-        case '\t': case ' ' : case '\r': case '\n':
-            if (n) {
-                *dst = (unsigned char)b;
-                return src;
-            }
-            continue;
-        case '0': case '1': case '2': case '3': case '4':
-        case '5': case '6': case '7': case '8': case '9':
-            b = b*10 + c - '0';
-            if (b > 255 || ++n > 3) {
-                return 0;
-            }
-        }
-    }
-}
-
-static struct image *
-loadpbm(wchar_t *path)
-{
-    HANDLE h = CreateFileW(
-        path,
-        GENERIC_READ,
-        FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
-        0,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
-        0
-    );
-    if (h == INVALID_HANDLE_VALUE) {
-        return 0;
-    }
-
-    DWORD hi, lo = GetFileSize(h, &hi);
-    if (hi || (int)lo < 0) {
-        // reject files >2GiB
-        CloseHandle(h);
-        return 0;
-    }
-    int len = lo;
-
-    struct image *im = VirtualAlloc(0, sizeof(*im)+len, MEM_COMMIT, PAGE_READWRITE);
-    if (!im) {
-        CloseHandle(h);
-        return 0;
-    }
-    im->pbm = (unsigned char *)im + sizeof(*im);
-    im->info.bmiHeader.biSize = sizeof(im->info);
-    im->info.bmiHeader.biPlanes = 1;
-    im->info.bmiHeader.biBitCount = 24;
-    im->info.bmiHeader.biCompression = BI_RGB;
-
-    // Fill PGM palette
-    for (int i = 0; i < 256; i++) {
-        im->palette[i].rgbBlue = i;
-        im->palette[i].rgbGreen = i;
-        im->palette[i].rgbRed = i;
-    }
-
-    DWORD n;
-    if (!ReadFile(h, im->pbm, len, &n, 0) || len != (int)n) {
-        VirtualFree(im, 0, MEM_RELEASE);
-        CloseHandle(h);
-        return 0;
-    }
-    CloseHandle(h);
-
-    struct netpbm pbm = {0};
-    for (int ps = 0, off = 0, done = 0; !done;) {
-        if (off >= len) {
-            VirtualFree(im, 0, MEM_RELEASE);
-            return 0;
-        }
-        ps = netpbm_parse(ps, im->pbm[off++], &pbm, 1000000);
-        switch (ps) {
-        case PGM_OVERFLOW:
-        case PGM_INVALID:
-            VirtualFree(im, 0, MEM_RELEASE);
-            return 0;
-        case PGM_DONE:
-            if (pbm.dims[2] != 255) {
-                // Unsupported depth
-                VirtualFree(im, 0, MEM_RELEASE);
-                return 0;
-            }
-            im->info.bmiHeader.biWidth = pbm.dims[0];
-            im->info.bmiHeader.biHeight = -pbm.dims[1];
-            im->pixels = im->pbm + off;
-            done = 1;
-        }
-    }
-
-    switch (pbm.type) {
-    default: {
-        // Unsupported format
-        VirtualFree(im, 0, MEM_RELEASE);
-        return 0;
-    } break;
-
-    case 2: {
-        im->info.bmiHeader.biBitCount = 8;
-        im->info.bmiHeader.biClrUsed = 256;
-        long long npixels = 1LL * pbm.dims[0] * pbm.dims[1];
-        unsigned char *src = im->pixels;
-        unsigned char *end = src + len;
-        for (long long i = 0; i < npixels; i++) {
-            src = asciibyte(im->pixels+i, src, end);
-            if (!src) {
-                VirtualFree(im, 0, MEM_RELEASE);
-                return 0;
-            }
-        }
-    } break;
-
-    case 3: {
-        long long npixels = 3LL * pbm.dims[0] * pbm.dims[1];
-        unsigned char *src = im->pixels;
-        unsigned char *end = src + len;
-        for (long long i = 0; i < npixels; i++) {
-            src = asciibyte(im->pixels+i, src, end);
-            if (!src) {
-                VirtualFree(im, 0, MEM_RELEASE);
-                return 0;
-            }
-        }
-    } break;
-
-    case 5: {
-        im->info.bmiHeader.biBitCount = 8;
-        im->info.bmiHeader.biClrUsed = 256;
-        // Already in correct format
-    } break;
-
-    case 6: {
-        // Already in correct format
-    } break;
-    }
-    return im;
-}
-
-static DWORD WINAPI
-monitor(void *arg)
-{
-    struct state *s = arg;
-    size_t filelen, pathlen = wcslen(s->path) + 1;
-    wchar_t dir[MAX_PATH], file[MAX_PATH];
-    if (pathlen > MAX_PATH) {
-        return 0;
-    }
-
-    memcpy(file, s->path, pathlen*2);
-    PathStripPathW(file);
-    filelen = wcslen(file);
-    CharUpperBuffW(file, filelen);
-
-    memcpy(dir, s->path, pathlen*2);
-    PathRemoveFileSpecW(dir);
-    if (!dir[0]) {
-        dir[0] = '.';
-        dir[1] = 0;
-    }
-
-    // Poll until directory exists
-    HANDLE h;
-    for (;; Sleep(1000)) {
-        h = CreateFileW(
-                dir,
-                FILE_LIST_DIRECTORY,
-                FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
-                0,
-                OPEN_EXISTING,
-                FILE_FLAG_BACKUP_SEMANTICS,
-                0
-                );
-        if (h != INVALID_HANDLE_VALUE) {
-            break;
-        }
-    }
-
-    for (;;) {
-        DWORD len, fni[1<<10];
-        ReadDirectoryChangesW(h, fni, sizeof(fni), 0, FILE_NOTIFY_CHANGE_LAST_WRITE, &len, 0, 0);
-        for (FILE_NOTIFY_INFORMATION *p = (void *)fni;;) {
-            if (p->FileNameLength/2 == filelen) {
-                // Normalize for case-insensitive path comparison
-                CharUpperBuffW(p->FileName, filelen);
-                if (!memcmp(file, p->FileName, p->FileNameLength)) {
-                    struct image *im = loadpbm(s->path);
-                    if (im) {
-                        // Send new image to render thread
-                        im = InterlockedExchangePointer(&s->next, im);
-                        if (im) {
-                            VirtualFree(im, 0, MEM_RELEASE);
-                        }
-                        RedrawWindow(s->hwnd, 0, 0, RDW_INVALIDATE|RDW_UPDATENOW);
-                    }
-                }
-            }
-            if (!p->NextEntryOffset) {
-                break;
-            }
-            p = (FILE_NOTIFY_INFORMATION *)((char *)p + p->NextEntryOffset);
-        }
-    }
-}
-
 int WINAPI
 WinMain(HINSTANCE hi, HINSTANCE pi, char *c, int n)
 {
@@ -546,11 +665,8 @@ WinMain(HINSTANCE hi, HINSTANCE pi, char *c, int n)
 
     int argc;
     wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    wchar_t *path = argv[argc-1];
-
-    struct state state = {0};
-    state.path = path;
-    state.image = loadpbm(path);
+    struct state *s = newstate(argv[argc-1]);
+    state_syncload(s);
 
     WNDCLASSA wndclass = {
         .style = CS_OWNDC,
@@ -561,28 +677,25 @@ WinMain(HINSTANCE hi, HINSTANCE pi, char *c, int n)
     };
     RegisterClassA(&wndclass);
 
-    HWND hwnd = CreateWindowA(
+    CreateWindowA(
         "pbmview",
         "Netpbm Viewer",
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, 0,
-        &state
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, 0, s
     );
-    state.hwnd = hwnd;
-    HDC hdc = GetDC(hwnd);
-    SetStretchBltMode(hdc, HALFTONE);
-    SetBrushOrgEx(hdc, 0, 0, 0);
-    ReleaseDC(hwnd, hdc);
-
-    CreateThread(0, 0, monitor, &state, 0, 0);
 
     MSG msg;
     while (GetMessageA(&msg, 0, 0, 0)) {
         if (msg.message == WM_QUIT) {
-            TerminateProcess(GetCurrentProcess(), 0);
+            break;
         }
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
     }
-    return 0;
+
+    // Cannot safely return from main() while threads are running, so
+    // instead abruptly self-terminate. Besides, this program requires
+    // no cleanup, so don't waste time on it.
+    TerminateProcess(GetCurrentProcess(), 0);
+    return 1;
 }
