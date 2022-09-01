@@ -557,6 +557,7 @@ WinMain(HINSTANCE hi, HINSTANCE pi, char *c, int n)
         .lpfnWndProc = proc,
         .lpszClassName = "pbmview",
         .hCursor = LoadCursor(0, IDC_ARROW),
+        .hIcon = LoadIcon(GetModuleHandle(0), MAKEINTRESOURCE(1)),
     };
     RegisterClassA(&wndclass);
 
