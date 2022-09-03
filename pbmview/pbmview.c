@@ -227,6 +227,10 @@ newimage(wchar_t *path)
     } break;
 
     case 2: {
+        // Convert in-place into 8-bit indexed grayscale that happens to
+        // match the P5 format. Since each pixel is at least two ASCII
+        // bytes, the indexed form is strictly smaller than the input.
+        // (The last pixel may be one byte, which is still fine.)
         im->info.bmiHeader.biBitCount = 8;
         im->info.bmiHeader.biClrUsed = 256;
         long long npixels = 1LL * pbm.dims[0] * pbm.dims[1];
@@ -242,6 +246,10 @@ newimage(wchar_t *path)
     } break;
 
     case 3: {
+        // Convert in-place into the P6 format. Since each pixel is at
+        // least six ASCII bytes, the P6 form is strictly smaller than
+        // the input. (The last pixel may be five bytes, which is still
+        // fine.)
         long long npixels = 3LL * pbm.dims[0] * pbm.dims[1];
         unsigned char *src = im->pixels;
         unsigned char *end = src + len;
@@ -255,13 +263,26 @@ newimage(wchar_t *path)
     } break;
 
     case 5: {
+        // Treat as 8-bit indexed image.
         im->info.bmiHeader.biBitCount = 8;
         im->info.bmiHeader.biClrUsed = 256;
-        // Already in correct format
+        // Already in correct format, check the length
+        long long expect = 1LL * pbm.dims[0] * pbm.dims[1];
+        ptrdiff_t actual = im->pbm + len - im->pixels;
+        if (actual < expect) {
+            image_free(im);
+            return 0;
+        }
     } break;
 
     case 6: {
-        // Already in correct format
+        // Already in correct format, check the length
+        long long expect = 3LL * pbm.dims[0] * pbm.dims[1];
+        ptrdiff_t actual = im->pbm + len - im->pixels;
+        if (actual < expect) {
+            image_free(im);
+            return 0;
+        }
     } break;
     }
     return im;
