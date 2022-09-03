@@ -502,7 +502,8 @@ toggle_fullscreen(HWND hwnd, WINDOWPLACEMENT *wp)
         }
         style &= ~WS_OVERLAPPEDWINDOW;
         SetWindowLongPtrA(hwnd, GWL_STYLE, style);
-        MONITORINFO mi = {sizeof(mi)};
+        MONITORINFO mi = {0};
+        mi.cbSize = sizeof(mi);
         GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi);
         SetWindowPos(
                 hwnd, HWND_TOP,
