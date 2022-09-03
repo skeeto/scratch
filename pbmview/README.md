@@ -37,6 +37,16 @@ compiling, set `CROSS`.
 
     make CROSS=x86_64-w64-mingw32-
 
+### Minimal, CRT-less build
+
+The program does not actually use or require a CRT, and so can be built
+without linking one. This cuts the image down to 20%—70% its normal size.
+
+    make CFLAGS="-Os -mno-stack-arg-probe -fno-asynchronous-unwind-tables" \
+         LDFLAGS="-nostdlib -s -Wl,--gc-sections \
+                  -Xlinker --stack=0x200000,0x200000 -Wl,--entry=WinMain" \
+         LDLIBS="-lntdll -lkernel32 -luser32 -lshell32 -lgdi32 -lshlwapi"
+
 ## Known issues
 
 Uses `StretchDIBits` with `HALFTONE` scaling, a naive algorithm that is

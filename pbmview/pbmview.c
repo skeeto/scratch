@@ -21,6 +21,13 @@
 #  pragma comment(linker, "/subsystem:windows")
 #endif
 
+// Return non-zero if a and b match, otherwise zero.
+static int
+wequal(wchar_t *a, wchar_t *b, size_t n)
+{
+    return RtlCompareMemory(a, b, n*2) == n*2;
+}
+
 struct netpbm {
     long dims[3];
     int type;
@@ -317,7 +324,7 @@ newstate(wchar_t *path)
     if (s) {
         s->path = (wchar_t *)((char *)s + sizeof(*s));
         s->path[0] = 0;
-        size_t len = wcslen(path) + 1;
+        size_t len = lstrlenW(path) + 1;
         if (len <= MAX_PATH) {
             memcpy(s->path, path, len*2);
         }
@@ -361,7 +368,7 @@ state_monitor(void *arg)
         }
     }
 
-    size_t filelen, pathlen = wcslen(s->path) + 1;
+    size_t filelen, pathlen = lstrlenW(s->path) + 1;
     wchar_t dir[MAX_PATH], file[MAX_PATH];
     if (pathlen > MAX_PATH) {
         return 0;
@@ -369,7 +376,7 @@ state_monitor(void *arg)
 
     memcpy(file, s->path, pathlen*2);
     PathStripPathW(file);
-    filelen = wcslen(file);
+    filelen = lstrlenW(file);
     CharUpperBuffW(file, filelen);
 
     // PathRemoveFileSpecW and PathCchRemoveFileSpec are defective and
@@ -414,7 +421,7 @@ state_monitor(void *arg)
             if (p->FileNameLength/2 == filelen) {
                 // Normalize for case-insensitive path comparison
                 CharUpperBuffW(p->FileName, filelen);
-                if (!memcmp(file, p->FileName, p->FileNameLength)) {
+                if (wequal(file, p->FileName, filelen)) {
                     if (state_send(s, newimage(s->path))) {
                         state_free(s);
                         return 0;
@@ -671,6 +678,11 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
     }
     return 0;
 }
+
+#if __i386__
+// Simplifies the command for CRT-less builds
+__asm(".globl WinMain\nWinMain: jmp _WinMain@16");
+#endif
 
 int WINAPI
 WinMain(HINSTANCE hi, HINSTANCE pi, char *c, int n)
