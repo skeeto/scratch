@@ -45,7 +45,7 @@ without linking one. This cuts the image down to 20%—70% its normal size.
     make CFLAGS="-Os -mno-stack-arg-probe -fno-asynchronous-unwind-tables" \
          LDFLAGS="-nostdlib -s -Wl,--gc-sections \
                   -Xlinker --stack=0x200000,0x200000 -Wl,--entry=WinMain" \
-         LDLIBS="-lntdll -lkernel32 -luser32 -lshell32 -lgdi32 -lshlwapi"
+         LDLIBS="-lkernel32 -luser32 -lshell32 -lgdi32 -lshlwapi"
 
 ## Known issues
 

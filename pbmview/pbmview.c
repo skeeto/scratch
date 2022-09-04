@@ -25,7 +25,11 @@
 static int
 wequal(wchar_t *a, wchar_t *b, size_t n)
 {
-    return RtlCompareMemory(a, b, n*2) == n*2;
+    size_t c = 0;
+    for (size_t i = 0; i < n; i++) {
+        c += a[i] == b[i];
+    }
+    return c == n;
 }
 
 struct netpbm {
