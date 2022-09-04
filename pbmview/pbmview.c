@@ -262,14 +262,16 @@ newimage(wchar_t *path)
         // least six ASCII bytes, the P6 form is strictly smaller than
         // the input. (The last pixel may be five bytes, which is still
         // fine.)
-        long long npixels = 3LL * pbm.dims[0] * pbm.dims[1];
+        long long nsubpixels = 3LL * pbm.dims[0] * pbm.dims[1];
         unsigned char *src = im->pixels;
         unsigned char *end = im->pbm + len;
-        for (long long i = 0; i < npixels; i++) {
-            src = asciibyte(im->pixels+i, src, end);
-            if (!src) {
-                image_free(im);
-                return 0;
+        for (long long i = 0; i < nsubpixels; i += 3) {
+            for (int j = 2; j >= 0; j--) {
+                src = asciibyte(im->pixels+i+j, src, end);
+                if (!src) {
+                    image_free(im);
+                    return 0;
+                }
             }
         }
     } break;
@@ -288,12 +290,18 @@ newimage(wchar_t *path)
     } break;
 
     case 6: {
-        // Already in correct format, check the length
+        // Mostly in correct format, check the length
         long long expect = 3LL * pbm.dims[0] * pbm.dims[1];
         ptrdiff_t actual = im->pbm + len - im->pixels;
         if (actual < expect) {
             image_free(im);
             return 0;
+        }
+        // Swap R and B
+        for (long i = 0; i < (long)expect; i += 3) {
+            unsigned char t = im->pixels[i+0];
+            im->pixels[i+0] = im->pixels[i+2];
+            im->pixels[i+2] = t;
         }
     } break;
     }
