@@ -244,12 +244,14 @@ newimage(wchar_t *path)
 
         im->info.bmiHeader.biWidth = w;
         im->info.bmiHeader.biHeight = -h;
-        im->pixels = im->header + 16;
+        im->pixels = im->header;
+        unsigned char *dst = im->header;
+        unsigned char *src = im->header + 16;
         long npixels = w * h;  // cannot overflow
         for (long i = 0; i < npixels; i++) {
-            im->pixels[i*3+0] = im->pixels[i*8+4];
-            im->pixels[i*3+1] = im->pixels[i*8+2];
-            im->pixels[i*3+2] = im->pixels[i*8+0];
+            dst[i*3+0] = src[i*8+4];
+            dst[i*3+1] = src[i*8+2];
+            dst[i*3+2] = src[i*8+0];
         }
         return im;
     }
