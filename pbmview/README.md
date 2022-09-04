@@ -54,5 +54,5 @@ not [gamma-aware][] and produces artifacts, especially in older versions
 of Windows.
 
 
-[gamma-aware]: http://www.ericbrasseur.org/gamma.html?i=1
+[gamma-aware]: https://web.archive.org/web/20190419162041/http://www.ericbrasseur.org/gamma.html
 [w64devkit]: https://github.com/skeeto/w64devkit
