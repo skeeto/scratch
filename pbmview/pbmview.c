@@ -89,7 +89,9 @@ netpbm_parse(int state, int c, struct netpbm *pbm, long max)
              case '0': case '1': case '2': case '3': case '4':
              case '5': case '6': case '7': case '8': case '9':
                  pbm->dims[state-6] = pbm->dims[state-6]*10 + c - '0';
-                 if (pbm->dims[state-6] > max) return NETPBM_OVERFLOW;
+                 if (pbm->dims[state-6] > max) {
+                     return NETPBM_OVERFLOW;
+                 }
                  return state;
              }
     case  9:
@@ -124,7 +126,7 @@ asciibyte(unsigned char *dst, unsigned char *src, unsigned char *end)
                 *dst = (unsigned char)b;
                 return src;
             }
-            continue;
+            break;
         case '0': case '1': case '2': case '3': case '4':
         case '5': case '6': case '7': case '8': case '9':
             b = b*10 + c - '0';
@@ -367,6 +369,7 @@ state_monitor(void *arg)
 
     if (!(s->flags & STATE_LOADED)) {
         if (state_send(s, newimage(s->path))) {
+            state_free(s);
             return 0;
         }
     }
@@ -401,14 +404,14 @@ state_monitor(void *arg)
     HANDLE h;
     for (;; Sleep(1000)) {
         h = CreateFileW(
-                dir,
-                FILE_LIST_DIRECTORY,
-                FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
-                0,
-                OPEN_EXISTING,
-                FILE_FLAG_BACKUP_SEMANTICS,
-                0
-                );
+            dir,
+            FILE_LIST_DIRECTORY,
+            FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+            0,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            0
+        );
         if (h != INVALID_HANDLE_VALUE) {
             break;
         }
@@ -426,6 +429,7 @@ state_monitor(void *arg)
                 CharUpperBuffW(p->FileName, filelen);
                 if (wequal(file, p->FileName, filelen)) {
                     if (state_send(s, newimage(s->path))) {
+                        CloseHandle(h);
                         state_free(s);
                         return 0;
                     }
@@ -516,21 +520,21 @@ toggle_fullscreen(HWND hwnd, WINDOWPLACEMENT *wp)
         mi.cbSize = sizeof(mi);
         GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi);
         SetWindowPos(
-                hwnd, HWND_TOP,
-                mi.rcMonitor.left, mi.rcMonitor.top,
-                mi.rcMonitor.right-mi.rcMonitor.left,
-                mi.rcMonitor.bottom-mi.rcMonitor.top,
-                SWP_NOOWNERZORDER | SWP_FRAMECHANGED
-                );
+            hwnd, HWND_TOP,
+            mi.rcMonitor.left, mi.rcMonitor.top,
+            mi.rcMonitor.right-mi.rcMonitor.left,
+            mi.rcMonitor.bottom-mi.rcMonitor.top,
+            SWP_NOOWNERZORDER | SWP_FRAMECHANGED
+        );
 
     } else {
         style |= WS_OVERLAPPEDWINDOW;
         SetWindowLongPtrA(hwnd, GWL_STYLE, style);
         SetWindowPos(
-                hwnd, 0, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
-                SWP_NOOWNERZORDER | SWP_FRAMECHANGED
-                );
+            hwnd, 0, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+            SWP_NOOWNERZORDER | SWP_FRAMECHANGED
+        );
         SetWindowPlacement(hwnd, wp);
     }
 }
@@ -576,9 +580,7 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         struct image *im = InterlockedExchangePointer(&s->next, (void *)0);
         if (im) {
             // Received new image
-            if (s->image) {
-                image_free(s->image);
-            }
+            image_free(s->image);
             s->image = im;
         } else {
             // No new image, get previous image
