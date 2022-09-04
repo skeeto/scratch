@@ -33,29 +33,28 @@ struct netpbm {
     int type;
 };
 
-// Input a byte into the Netpbm parser state machine, updating the width
-// / height / depth array and returning the next state. The initial
-// state is zero. A negative return is not a state, but an error:
-// PGM_OVERFLOW, PGM_INVALID. The accept state is PGM_DONE, and no
-// further input will be accepted. Dimensions are restricted to the
-// given maximum: use something reasonable, not LONG_MAX. Fields may be
-// left uninitialized on error.
+// Input a byte into the Netpbm parser state machine. Updates the header
+// information and returns the next state. The initial state is zero.
+// Negative states are errors: NETPBM_OVERFLOW, NETPBM_INVALID. The
+// accept state is NETPBM_DONE, and no further input will be accepted.
+// Dimensions are restricted to the given maximum. Use something
+// reasonable, not LONG_MAX. Fields may be left uninitialized on error.
 //
 // This parser supports arbitrary whitespace and comments.
 static int
 netpbm_parse(int state, int c, struct netpbm *pbm, long max)
 {
-    #define PGM_OVERFLOW  -2
-    #define PGM_INVALID   -1
-    #define PGM_DONE      +5
+    #define NETPBM_OVERFLOW  -2
+    #define NETPBM_INVALID   -1
+    #define NETPBM_DONE      +5
     switch (state) {
-    default: return PGM_INVALID;
+    default: return NETPBM_INVALID;
     case  0: switch (c) {
-             default : return PGM_INVALID;
+             default : return NETPBM_INVALID;
              case 'P': return 1;
              }
     case  1: switch (c) {
-             default : return PGM_INVALID;
+             default : return NETPBM_INVALID;
              case '2':
              case '3':
              case '5':
@@ -78,15 +77,15 @@ netpbm_parse(int state, int c, struct netpbm *pbm, long max)
     case  6:
     case  7:
     case  8: switch (c) {  // dimensions
-             default : return PGM_INVALID;
+             default : return NETPBM_INVALID;
              case ' ': case '\n': case '\r': case '\t':
-                 return state - 3;  // possibly PGM_DONE
+                 return state - 3;  // possibly NETPBM_DONE
              case '#':
                  return state + 4;
              case '0': case '1': case '2': case '3': case '4':
              case '5': case '6': case '7': case '8': case '9':
                  pbm->dims[state-6] = pbm->dims[state-6]*10 + c - '0';
-                 if (pbm->dims[state-6] > max) return PGM_OVERFLOW;
+                 if (pbm->dims[state-6] > max) return NETPBM_OVERFLOW;
                  return state;
              }
     case  9:
@@ -209,11 +208,11 @@ newimage(wchar_t *path)
         }
         ps = netpbm_parse(ps, im->pbm[off++], &pbm, 1000000);
         switch (ps) {
-        case PGM_OVERFLOW:
-        case PGM_INVALID:
+        case NETPBM_OVERFLOW:
+        case NETPBM_INVALID:
             image_free(im);
             return 0;
-        case PGM_DONE:
+        case NETPBM_DONE:
             if (pbm.dims[2] != 255) {
                 // Unsupported depth
                 image_free(im);
