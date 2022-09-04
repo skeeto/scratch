@@ -21,6 +21,8 @@
 #  pragma comment(linker, "/subsystem:windows")
 #endif
 
+#define DIM_MAX 1000000
+
 // Return non-zero if a and b match, otherwise zero.
 static int
 wequal(wchar_t *a, wchar_t *b, size_t n)
@@ -30,6 +32,22 @@ wequal(wchar_t *a, wchar_t *b, size_t n)
         c += a[i] == b[i];
     }
     return c == n;
+}
+
+static unsigned long long
+loadu64le(unsigned char *p)
+{
+    return (unsigned long long)p[0] <<  0 | (unsigned long long)p[1] <<  8 |
+           (unsigned long long)p[2] << 16 | (unsigned long long)p[3] << 24 |
+           (unsigned long long)p[4] << 32 | (unsigned long long)p[5] << 40 |
+           (unsigned long long)p[6] << 48 | (unsigned long long)p[7] << 56;
+}
+
+static unsigned long
+loadu32be(unsigned char *p)
+{
+    return (unsigned long)p[0] << 24 | (unsigned long)p[1] << 16 |
+           (unsigned long)p[2] <<  8 | (unsigned long)p[3] <<  0;
 }
 
 struct netpbm {
@@ -142,7 +160,7 @@ asciibyte(unsigned char *dst, unsigned char *src, unsigned char *end)
 struct image {
     BITMAPINFO info;
     RGBQUAD palette[256];
-    unsigned char *pbm, *pixels;
+    unsigned char *header, *pixels;
 } image;
 
 static void
@@ -185,7 +203,7 @@ newimage(wchar_t *path)
         CloseHandle(h);
         return 0;
     }
-    im->pbm = (unsigned char *)im + sizeof(*im);
+    im->header = (unsigned char *)im + sizeof(*im);
     im->info.bmiHeader.biSize = sizeof(im->info);
     im->info.bmiHeader.biPlanes = 1;
     im->info.bmiHeader.biBitCount = 24;
@@ -199,20 +217,51 @@ newimage(wchar_t *path)
     }
 
     DWORD n;
-    if (!ReadFile(h, im->pbm, len, &n, 0) || len != (int)n) {
+    if (!ReadFile(h, im->header, len, &n, 0) || len != (int)n) {
         image_free(im);
         CloseHandle(h);
         return 0;
     }
     CloseHandle(h);
 
+    // is it farbfeld?
+    if (len >= 16 && loadu64le(im->header) == 0x646c656662726166) {
+        unsigned long hdr_w = loadu32be(im->header +  8);
+        unsigned long hdr_h = loadu32be(im->header + 12);
+        if (hdr_w > DIM_MAX || hdr_h > DIM_MAX) {
+            // too large
+            image_free(im);
+            return 0;
+        }
+
+        long w = hdr_w;
+        long h = hdr_h;
+        if (len < 16 + 8LL*w*h) {
+            // file too short
+            image_free(im);
+            return 0;
+        }
+
+        im->info.bmiHeader.biWidth = w;
+        im->info.bmiHeader.biHeight = -h;
+        im->pixels = im->header + 16;
+        long npixels = w * h;  // cannot overflow
+        for (long i = 0; i < npixels; i++) {
+            im->pixels[i*3+0] = im->pixels[i*8+4];
+            im->pixels[i*3+1] = im->pixels[i*8+2];
+            im->pixels[i*3+2] = im->pixels[i*8+0];
+        }
+        return im;
+    }
+
+    // is it Netpbm?
     struct netpbm pbm = {0};
     for (int ps = 0, off = 0, done = 0; !done;) {
         if (off >= len) {
             image_free(im);
             return 0;
         }
-        ps = netpbm_parse(ps, im->pbm[off++], &pbm, 1000000);
+        ps = netpbm_parse(ps, im->header[off++], &pbm, DIM_MAX);
         switch (ps) {
         case NETPBM_OVERFLOW:
         case NETPBM_INVALID:
@@ -226,7 +275,7 @@ newimage(wchar_t *path)
             }
             im->info.bmiHeader.biWidth = pbm.dims[0];
             im->info.bmiHeader.biHeight = -pbm.dims[1];
-            im->pixels = im->pbm + off;
+            im->pixels = im->header + off;
             done = 1;
         }
     }
@@ -247,7 +296,7 @@ newimage(wchar_t *path)
         im->info.bmiHeader.biClrUsed = 256;
         long long npixels = 1LL * pbm.dims[0] * pbm.dims[1];
         unsigned char *src = im->pixels;
-        unsigned char *end = im->pbm + len;
+        unsigned char *end = im->header + len;
         for (long long i = 0; i < npixels; i++) {
             src = asciibyte(im->pixels+i, src, end);
             if (!src) {
@@ -264,7 +313,7 @@ newimage(wchar_t *path)
         // fine.)
         long long nsubpixels = 3LL * pbm.dims[0] * pbm.dims[1];
         unsigned char *src = im->pixels;
-        unsigned char *end = im->pbm + len;
+        unsigned char *end = im->header + len;
         for (long long i = 0; i < nsubpixels; i += 3) {
             for (int j = 2; j >= 0; j--) {
                 src = asciibyte(im->pixels+i+j, src, end);
@@ -282,7 +331,7 @@ newimage(wchar_t *path)
         im->info.bmiHeader.biClrUsed = 256;
         // Already in correct format, check the length
         long long expect = 1LL * pbm.dims[0] * pbm.dims[1];
-        ptrdiff_t actual = im->pbm + len - im->pixels;
+        ptrdiff_t actual = im->header + len - im->pixels;
         if (actual < expect) {
             image_free(im);
             return 0;
@@ -292,7 +341,7 @@ newimage(wchar_t *path)
     case 6: {
         // Mostly in correct format, check the length
         long long expect = 3LL * pbm.dims[0] * pbm.dims[1];
-        ptrdiff_t actual = im->pbm + len - im->pixels;
+        ptrdiff_t actual = im->header + len - im->pixels;
         if (actual < expect) {
             image_free(im);
             return 0;

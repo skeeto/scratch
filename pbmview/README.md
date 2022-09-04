@@ -1,8 +1,8 @@
 # Netpbm Viewer for Windows
 
-Fast. Lightweight. Minimalistic. Supports P2, P3, P5, and P6 at 255
-maxdepth. Monitors for changes and automatically refreshes. Drag-and-drop.
-Windows XP and later.
+Fast. Lightweight. Minimalistic. Supports [P2, P3, P5, and P6][pbm] at 255
+maxdepth, and [farbfeld][ff]. Monitors for changes and automatically
+refreshes. Drag-and-drop. Windows XP and later.
 
 * <kbd>f</kbd>: toggle fullscreen
 * <kbd>q</kbd> / <kbd>ESC</kbd>: exit the program
@@ -54,5 +54,7 @@ not [gamma-aware][] and produces artifacts, especially in older versions
 of Windows.
 
 
+[ff]: https://tools.suckless.org/farbfeld/
 [gamma-aware]: https://web.archive.org/web/20190419162041/http://www.ericbrasseur.org/gamma.html
+[pbm]: http://netpbm.sourceforge.net/doc/ppm.html
 [w64devkit]: https://github.com/skeeto/w64devkit
