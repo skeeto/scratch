@@ -245,7 +245,7 @@ newimage(wchar_t *path)
         im->info.bmiHeader.biClrUsed = 256;
         long long npixels = 1LL * pbm.dims[0] * pbm.dims[1];
         unsigned char *src = im->pixels;
-        unsigned char *end = src + len;
+        unsigned char *end = im->pbm + len;
         for (long long i = 0; i < npixels; i++) {
             src = asciibyte(im->pixels+i, src, end);
             if (!src) {
@@ -262,7 +262,7 @@ newimage(wchar_t *path)
         // fine.)
         long long npixels = 3LL * pbm.dims[0] * pbm.dims[1];
         unsigned char *src = im->pixels;
-        unsigned char *end = src + len;
+        unsigned char *end = im->pbm + len;
         for (long long i = 0; i < npixels; i++) {
             src = asciibyte(im->pixels+i, src, end);
             if (!src) {
