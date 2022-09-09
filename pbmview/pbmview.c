@@ -477,12 +477,12 @@ state_monitor(void *arg)
     }
 
     for (;;) {
-        DWORD len, fni[1<<10];
+        DWORD len = 0, fni[1<<10];
         DWORD filter = FILE_NOTIFY_CHANGE_LAST_WRITE |
                        FILE_NOTIFY_CHANGE_FILE_NAME |
                        FILE_NOTIFY_CHANGE_CREATION;
         ReadDirectoryChangesW(h, fni, sizeof(fni), 0, filter, &len, 0, 0);
-        for (FILE_NOTIFY_INFORMATION *p = (void *)fni;;) {
+        for (FILE_NOTIFY_INFORMATION *p = (void *)fni; len;) {
             if (p->FileNameLength/2 == filelen) {
                 // Normalize for case-insensitive path comparison
                 CharUpperBuffW(p->FileName, filelen);
