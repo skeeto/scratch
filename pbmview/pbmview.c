@@ -477,18 +477,23 @@ state_monitor(void *arg)
         }
     }
 
+    DWORD cap = 1 << 21;  // 2MiB: maybe get a large page?
+    void *fni = VirtualAlloc(0, cap, MEM_COMMIT, PAGE_READWRITE);
+    cap = fni ? cap : 0;
+
     for (;;) {
-        DWORD len = 0, fni[1<<10];
+        DWORD len = 0;
         DWORD filter = FILE_NOTIFY_CHANGE_LAST_WRITE |
                        FILE_NOTIFY_CHANGE_FILE_NAME |
                        FILE_NOTIFY_CHANGE_CREATION;
-        ReadDirectoryChangesW(h, fni, sizeof(fni), 0, filter, &len, 0, 0);
-        for (FILE_NOTIFY_INFORMATION *p = (void *)fni; len;) {
+        ReadDirectoryChangesW(h, fni, cap, 0, filter, &len, 0, 0);
+        for (FILE_NOTIFY_INFORMATION *p = fni; len;) {
             if (p->FileNameLength/2 == filelen) {
                 // Normalize for case-insensitive path comparison
                 CharUpperBuffW(p->FileName, filelen);
                 if (wequal(file, p->FileName, filelen)) {
                     if (state_send(s, newimage(s->path))) {
+                        VirtualFree(fni, 0, MEM_RELEASE);
                         CloseHandle(h);
                         state_free(s);
                         return 0;
