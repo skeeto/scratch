@@ -6,6 +6,7 @@ refreshes. Drag-and-drop. Windows XP and later.
 
 * <kbd>f</kbd>: toggle fullscreen
 * <kbd>q</kbd> / <kbd>ESC</kbd>: exit the program
+* <kbd>s</kbd>: toggle exact vs. smoothed filtering (default: auto)
 * <kbd>z</kbd>: reset window to image size (or approximate)
 
 If the input is unreadable for any reason, it does nothing — not even

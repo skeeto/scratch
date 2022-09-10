@@ -369,6 +369,7 @@ struct state {
     void *volatile next;
     HWND hwnd;
     WINDOWPLACEMENT wp;
+    enum {MODE_AUTO, MODE_EXACT, MODE_FILTER} mode;
 
     #define STATE_LOADED (1 << 0)
     int flags;
@@ -612,11 +613,6 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         GetWindowPlacement(hwnd, &s->wp);
         DragAcceptFiles(hwnd, 1);
 
-        HDC hdc = GetDC(hwnd);
-        SetStretchBltMode(hdc, HALFTONE);
-        SetBrushOrgEx(hdc, 0, 0, 0);
-        ReleaseDC(hwnd, hdc);
-
         if (s->image) {
             GetWindowPlacement(hwnd, &s->wp);
             ideal_rect(&s->wp.rcNormalPosition, s->image);
@@ -658,8 +654,8 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 
         RECT r;
         GetClientRect(hwnd, &r);
-        double w = r.right - r.left;
-        double h = r.bottom - r.top;
+        int w = r.right - r.left;
+        int h = r.bottom - r.top;
 
         if (!im) {
             FillRect(hdc, &r, brush);
@@ -667,9 +663,10 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             break;
         }
 
-        double a = w / h;
-        double t = (double)im->info.bmiHeader.biWidth /
-                          -im->info.bmiHeader.biHeight;
+        int iw = im->info.bmiHeader.biWidth;
+        int ih = -im->info.bmiHeader.biHeight;
+        double a = (double)w / h;
+        double t = (double)iw / ih;
         int xpad = 0, ypad = 0;
         if (a < t) {
             ypad = h - w/t;
@@ -683,6 +680,20 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             RECT box = {0, 0, xpad/2, h}, end = {w-(xpad+1)/2, 0, w, h};
             FillRect(hdc, &box, brush);
             FillRect(hdc, &end, brush);
+        }
+
+        switch (s->mode) {
+        case MODE_AUTO:
+            if (w == iw && h == ih) {
+                // fallthrough
+                case MODE_EXACT:
+                SetStretchBltMode(hdc, COLORONCOLOR);
+            } else {
+                // fallthrough
+                case MODE_FILTER:
+                SetStretchBltMode(hdc, HALFTONE);
+                SetBrushOrgEx(hdc, 0, 0, 0);
+            }
         }
         StretchDIBits(
             hdc,
@@ -716,6 +727,17 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             break;
         case 'F':
             toggle_fullscreen(hwnd, &s->wp);
+            break;
+        case 'S':
+            switch (s->mode) {
+            case MODE_AUTO  :
+            case MODE_FILTER: s->mode = MODE_EXACT;
+                              break;
+            case MODE_EXACT : s->mode = MODE_FILTER;
+            }
+            RECT r;
+            GetClientRect(hwnd, &r);
+            InvalidateRect(hwnd, &r, 1);
             break;
         case 'Z':
             if (s->image) {
