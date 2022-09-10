@@ -510,7 +510,7 @@ static void
 state_start(struct state *s, HWND hwnd)
 {
     s->hwnd = hwnd;
-    CreateThread(0, 1<<16, state_monitor, s, 0, 0);
+    CloseHandle(CreateThread(0, 1<<16, state_monitor, s, 0, 0));
 }
 
 // Request monitor thread to shutdown the next time it wakes. The
