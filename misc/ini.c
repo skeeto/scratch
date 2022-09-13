@@ -108,7 +108,6 @@ ini_next(void *buf, int32_t len, int32_t *state, int32_t *lineno)
 
     case ']':
         switch (mode) {
-        case 0:
         case 2: // Consume the rest of the line, including newline
                 while (off < len) {
                     v = b[off];
@@ -139,6 +138,7 @@ ini_next(void *buf, int32_t len, int32_t *state, int32_t *lineno)
                 tok.type = INI_SECTION;
                 *state = off;
                 return tok;
+        case 0:
         case 3: tok.type = INI_ERR; // invalid at this position
                 return tok;
         }
