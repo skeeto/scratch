@@ -365,10 +365,8 @@ parse(struct arg a)
 static void
 usage(void)
 {
-    static const wchar_t usage[] =
-        L"usage: cal [[month] year]\n"
-        L"cal: month must be 1..12, year must be 1..9999\n";
-    os_write(2, usage, sizeof(usage)/2);
+    static const wchar_t usage[] = L"usage: cal [[1..12] 1..9999]\n";
+    os_write(2, usage, sizeof(usage)/2 - 1);
 }
 
 int mainCRTStartup(void)
