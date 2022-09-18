@@ -197,13 +197,12 @@ pushchar(wchar_t *buf, wchar_t c)
 static wchar_t *
 pushnewline(wchar_t *buf)
 {
-    wchar_t *p = buf;
-    while (p[-1] == ' ') {
-        p--;  /* trim trailing whitespace */
+    while (buf[-1] == ' ') {
+        buf--;  /* trim trailing whitespace */
     }
-    p = pushchar(p, '\r');
-    p = pushchar(p, '\n');
-    return p;
+    buf = pushchar(buf, '\r');
+    buf = pushchar(buf, '\n');
+    return buf;
 }
 
 static wchar_t *
@@ -304,12 +303,9 @@ pushmulti(wchar_t *buf, int year, struct locale *l)
 
     p = pushspace(p, (64 - yearlen(year)) / 2);
     p = pushyear(p, year);
-    p = pushnewline(p);
 
     for (my = 0; my < 4; my++) {
-        if (my) {
-            p = pushnewline(p);
-        }
+        p = pushnewline(p);
 
         for (mx = 0; mx < 3; mx++) {
             int m = my*3 + mx;
