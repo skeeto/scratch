@@ -5,8 +5,8 @@
 //
 // A waitgroup is an int initialized to some non-negative value, and any
 // number of threads can wait for the count to transition to zero. No
-// cleanup is required. The implementation trades some performance for
-// simplicity.
+// cleanup is required. This implementation trades some theoretical
+// performance for simplicity.
 //
 // This is free and unencumbered software released into the public domain.
 #include <assert.h>
