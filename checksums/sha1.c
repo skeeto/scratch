@@ -188,6 +188,12 @@ main(void)
 int
 main(void)
 {
+    #if _WIN32
+    int _setmode(int, int);
+    _setmode(0, 0x8000);
+    _setmode(1, 0x8000);
+    #endif
+
     struct sha1 ctx = SHA1;
     unsigned char digest[SHA1LEN];
     for (;;) {
