@@ -24,7 +24,7 @@ void sha1push(struct sha1 *, const void *, size_t);
 void sha1sum(const struct sha1 *, void *);
 void hmacsha1key(struct sha1 *, const void *, size_t);
 void hmacsha1sum(const struct sha1 *, const void *, size_t, void *);
-long totpsha1(const void *, size_t, uint64_t);
+long totpsha1(const void *, size_t, int64_t);
 
 // Implementation
 
@@ -186,18 +186,16 @@ hmacsha1sum(const struct sha1 *s, const void *key, size_t len, void *digest)
 }
 
 long
-totpsha1(const void *key, size_t len, uint64_t epoch)
+totpsha1(const void *key, size_t len, int64_t epoch)
 {
-    epoch /= 30;
-    unsigned char msg[] = {
-        epoch >> 56, epoch >> 48, epoch >> 40, epoch >> 32,
-        epoch >> 24, epoch >> 16, epoch >>  8, epoch >>  0
-    };
-
     struct sha1 ctx;
-    unsigned char mac[SHA1LEN];
     hmacsha1key(&ctx, key, len);
-    sha1push(&ctx, msg, sizeof(msg));
+
+    uint64_t e = epoch / 30;
+    unsigned char m[] = {e>>56, e>>48, e>>40, e>>32, e>>24, e>>16, e>>8, e};
+    sha1push(&ctx, m, sizeof(m));
+
+    unsigned char mac[SHA1LEN];
     hmacsha1sum(&ctx, key, len, mac);
     int off = mac[SHA1LEN-1] & 15;
     uint32_t r = (uint32_t)mac[off+0] << 24 | (uint32_t)mac[off+1] << 16 |
