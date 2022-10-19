@@ -18,6 +18,7 @@ void sha1push(struct sha1 *, const void *, size_t);
 void sha1sum(const struct sha1 *, void *);
 void hmacsha1key(struct sha1 *, const void *, size_t);
 void hmacsha1sum(const struct sha1 *, const void *, size_t, void *);
+long totpsha1(const void *, size_t, uint64_t);
 
 // Implementation
 
@@ -165,6 +166,26 @@ hmacsha1sum(const struct sha1 *s, const void *key, size_t len, void *digest)
     sha1sum(&t, digest);
 }
 
+long
+totpsha1(const void *key, size_t len, uint64_t epoch)
+{
+    epoch /= 30;
+    unsigned char msg[] = {
+        epoch >> 56, epoch >> 48, epoch >> 40, epoch >> 32,
+        epoch >> 24, epoch >> 16, epoch >>  8, epoch >>  0
+    };
+
+    struct sha1 ctx;
+    unsigned char mac[SHA1LEN];
+    hmacsha1key(&ctx, key, len);
+    sha1push(&ctx, msg, sizeof(msg));
+    hmacsha1sum(&ctx, key, len, mac);
+    int off = mac[SHA1LEN-1] & 15;
+    uint32_t r = (uint32_t)mac[off+0] << 24 | (uint32_t)mac[off+1] << 16 |
+                 (uint32_t)mac[off+2] <<  8 | (uint32_t)mac[off+3] <<  0;
+    return (r & 0x7fffffff) % 1000000;
+}
+
 
 #if TEST
 // $ cc -DTEST -g3 -fsanitize=address,undefined -o test sha1.c
@@ -235,6 +256,8 @@ main(void)
     sha1push(&ctx, msg, sizeof(msg)-1);
     hmacsha1sum(&ctx, longkey, sizeof(longkey), mac);
     assert(!memcmp(longmac, mac, SHA1LEN));
+
+    assert(222821L == totpsha1("\x01\x02\x03\x04", 4, 1666143375));
 
     puts("All tests pass.");
     return 0;
