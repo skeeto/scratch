@@ -6,10 +6,9 @@
 // Interface
 
 #define SHA1LEN 20
-#define SHA1 {0,0x67452301,0xefcdab89,0x98badcfe,0x10325476,0xc3d2e1f0,{0}}
 
 struct sha1 {
-    uint64_t n;
+    uint64_t n;  // zero-initialize before first sha1push/sha1sum
     uint32_t h0, h1, h2, h3, h4;
     unsigned char c[64];
 };
@@ -64,8 +63,15 @@ sha1absorb(struct sha1 *s, const unsigned char *p)
 void
 sha1push(struct sha1 *s, const void *buf, size_t len)
 {
-    const unsigned char *p = buf;
+    if (!s->n) {
+        s->h0 = 0x67452301;
+        s->h1 = 0xefcdab89;
+        s->h2 = 0x98badcfe;
+        s->h3 = 0x10325476;
+        s->h4 = 0xc3d2e1f0;
+    }
 
+    const unsigned char *p = buf;
     int n = s->n & 63;
     int r = 64 - n;
     s->n += len;
@@ -93,7 +99,13 @@ sha1push(struct sha1 *s, const void *buf, size_t len)
 void
 sha1sum(const struct sha1 *s, void *digest)
 {
-    struct sha1 t = *s;
+    struct sha1 t;
+    if (!s->n) {
+        t.n = 0;
+        sha1push(&t, 0, 0);
+    } else {
+        t = *s;
+    }
 
     int n = t.n & 63;
     t.n *= 8;
@@ -132,7 +144,7 @@ hmacsha1init(struct sha1 *s, const void *key, size_t len, uint8_t pad)
 {
     unsigned char k[64] = {0};
     if (len > 64) {
-        struct sha1 t = SHA1;
+        struct sha1 t = {0};
         sha1push(&t, key, len);
         sha1sum(&t, k);
     } else {
@@ -145,20 +157,20 @@ hmacsha1init(struct sha1 *s, const void *key, size_t len, uint8_t pad)
     for (int i = 0; i < 64; i++) {
         k[i] ^= pad;
     }
+    s->n = 0;
     sha1push(s, k, 64);
 }
 
 void
 hmacsha1key(struct sha1 *s, const void *key, size_t len)
 {
-    *s = (struct sha1)SHA1;
     hmacsha1init(s, key, len, 0x36);
 }
 
 void
 hmacsha1sum(const struct sha1 *s, const void *key, size_t len, void *digest)
 {
-    struct sha1 t = SHA1;
+    struct sha1 t;
     unsigned char tmp[SHA1LEN];
     sha1sum(s, tmp);
     hmacsha1init(&t, key, len, 0x5c);
@@ -210,21 +222,21 @@ main(void)
         input[i*4+2] = x >> 16; input[i*4+3] = x >> 24;
     }
 
-    struct sha1 ctx = SHA1;
+    struct sha1 ctx = {0};
     unsigned char digest[SHA1LEN];
     sha1push(&ctx, input, sizeof(input));
     sha1sum(&ctx, digest);
     assert(!memcmp(want, digest, SHA1LEN));
 
     for (int trim = 0; trim < 7; trim++) {
-        struct sha1 ctx = SHA1;
         unsigned char want[SHA1LEN];
+        ctx.n = 0;
         sha1push(&ctx, input, sizeof(input)-trim);
         sha1sum(&ctx, want);
 
         for (int chunk = 1; chunk < 63; chunk += 3) {
-            struct sha1 ctx = (struct sha1)SHA1;
             size_t len = sizeof(input) - trim;
+            ctx.n = 0;
             for (size_t i = 0; i < len; i += chunk) {
                 int r = len - i;
                 sha1push(&ctx, input+i, r<chunk?r:chunk);
