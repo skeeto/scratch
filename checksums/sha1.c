@@ -16,6 +16,8 @@ struct sha1 {
 
 void sha1push(struct sha1 *, const void *, size_t);
 void sha1sum(const struct sha1 *, void *);
+void hmacsha1key(struct sha1 *, const void *, size_t);
+void hmacsha1sum(const struct sha1 *, const void *, size_t, void *);
 
 // Implementation
 
@@ -124,6 +126,45 @@ sha1sum(const struct sha1 *s, void *digest)
     p[16] = t.h4>>24; p[17] = t.h4>>16; p[18] = t.h4>>8; p[19] = t.h4>>0;
 }
 
+static void
+hmacsha1init(struct sha1 *s, const void *key, size_t len, uint8_t pad)
+{
+    unsigned char k[64] = {0};
+    if (len > 64) {
+        struct sha1 t = SHA1;
+        sha1push(&t, key, len);
+        sha1sum(&t, k);
+    } else {
+        const unsigned char *p = key;
+        for (int i = 0; i < (int)len; i++) {
+            k[i] = p[i];
+        }
+    }
+
+    for (int i = 0; i < 64; i++) {
+        k[i] ^= pad;
+    }
+    sha1push(s, k, 64);
+}
+
+void
+hmacsha1key(struct sha1 *s, const void *key, size_t len)
+{
+    *s = (struct sha1)SHA1;
+    hmacsha1init(s, key, len, 0x36);
+}
+
+void
+hmacsha1sum(const struct sha1 *s, const void *key, size_t len, void *digest)
+{
+    struct sha1 t = SHA1;
+    unsigned char tmp[SHA1LEN];
+    sha1sum(s, tmp);
+    hmacsha1init(&t, key, len, 0x5c);
+    sha1push(&t, tmp, SHA1LEN);
+    sha1sum(&t, digest);
+}
+
 
 #if TEST
 // $ cc -DTEST -g3 -fsanitize=address,undefined -o test sha1.c
@@ -173,6 +214,27 @@ main(void)
         }
 
     }
+
+    unsigned char mac[SHA1LEN];
+    static const char msg[] = "Hello, world!";
+    static const char shortkey[] = "secretkey";
+    static const unsigned char shortmac[] = {
+        0xfb, 0xe7, 0x37, 0x4d, 0x75, 0xbf, 0x58, 0x3c, 0xf5, 0xbd,
+        0x2d, 0x93, 0x82, 0x55, 0xce, 0x53, 0x85, 0x8a, 0x84, 0xd1
+    };
+    hmacsha1key(&ctx, shortkey, sizeof(shortkey)-1);
+    sha1push(&ctx, msg, sizeof(msg)-1);
+    hmacsha1sum(&ctx, shortkey, sizeof(shortkey)-1, mac);
+    assert(!memcmp(shortmac, mac, SHA1LEN));
+    static const char longkey[100];
+    static const unsigned char longmac[] = {
+        0x87, 0xf3, 0xb4, 0xd9, 0xe3, 0x37, 0xe5, 0x57, 0x2b, 0xbd,
+        0xc7, 0xe2, 0x30, 0xc8, 0x03, 0xd9, 0x55, 0xf2, 0x33, 0x02
+    };
+    hmacsha1key(&ctx, longkey, sizeof(longkey));
+    sha1push(&ctx, msg, sizeof(msg)-1);
+    hmacsha1sum(&ctx, longkey, sizeof(longkey), mac);
+    assert(!memcmp(longmac, mac, SHA1LEN));
 
     puts("All tests pass.");
     return 0;
