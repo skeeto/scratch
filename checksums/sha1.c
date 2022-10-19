@@ -1,4 +1,11 @@
 // Portable SHA1 implementation in C
+//
+//   struct sha1 ctx = {0};
+//   unsigned char digest[SHA1LEN];
+//   sha1push(&ctx, "Hello, ", 7);
+//   sha1push(&ctx, "world!", 6);
+//   sha1sum(&ctx, digest);
+//
 // This is free and unencumbered software released into the public domain.
 #include <stddef.h>
 #include <stdint.h>
