@@ -69,7 +69,10 @@ int main(int argc, char **argv)
 {
     char *err;
 
-    #if _WIN32
+    #if __MSDOS__
+    int setmode(int, int);
+    setmode(0, 0x8000);
+    #elif _WIN32
     int _setmode(int, int);
     _setmode(0, 0x8000);
     #endif
