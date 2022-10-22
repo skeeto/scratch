@@ -25,11 +25,11 @@ static char *patch(char *path)
         long off, len;
         int rlen = fread(buf, 1, 5, stdin);
         switch (rlen) {
-        case 4:
         case 3: if (!memcmp(buf, "EOF", 3)) {
                     fflush(target);
                     return ferror(target) ? "write to target failed" : 0;
                 } /* fallthrough */
+        case 4:
         case 2:
         case 1:
         case 0: return "unexpected patch EOF";
