@@ -214,7 +214,7 @@ bps_apply(uint8_t *bps, size_t len, uint8_t *src, uint8_t *tgt)
 #include <stdlib.h>
 
 // Read an entire stream into a buffer. Returns -1 on error.
-static intptr_t
+static ptrdiff_t
 slurp(FILE *f, uint8_t **buf)
 {
     *buf = 0;
@@ -269,14 +269,14 @@ main(int argc, char **argv)
     }
 
     uint8_t *src;
-    intptr_t sn = slurp(sf, &src);
+    ptrdiff_t sn = slurp(sf, &src);
     if (sn < 0) {
         fprintf(stderr, "bpspatch: could not load source, %s\n", argv[1]);
         return 1;
     }
 
     uint8_t *bps;
-    intptr_t bn = slurp(stdin, &bps);
+    ptrdiff_t bn = slurp(stdin, &bps);
     if (bn < 0) {
         fputs("bpspatch: failed to load standard input\n", stderr);
         return 1;
