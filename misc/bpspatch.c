@@ -294,7 +294,7 @@ main(int argc, char **argv)
         return 1;
     }
 
-    uint8_t *tgt = calloc(1, info.tgtlen);
+    uint8_t *tgt = calloc(1, info.tgtlen ? info.tgtlen : 1);
     if ((uint64_t)info.tgtlen>(size_t)-1 || !tgt) {
         fprintf(stderr, "bpspatch: out of memory, wanted %lld bytes\n",
                 (long long)info.tgtlen);
