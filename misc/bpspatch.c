@@ -82,8 +82,7 @@ crc32(uint32_t crc, uint8_t *buf, size_t len)
 
 // Read a varint in [0 .. 72,624,976,668,147,839] (57 bits), returning
 // the number of bytes consumed ([0 .. 8]). For invalid input (out of
-// range, truncated), sets the value to -1 and returns zero. The buffer
-// must have a length of at least 8.
+// range, truncated), sets the value to -1 and returns zero.
 static int
 bps_number(uint8_t *buf, size_t len, int64_t *r)
 {
