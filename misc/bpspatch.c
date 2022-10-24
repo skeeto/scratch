@@ -80,15 +80,16 @@ crc32(uint32_t crc, uint8_t *buf, size_t len)
     return crc ^ 0xffffffff;
 }
 
-// Read a varint in [0 .. 567,382,630,219,903] (50 bits), returning the
-// number of bytes consumed ([0 .. 7]). For invalid input (out of range,
-// truncated), sets the value to -1 and returns zero.
+// Read a varint in [0 .. 72,624,976,668,147,839] (57 bits), returning
+// the number of bytes consumed ([0 .. 8]). For invalid input (out of
+// range, truncated), sets the value to -1 and returns zero. The buffer
+// must have a length of at least 8.
 static int
-bps_number(uint8_t *buf, size_t len, int64_t *r)
+bps_number(uint8_t *buf, int64_t *r)
 {
     int64_t v = 0;
-    uint8_t *p = buf, *e = buf + len;
-    for (int s = 0; p<e && s<=49; s += 7) {
+    uint8_t *p = buf;
+    for (int s = 0; s<=49; s += 7) {
         v += (int64_t)(*p & 0x7f) << s;
         if (*p++ & 0x80) {
             *r = v;
@@ -99,6 +100,47 @@ bps_number(uint8_t *buf, size_t len, int64_t *r)
     *r = -1;
     return 0;
 }
+
+#if 0 && __GNUC__ && __x86_64__ && __BMI2__
+// A SWAR-based bps_number using a couple of specialized x86-64-v3
+// instructions. Compile with -march=x86-64-v3 or -mbmi2.
+//
+// Unfortunately the tzcnt is a performance killer, and so this is
+// slower despite compiling to very small, branchless function.
+#include <immintrin.h>
+
+// Read a varint in [0 .. 72,624,976,668,147,839] (57 bits), returning
+// the number of bytes consumed ([0 .. 8]). For invalid input (out of
+// range, truncated), sets the value to -1 and returns zero. Reads
+// exactly 8 bytes from the buffer in all cases.
+static int
+bps_number(uint8_t *buf, int64_t *r)
+{
+    uint64_t b;
+    memcpy(&b, buf, 8);
+    int len = __builtin_ffsll(b&0x8080808080808080) / 8;
+    b = _pext_u64(b, 0x7f7f7f7f7f7f7f7f >> ((64 - 8*len)&63));
+    b += 0x0002040810204081>>(56 - 7*len) ^ 1;
+    *r = b | -!len;
+    return len;
+}
+#endif
+
+#if 0
+// Encode an integer into the buffer as a varint. Returns number of
+// bytes written ([1 .. 8]). Must be in [0 .. 72,624,976,668,147,839].
+static int
+bps_encode(uint8_t *buf, uint64_t v)
+{
+    for (uint8_t *p = buf;; p++, v = (v>>7) - 1) {
+        *p = v & 0x7f;
+        if (v < 0x80) {
+            *p |= 0x80;
+            return p + 1 - buf;
+        }
+    }
+}
+#endif
 
 // Validate and extract basic information about a BPS patch. Returns
 // zero on error.
@@ -119,14 +161,14 @@ bps_info(uint8_t *bps, size_t len, struct bps_info *info)
     }
 
     int off = 4;
-    off += bps_number(bps+off, len-12-off, &info->srclen);
-    off += bps_number(bps+off, len-12-off, &info->tgtlen);
+    off += bps_number(bps+off, &info->srclen);
+    off += bps_number(bps+off, &info->tgtlen);
     if (info->srclen<0 || info->tgtlen<0) {
         return 0;
     }
 
     int64_t metalen;
-    off += bps_number(bps+off, len-12-off, &metalen);
+    off += bps_number(bps+off, &metalen);
     if (metalen<0 || metalen>(int64_t)len-12-off) {
         return 0;
     }
@@ -143,9 +185,9 @@ bps_apply(uint8_t *bps, size_t len, uint8_t *src, uint8_t *tgt)
 {
     // These offsets/lengths have already been validated
     int64_t bp=4, sp=0, tp=0, op=0, bn=len-12, sn, tn, r;
-    bp += bps_number(bps+bp, bn-bp, &sn);
-    bp += bps_number(bps+bp, bn-bp, &tn);
-    bp += bps_number(bps+bp, bn-bp, &r);
+    bp += bps_number(bps+bp, &sn);
+    bp += bps_number(bps+bp, &tn);
+    bp += bps_number(bps+bp, &r);
     bp += r;  // skip metadata
 
     // First validate the source checksum
@@ -154,7 +196,7 @@ bps_apply(uint8_t *bps, size_t len, uint8_t *src, uint8_t *tgt)
     }
 
     while (bp < bn) {
-        bp += bps_number(bps+bp, bn, &r);
+        bp += bps_number(bps+bp, &r);
         if (r < 0) {
             return BPS_RANGE;
         }
@@ -177,7 +219,7 @@ bps_apply(uint8_t *bps, size_t len, uint8_t *src, uint8_t *tgt)
             bp += n;
             break;
         case 2: // SourceCopy
-            bp += bps_number(bps+bp, bn, &r);
+            bp += bps_number(bps+bp, &r);
             if (r<0 || r>>1>sn) {
                 return BPS_RANGE;
             }
@@ -190,7 +232,7 @@ bps_apply(uint8_t *bps, size_t len, uint8_t *src, uint8_t *tgt)
             sp += n;
             break;
         case 3: // TargetCopy
-            bp += bps_number(bps+bp, bn, &r);
+            bp += bps_number(bps+bp, &r);
             if (r<0 || r>>1>tn) {
                 return BPS_RANGE;
             }
