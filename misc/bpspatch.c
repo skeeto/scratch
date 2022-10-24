@@ -85,11 +85,11 @@ crc32(uint32_t crc, uint8_t *buf, size_t len)
 // range, truncated), sets the value to -1 and returns zero. The buffer
 // must have a length of at least 8.
 static int
-bps_number(uint8_t *buf, int64_t *r)
+bps_number(uint8_t *buf, size_t len, int64_t *r)
 {
     int64_t v = 0;
-    uint8_t *p = buf;
-    for (int s = 0; s<=49; s += 7) {
+    uint8_t *p = buf, *e = buf + len;
+    for (int s = 0; p<e && s<=49; s += 7) {
         v += (int64_t)(*p & 0x7f) << s;
         if (*p++ & 0x80) {
             *r = v;
@@ -161,14 +161,14 @@ bps_info(uint8_t *bps, size_t len, struct bps_info *info)
     }
 
     int off = 4;
-    off += bps_number(bps+off, &info->srclen);
-    off += bps_number(bps+off, &info->tgtlen);
+    off += bps_number(bps+off, len-12-off, &info->srclen);
+    off += bps_number(bps+off, len-12-off, &info->tgtlen);
     if (info->srclen<0 || info->tgtlen<0) {
         return 0;
     }
 
     int64_t metalen;
-    off += bps_number(bps+off, &metalen);
+    off += bps_number(bps+off, len-12-off, &metalen);
     if (metalen<0 || metalen>(int64_t)len-12-off) {
         return 0;
     }
@@ -185,9 +185,9 @@ bps_apply(uint8_t *bps, size_t len, uint8_t *src, uint8_t *tgt)
 {
     // These offsets/lengths have already been validated
     int64_t bp=4, sp=0, tp=0, op=0, bn=len-12, sn, tn, r;
-    bp += bps_number(bps+bp, &sn);
-    bp += bps_number(bps+bp, &tn);
-    bp += bps_number(bps+bp, &r);
+    bp += bps_number(bps+bp, bn-bp, &sn);
+    bp += bps_number(bps+bp, bn-bp, &tn);
+    bp += bps_number(bps+bp, bn-bp, &r);
     bp += r;  // skip metadata
 
     // First validate the source checksum
@@ -196,7 +196,7 @@ bps_apply(uint8_t *bps, size_t len, uint8_t *src, uint8_t *tgt)
     }
 
     while (bp < bn) {
-        bp += bps_number(bps+bp, &r);
+        bp += bps_number(bps+bp, bn, &r);
         if (r < 0) {
             return BPS_RANGE;
         }
@@ -219,7 +219,7 @@ bps_apply(uint8_t *bps, size_t len, uint8_t *src, uint8_t *tgt)
             bp += n;
             break;
         case 2: // SourceCopy
-            bp += bps_number(bps+bp, &r);
+            bp += bps_number(bps+bp, bn, &r);
             if (r<0 || r>>1>sn) {
                 return BPS_RANGE;
             }
@@ -232,7 +232,7 @@ bps_apply(uint8_t *bps, size_t len, uint8_t *src, uint8_t *tgt)
             sp += n;
             break;
         case 3: // TargetCopy
-            bp += bps_number(bps+bp, &r);
+            bp += bps_number(bps+bp, bn, &r);
             if (r<0 || r>>1>tn) {
                 return BPS_RANGE;
             }
