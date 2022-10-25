@@ -296,7 +296,7 @@ main(void)
     _setmode(1, 0x8000);
     #endif
 
-    struct sha1 ctx = SHA1;
+    struct sha1 ctx = {0};
     unsigned char digest[SHA1LEN];
     for (;;) {
         char buf[1<<14];
