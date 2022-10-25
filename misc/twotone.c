@@ -73,6 +73,10 @@ static const unsigned char hz853[] = {
 
 int main(void)
 {
+    #if _WIN32
+    int _setmode(int, int);
+    _setmode(1, 0x8000);
+    #endif
     if (fwrite(header, sizeof(header), 1, stdout)) {
         int i = 0, j = 0;
         for (; putchar((hz853[i] + hz960[j])/2) != EOF;
