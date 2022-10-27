@@ -251,8 +251,8 @@ sha1sum(const struct sha1 *s, void *digest)
     t.c[n++] = 0x80;
     if (n > 56) {
         unsigned char buf[64] = {
-            t.n >> 56, t.n >> 48, t.n >> 40, t.n >> 32,
-            t.n >> 24, t.n >> 16, t.n >>  8, t.n >>  0
+            [56]=t.n>>56, [57]=t.n>>48, [58]=t.n>>40, [59]=t.n>>32,
+            [60]=t.n>>24, [61]=t.n>>16, [62]=t.n>> 8, [63]=t.n>> 0
         };
         for (int i = n; i < 64; i++) {
             t.c[i] = 0;
