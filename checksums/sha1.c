@@ -7,10 +7,10 @@
 //   sha1sum(&ctx, digest);
 //
 // This is free and unencumbered software released into the public domain.
-#include <stddef.h>
-#include <stdint.h>
 
 // Interface
+#include <stddef.h>
+#include <stdint.h>
 
 #define SHA1LEN 20
 
