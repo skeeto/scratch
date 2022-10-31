@@ -10,7 +10,7 @@
 // literals.
 //
 // Per convention, "--" halts option parsing and is not included in the
-// position argument list. Permutation is not supported, and options
+// positional argument list. Permutation is not supported, and options
 // following a positional argument are treated as positional arguments.
 //
 // This is free and unencumbered software released into the public domain.
