@@ -77,30 +77,31 @@ static char *imgoarg(struct imgo *go, int required)
 
 
 #if DEMO
-// $ cc -DDEMO -o example imgo.c
-// $ ./example -abeeed4 -cred foo bar
+// $ cc -DDEMO -o demo imgo.c
+// $ ./demo -abeeed4 -cred foo bar
 #include <stdio.h>
 #include <stdlib.h>
 
+#define MISSING "requires an argument"
+#define TOOMANY "accepts no arguments"
+
 static const char usage[] =
-"usage: example [OPTION]... [ARG]...\n"
+"usage: demo [OPTION]... [ARG]...\n"
 "  -a, --amend              Modify previous state\n"
 "  -b, --brief              Produce shorter output\n"
-"  -c, --color COLOR        Output text color\n"
-"  -d, --delay[=SECONDS]    Delay between actions\n"
+"  -c, --color[=COLOR]      Output text color\n"
+"  -d, --delay SECONDS      Delay between actions\n"
 "  -e, --erase              Clear results (may be repeated)\n";
 
 int main(int argc, char **argv)
 {
-    char *color = "white";
+    char *err=0, *color=0;
     int amend=0, brief=0, delay=0, erase=0;
 
     struct imgo go = IMGOINIT(argc, argv);
     while (imgo(&go)) {
-        int missing = 0;
         if (!go.argv) {
-            printf("example: %.*s accepts no argument\n", go.len, go.opt);
-            return 1;
+            err = TOOMANY;
         } else if (IMGO(go, 'h', "help")) {
             fwrite(usage, sizeof(usage)-1, 1, stdout);
             fflush(stdout);
@@ -110,28 +111,32 @@ int main(int argc, char **argv)
         } else if (IMGO(go, 'b', "--brief")) {
             brief = 1;
         } else if (IMGO(go, 'c', "--color")) {
-            missing = !(color = imgoarg(&go, 1));
+            color = imgoarg(&go, 0);
+            color = color ? color : "";
         } else if (IMGO(go, 'd', "--delay")) {
-            char *arg = imgoarg(&go, 0);
-            delay = arg ? atoi(arg) : 1;
+            char *arg = imgoarg(&go, 1);
+            if (!arg) {
+                err = MISSING;
+            } else {
+                delay = atoi(arg);
+            }
         } else if (IMGO(go, 'e', "--erase")) {
             erase++;
         } else {
-            printf("example: unknown option, %s%.*s\n",
+            printf("demo: unknown option, %s%.*s\n",
                    "-"+(go.len>1), go.len, go.opt);
             fwrite(usage, sizeof(usage)-1, 1, stderr);
             return 1;
         }
-        if (missing) {
-            printf("example: %s%.*s requires an argument\n",
-                   "-"+(go.len>1), go.len, go.opt);
+        if (err) {
+            printf("demo: %s%.*s %s\n", "-"+(go.len>1), go.len, go.opt, err);
             return 1;
         }
     }
 
     printf("--amend %d\n", amend);
     printf("--brief %d\n", brief);
-    printf("--color %s\n", color);
+    printf("--color %s\n", color ? color : "(unset)");
     printf("--delay %d\n", delay);
     printf("--erase %d\n", erase);
     for (int i = 1; i < go.argc; i++) {
@@ -139,5 +144,153 @@ int main(int argc, char **argv)
     }
     fflush(stdout);
     return ferror(stdout);
+}
+#endif
+
+
+#ifdef TEST
+#include <stdio.h>
+#include <stdlib.h>
+
+#define ASSERT(c) if (!(c)) *(volatile int *)0 = 0
+
+int main(void)
+{
+    struct config {
+        int   amend;
+        int   brief;
+        char *color;
+        int   delay;
+        int   erase;
+    };
+    struct {
+        char *argv[8];
+        struct config conf;
+        char *args[8];
+        enum err {OK, INVALID, TOOMANY, MISSING} err;
+    } t[] = {
+        {
+            {"", "--", "foobar", 0},
+            {0, 0, 0, 0, 0},
+            {"foobar", 0},
+            OK
+        },
+        {
+            {"", "-a", "-b", "-c", "-d", "10", "-e", 0},
+            {1, 1, "", 10, 1},
+            {0},
+            OK
+        },
+        {
+            {
+                "",
+                "--amend",
+                "--brief",
+                "--color",
+                "--delay",
+                "10",
+                "--erase",
+                0
+            },
+            {1, 1, "", 10, 1},
+            {0},
+            OK
+        },
+        {
+            {"", "-a", "-b", "-cred", "-d", "10", "-e", 0},
+            {1, 1, "red", 10, 1},
+            {0},
+            OK
+        },
+        {
+            {"", "-abcblue", "-d10", "foobar", 0},
+            {1, 1, "blue", 10, 0},
+            {"foobar", 0},
+            OK
+        },
+        {
+            {"", "--color=red", "-d", "10", "--", "foobar", 0},
+            {0, 0, "red", 10, 0},
+            {"foobar", 0},
+            OK
+        },
+        {
+            {"", "-eeeeee", 0},
+            {0, 0, 0, 0, 6},
+            {0},
+            OK
+        },
+        {
+            {"", "--delay", 0},
+            {0, 0, 0, 0, 0},
+            {0},
+            MISSING
+        },
+        {
+            {"", "--foo", "bar", 0},
+            {0, 0, 0, 0, 0},
+            {"--foo", "bar", 0},
+            INVALID
+        },
+        {
+            {"", "-x", 0},
+            {0, 0, 0, 0, 0},
+            {"-x", 0},
+            INVALID
+        },
+        {
+            {"", "-", 0},
+            {0, 0, 0, 0, 0},
+            {"-", 0},
+            OK
+        },
+        {
+            {"", "-e", "foo", "bar", "baz", "-a", "quux", 0},
+            {0, 0, 0, 0, 1},
+            {"foo", "bar", "baz", "-a", "quux", 0},
+            OK
+        }
+    };
+    int ntests = sizeof(t) / sizeof(*t);
+
+    for (int i = 0; i < ntests; i++) {
+        int argc = 0;
+        for (char **arg = t[i].argv; *arg; arg++, argc++) {}
+
+        enum err err = OK;
+        struct config c = {0, 0, 0, 0, 0};
+        struct imgo go = IMGOINIT(argc, t[i].argv);
+
+        while (err==OK && imgo(&go)) {
+            if (!go.argv) {
+                err = TOOMANY;
+            } else if (IMGO(go, 'a', "--amend")) {
+                c.amend = 1;
+            } else if (IMGO(go, 'b', "--brief")) {
+                c.brief = 1;
+            } else if (IMGO(go, 'c', "--color")) {
+                c.color = imgoarg(&go, 0);
+                c.color = c.color ? c.color : "";
+            } else if (IMGO(go, 'd', "--delay")) {
+                char *arg = imgoarg(&go, 1);
+                if (!arg) {
+                    err = MISSING;
+                } else {
+                    c.delay = atoi(arg);
+                }
+            } else if (IMGO(go, 'e', "--erase")) {
+                c.erase++;
+            } else {
+                err = INVALID;
+            }
+        }
+
+        ASSERT(err == t[i].err);
+        for (int a = 1; err==OK && a<go.argc; a++) {
+            ASSERT(t[i].args[a-1]);
+            ASSERT(!strcmp(t[i].args[a-1], go.argv[a]));
+        }
+    }
+    puts("all tests pass");
 }
 #endif
