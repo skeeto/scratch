@@ -50,6 +50,7 @@ static int punycode(int32_t *dst, const char *src, int len)
 
         if (n > 0x10ffff-off/out) return -1;
         n += off/out;
+        if (n>=0xd800 && n<=0xdfff) return -1;
         off %= out;
         for (j = out-1; j > off; j--) {
             dst[j] = dst[j-1];
@@ -212,6 +213,12 @@ int main(void)
                 0x305d,0x306e,0x30b9,0x30d4,0x30fc,0x30c9,0x3067
             }
         },
+        {
+            "ib9bk1k",
+            {
+                0
+            }
+        },
     };
     int ntest = sizeof(t)/sizeof(*t);
 
@@ -220,6 +227,7 @@ int main(void)
         while (t[n].w[wlen]) {
             wlen++;
         }
+        wlen = wlen ? wlen : -1;
         int32_t g[63];
         int len = punycode(g, t[n].s, strlen(t[n].s));
         ASSERT(len == wlen);
