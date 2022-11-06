@@ -1,9 +1,9 @@
 .POSIX:
 CROSS   =
 CC      = $(CROSS)gcc -std=c99
-CFLAGS  = -DNDEBUG -Os
-LDFLAGS = -s -Wl,--gc-sections
-LDLIBS  = -lshlwapi
+CFLAGS  = -DNDEBUG -Os -fno-asynchronous-unwind-tables
+LDFLAGS = -s -nostdlib -Wl,--gc-sections
+LDLIBS  = -lkernel32 -lshell32 -luser32 -lgdi32 -lshlwapi
 WINDRES = $(CROSS)windres
 
 pbmview.exe: pbmview.c icon.o

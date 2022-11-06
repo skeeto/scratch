@@ -14,14 +14,16 @@
 #include <shlwapi.h>
 
 #ifdef _MSC_VER
-#  pragma comment(lib, "gdi32.lib")
+#  pragma comment(lib, "kernel32.lib")
 #  pragma comment(lib, "shell32.lib")
-#  pragma comment(lib, "shlwapi.lib")
 #  pragma comment(lib, "user32.lib")
+#  pragma comment(lib, "gdi32.lib")
+#  pragma comment(lib, "shlwapi.lib")
 #  pragma comment(linker, "/subsystem:windows")
 #endif
 
 #define DIM_MAX 1000000
+#define wcopy __movsw
 
 // Return non-zero if a and b match, otherwise zero.
 static int
@@ -391,7 +393,7 @@ newstate(wchar_t *path)
         s->path[0] = 0;
         size_t len = lstrlenW(path) + 1;
         if (len <= MAX_PATH) {
-            memcpy(s->path, path, len*2);
+            wcopy(s->path, path, len);
         }
     }
     return s;
@@ -440,7 +442,7 @@ state_monitor(void *arg)
         return 0;
     }
 
-    memcpy(file, s->path, pathlen*2);
+    wcopy(file, s->path, pathlen);
     PathStripPathW(file);
     filelen = lstrlenW(file);
     CharUpperBuffW(file, filelen);
@@ -770,16 +772,8 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
     return 0;
 }
 
-#if __i386__
-// Simplifies the command for CRT-less builds
-__asm(".globl WinMain\nWinMain: jmp _WinMain@16");
-#endif
-
-int WINAPI
-WinMain(HINSTANCE hi, HINSTANCE pi, char *c, int n)
+int WinMainCRTStartup(void)
 {
-    (void)hi; (void)pi; (void)c; (void)n;
-
     int argc;
     wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     struct state *s = newstate(argv[argc-1]);
