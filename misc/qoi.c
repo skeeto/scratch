@@ -1,25 +1,25 @@
-// QOI decoder in ~100 lines of 32-bit/64-bit freestanding C
+// QOI en/decoder each in ~100 lines of 32-/64-bit freestanding C
 // This is free and unencumbered software released into the public domain.
 
-struct qoi {
-    unsigned char *p, *end;
-    int width, height, count;
-    unsigned error:1, alpha:1, srgb:1, run:6, c, table[64];
+struct qoidecoder {
+    int width, height, count, alpha, srgb, error;
+    unsigned char *p, *end;      // internal
+    unsigned run, c, table[64];  // internal
 };
 
-// Validate the image header and populate the decoder with the image
+// Validate the image header and populate a decoder with the image
 // metadata (width, height, alpha, srgb). Image dimensions can always be
 // multiplied without overflow. If the header is invalid, the error flag
 // will be set immediately.
 //
 // Call the decoder exactly width*height times, or until the error flag
-// is set. Alternatively, keep calling until "count" reaches zero, then
-// the error flag indicates if the entire decode was successful.
-static struct qoi qoiinit(const void *buf, int len)
+// is set. Alternatively, call until "count" reaches zero, then the
+// error flag indicates if the entire decode was successful.
+static struct qoidecoder qoidecoder(const void *buf, int len)
 {
-    struct qoi qoi = {0, 0, 0, 0, 0, 1, 0, 0, 0, 0xff000000, {0}};
+    struct qoidecoder q = {0, 0, 0, 0, 0, 1, 0, 0, 0, 0xff000000, {0}};
     if (len < 14) {
-        return qoi;
+        return q;
     }
 
     unsigned char *p = (void *)buf;
@@ -27,29 +27,29 @@ static struct qoi qoiinit(const void *buf, int len)
     unsigned w = (unsigned)p[ 4]<<24 | p[ 5]<<16 | p[ 6]<< 8 | p[ 7];
     unsigned h = (unsigned)p[ 8]<<24 | p[ 9]<<16 | p[10]<< 8 | p[11];
     if (g!=0x716f6966U || (!w&&h) || (!h&&w) || p[12]-3u>1 || p[13]>1) {
-        return qoi;  // invalid header
+        return q;  // invalid header
     }
     if (w>0x7fffffffU || h>0x7fffffffU) {
-        return qoi;  // unreasonably huge dimensions
+        return q;  // unreasonably huge dimensions
     }
     if ((h && w>0x7fffffffU/h) || (w && h>0x7fffffffU/w)) {
-        return qoi;  // multiplying dimensions will overflow
+        return q;  // multiplying dimensions will overflow
     }
 
-    qoi.p      = p + 14;
-    qoi.end    = p + len;
-    qoi.width  = w;
-    qoi.height = h;
-    qoi.count  = w * h;
-    qoi.error  = 0;
-    qoi.alpha  = p[12]==4;
-    qoi.srgb   = p[13]==1;
-    return qoi;
+    q.p      = p + 14;
+    q.end    = p + len;
+    q.width  = w;
+    q.height = h;
+    q.count  = w * h;
+    q.error  = 0;
+    q.alpha  = p[12]==4;
+    q.srgb   = p[13]==1;
+    return q;
 }
 
 // Decode the next ABGR pixel. The error flag is sticky, and it is
-// permitted to continue "decoding" even when the error field is set.
-static unsigned qoinext(struct qoi *q)
+// permitted to continue "decoding" even when the error flag is set.
+static unsigned qoidecode(struct qoidecoder *q)
 {
     if (!q->count || q->error || q->p==q->end) {
         error: q->error=1, q->count=0;
@@ -111,6 +111,89 @@ static unsigned qoinext(struct qoi *q)
 }
 
 
+struct qoiencoder {
+    int run;
+    unsigned c, table[64];
+};
+
+// Initialize an encoder and write a 14-byte header into the buffer. The
+// flags is an optional "mode string" with 'a' if the image has an alpha
+// channel, and 's' if the image is in the sRGB colorspace. These flags
+// do not affect the encoding, only the header.
+static struct qoiencoder qoiencoder(void *buf, int w, int h, const char *flags)
+{
+    unsigned char *p = buf;
+    struct qoiencoder q = {0, 0xff000000, {0}};
+    p[ 0] =   'q'; p[ 1] =   'o'; p[ 2] =  'i'; p[ 3] =  'f';
+    p[ 4] = w>>24; p[ 5] = w>>16; p[ 6] = w>>8; p[ 7] = w>>0;
+    p[ 8] = h>>24; p[ 9] = h>>16; p[10] = h>>8; p[11] = w>>0;
+    p[12] = 3;  // channels
+    p[13] = 0;  // srgb
+    for (flags = flags?flags:"";; flags++) {
+        switch (*flags) {
+        case 'a': p[12] = 4; break;
+        case 's': p[13] = 1; break;
+        case  0 : return q;
+        }
+    }
+}
+
+// Encode the next ABGR pixel into the buffer, returning the number of
+// bytes written (0..6). The buffer must be at least 6 bytes in length.
+static int qoiencode(struct qoiencoder *q, void *buf, unsigned c)
+{
+    unsigned char *p = buf;
+    if (q->c == c) {
+        if (++q->run == 62) {
+            q->run = 0;
+            *p++ = 0xc0 | 61;
+        }
+        return p - (unsigned char *)buf;
+    } else if (q->run) {
+        *p++ = 0xc0 | (q->run - 1);
+        q->run = 0;
+    }
+
+    unsigned char r=c, g=c>>8, b=c>>16, a=c>>24;
+    int i = (r*3 + g*5 + b*7 + a*11)&63;
+    if (q->table[i] == c) {
+        q->c = c;
+        *p++ = i;
+        return p - (unsigned char *)buf;
+    }
+    q->table[i] = c;
+
+    unsigned char R=q->c, G=q->c>>8, B=q->c>>16, A=q->c>>24;
+    int dr=r-R, dg=g-G, db=b-B;
+    q->c = c;
+    if (a==A && dr+2u<4 && dg+2u<4 && db+2u<4) {
+        *p++ = 0x40 | (dr+2)<<4 | (dg+2)<<2 | (db+2);
+    } else if (a==A && dg+32u<64 && dr-dg+8u<16 && db-dg+8u<16) {
+        *p++ = 0x80 | (dg+32);
+        *p++ = (dr-dg+8)<<4 | (db-dg+8);
+    } else if (a==A) {
+        *p++ = 0xfe; *p++ = r; *p++ = g; *p++ = b;
+    } else {
+        *p++ = 0xff; *p++ = r; *p++ = g; *p++ = b; *p++ = a;
+    }
+    return p - (unsigned char *)buf;
+}
+
+// Flush any remaining encoder state and then write the end-of-stream
+// indicator, returning the number of bytes written (8..9). The buffer
+// length must be at least 9 bytes.
+static int qoifinish(struct qoiencoder *q, void *buf)
+{
+    unsigned char *p = buf;
+    if (q->run) {
+        *p++ = 0xc0 | (q->run - 1);
+    }
+    *p++ = 0; *p++ = 0; *p++ = 0; *p++ = 0;
+    *p++ = 0; *p++ = 0; *p++ = 0; *p++ = 1;
+    return p - (unsigned char *)buf;
+}
+
+
 #ifdef TEST
 // Convert QOI to farbfeld, standard input to standard output
 //   $ cc -DTEST -o qoi2ff qoi.c
@@ -127,17 +210,18 @@ int main(void)
 
     static char buf[1<<28];
     int len = fread(buf, 1, sizeof(buf), stdin);
-    struct qoi qoi = qoiinit(buf, len);
+    struct qoidecoder dec = qoidecoder(buf, len);
 
+    #if 1
     char header[] = {
         'f', 'a', 'r', 'b', 'f', 'e', 'l', 'd',
-        qoi.width  >> 24, qoi.width  >> 16, qoi.width  >> 8, qoi.width,
-        qoi.height >> 24, qoi.height >> 16, qoi.height >> 8, qoi.height
+        dec.width  >> 24, dec.width  >> 16, dec.width  >> 8, dec.width,
+        dec.height >> 24, dec.height >> 16, dec.height >> 8, dec.height
     };
     fwrite(header, sizeof(header), 1, stdout);
 
-    while (qoi.count) {
-        unsigned c = qoinext(&qoi);
+    while (dec.count) {
+        unsigned c = qoidecode(&dec);
         unsigned char r=c, g=c>>8, b=c>>16, a=c>>24; // TODO: sRGB handling
         unsigned char pixel[] = {
             r, -(r&1), g, -(g&1), b, -(b&1), a, -(a&1)
@@ -145,6 +229,19 @@ int main(void)
         fwrite(pixel, sizeof(pixel), 1, stdout);
     }
     fflush(stdout);
-    return qoi.error || ferror(stdout) || ferror(stdin);
+    return dec.error || ferror(stdout) || ferror(stdin);
+
+    #else
+    // Re-encode to QOI
+    char out[14];
+    struct qoiencoder enc = qoiencoder(out, dec.width, dec.height, 0);
+    fwrite(out, 14, 1, stdout);
+    while (dec.count) {
+        fwrite(out, qoiencode(&enc, out, qoidecode(&dec)), 1, stdout);
+    }
+    fwrite(out, qoifinish(&enc, out), 1, stdout);
+    fflush(stdout);
+    return dec.error || ferror(stdout) || ferror(stdin);
+    #endif
 }
 #endif
