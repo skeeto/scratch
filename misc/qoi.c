@@ -3,8 +3,9 @@
 
 struct qoidecoder {
     int width, height, count, alpha, srgb, error;
-    unsigned char *p, *end;      // internal
-    unsigned run, c, table[64];  // internal
+    unsigned char *p, *end;  // internal
+    int last, run;           // internal
+    unsigned c, table[64];   // internal
 };
 
 // Validate the image header and populate a decoder with the image
@@ -17,7 +18,7 @@ struct qoidecoder {
 // error flag indicates if the entire decode was successful.
 static struct qoidecoder qoidecoder(const void *buf, int len)
 {
-    struct qoidecoder q = {0, 0, 0, 0, 0, 1, 0, 0, 0, 0xff000000, {0}};
+    struct qoidecoder q = {0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0xff000000, {0}};
     if (len < 14) {
         return q;
     }
@@ -57,12 +58,13 @@ static unsigned qoidecode(struct qoidecoder *q)
     } else if (q->run) {
         q->run--;
     } else {
-        int v = *q->p++;
+        int n, v=*q->p++;
         unsigned char *p=q->p, r, g, b, a;
         switch (v&0xc0) {
-        case 0x00:  // INDEX (spec: "must not" repeat; but real images do)
-            q->c = q->table[v&63];
-            break;
+        case 0x00:  // INDEX
+            if (q->last == v) goto error;
+            q->c = q->table[v];
+            goto skiptable;
         case 0x40:  // DIFF
             r=q->c, g=q->c>>8, b=q->c>>16, a=q->c>>24;
             r += (v>>4 & 3) - 2;
@@ -71,18 +73,18 @@ static unsigned qoidecode(struct qoidecoder *q)
             q->c = r | g<<8 | b<<16 | (unsigned)a<<24;
             break;
         case 0x80:  // LUMA
-            v = (v&63) - 32;
+            n = v - (0x80 + 32);
             if (q->end-p < 1) goto error;
             r=q->c, g=q->c>>8, b=q->c>>16, a=q->c>>24;
-            r += v + (*p>>4) - 8;
-            g += v;
-            b += v + (*p&15) - 8;
+            r += n + (*p>>4) - 8;
+            g += n;
+            b += n + (*p&15) - 8;
             q->c = r | g<<8 | b<<16 | (unsigned)a<<24;
             q->p += 1;
             break;
         case 0xc0:
-            switch(v&=63) {
-            case 63:  // RGB
+            switch ((n = v&63)) {
+            case 63:  // RGBA
                 if (q->end-p < 4) goto error;
                 q->c = p[0] | p[1]<<8 | p[2]<<16 | (unsigned)p[3]<<24;
                 q->p += 4;
@@ -94,13 +96,14 @@ static unsigned qoidecode(struct qoidecoder *q)
                 q->p += 3;
                 break;
             default:  // RUN
-                if (q->count < v) goto error;
-                q->run = v;
-                break;
+                if (q->count < n) goto error;
+                q->run = n;
+                goto skiptable;
             }
         }
         r=q->c, g=q->c>>8, b=q->c>>16, a=q->c>>24;
         q->table[(r*3 + g*5 + b*7 + a*11)&63] = q->c;
+        skiptable: q->last = v;
     }
 
     if (!--q->count) {
