@@ -114,14 +114,16 @@ static unsigned qoidecode(struct qoidecoder *q)
 }
 
 
+#define QOIHDRLEN 14
+
 struct qoiencoder {
     int run;
     unsigned c, table[64];
 };
 
-// Initialize an encoder and write a 14-byte header into the buffer. The
-// flags is an optional "mode string" with 'a' if the image has an alpha
-// channel, and 's' if the image is in the sRGB colorspace. These flags
+// Initialize an encoder and write a 14-byte (QOIHDRLEN) header into the
+// buffer. The flags are an optional "mode string" with 'a' if the image
+// has an alpha channel, and 's' if the image is sRGB colorspace. Flags
 // do not affect the encoding, only the header.
 static struct qoiencoder qoiencoder(void *buf, int w, int h, const char *flags)
 {
@@ -236,9 +238,9 @@ int main(void)
 
     #else
     // Re-encode to QOI
-    char out[14];
+    char out[QOIHDRLEN];
     struct qoiencoder enc = qoiencoder(out, dec.width, dec.height, 0);
-    fwrite(out, 14, 1, stdout);
+    fwrite(out, QOIHDRLEN, 1, stdout);
     while (dec.count) {
         fwrite(out, qoiencode(&enc, out, qoidecode(&dec)), 1, stdout);
     }
