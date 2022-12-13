@@ -131,7 +131,7 @@ static struct qoiencoder qoiencoder(void *buf, int w, int h, const char *flags)
     struct qoiencoder q = {0, 0xff000000, {0}};
     p[ 0] =   'q'; p[ 1] =   'o'; p[ 2] =  'i'; p[ 3] =  'f';
     p[ 4] = w>>24; p[ 5] = w>>16; p[ 6] = w>>8; p[ 7] = w>>0;
-    p[ 8] = h>>24; p[ 9] = h>>16; p[10] = h>>8; p[11] = w>>0;
+    p[ 8] = h>>24; p[ 9] = h>>16; p[10] = h>>8; p[11] = h>>0;
     p[12] = 3;  // channels
     p[13] = 0;  // srgb
     for (flags = flags?flags:"";; flags++) {
