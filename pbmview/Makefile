@@ -1,6 +1,6 @@
 CC      = cl /nologo
 RC      = rc /nologo
-CFLAGS  = /O2
+CFLAGS  = /O2 /Oi /GS-
 
 pbmview.exe: pbmview.c icon.res
 	$(CC) $(CFLAGS) pbmview.c icon.res

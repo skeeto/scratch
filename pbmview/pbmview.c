@@ -14,12 +14,14 @@
 #include <shlwapi.h>
 
 #ifdef _MSC_VER
-#  pragma comment(lib, "kernel32.lib")
-#  pragma comment(lib, "shell32.lib")
-#  pragma comment(lib, "user32.lib")
-#  pragma comment(lib, "gdi32.lib")
-#  pragma comment(lib, "shlwapi.lib")
-#  pragma comment(linker, "/subsystem:windows")
+  #pragma comment(lib, "kernel32.lib")
+  #pragma comment(lib, "shell32.lib")
+  #pragma comment(lib, "user32.lib")
+  #pragma comment(lib, "gdi32.lib")
+  #pragma comment(lib, "shlwapi.lib")
+  #pragma comment(linker, "/subsystem:windows")
+  #pragma function(memset)
+  void *memset(void *d, int c, size_t n) { __stosb(d, c, n); return d; }
 #endif
 
 #define DIM_MAX (1<<13)  // 8*DIM_MAX*DIM_MAX must not overflow int
