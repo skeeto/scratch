@@ -1,7 +1,7 @@
 // Netpbm Viewer for Windows
 //
-// Fast. Lightweight. Supports P2, P3, P5, and P6 at 255 maxdepth.
-// Monitors for changes and automatically refreshes.
+// Fast. Lightweight. Supports P2/P3/P5/P6 at 255 maxdepth, farbfeld,
+// and QOI. Monitors for changes and automatically refreshes.
 //
 // Usage: $ pbmview.exe path/to/image.ppm
 // Build: $ cc -s -Os -nostdlib -mwindows -o pbmview.exe pbmview.c
