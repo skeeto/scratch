@@ -22,7 +22,7 @@
 #  pragma comment(linker, "/subsystem:windows")
 #endif
 
-#define DIM_MAX 1000000
+#define DIM_MAX (1<<13)  // 8*DIM_MAX*DIM_MAX must not overflow int
 #define wcopy __movsw
 
 // Return non-zero if a and b match, otherwise zero.
@@ -53,7 +53,7 @@ loadu32be(unsigned char *p)
 }
 
 struct netpbm {
-    long dims[3];
+    int dims[3];
     int type;
 };
 
@@ -66,7 +66,7 @@ struct netpbm {
 //
 // This parser supports arbitrary whitespace and comments.
 static int
-netpbm_parse(int state, int c, struct netpbm *pbm, long max)
+netpbm_parse(int state, int c, struct netpbm *pbm, int max)
 {
     #define NETPBM_OVERFLOW  -2
     #define NETPBM_INVALID   -1
@@ -162,7 +162,7 @@ asciibyte(unsigned char *dst, unsigned char *src, unsigned char *end)
 struct image {
     BITMAPINFO info;
     RGBQUAD palette[256];
-    unsigned char *header, *pixels;
+    unsigned char pixels[];
 } image;
 
 static void
@@ -174,9 +174,37 @@ image_free(struct image *im)
 }
 
 static struct image *
+allocimage(int width, int height, int nchannels)
+{
+    int pad = (-width*nchannels) & 3;
+    int len = (nchannels*width + pad)*height;
+    struct image *im = VirtualAlloc(
+        0, sizeof(*im)+len,
+        MEM_COMMIT, PAGE_READWRITE
+    );
+    if (!im) {
+        return 0;
+    }
+
+    im->info.bmiHeader.biSize = sizeof(im->info);
+    im->info.bmiHeader.biPlanes = 1;
+    im->info.bmiHeader.biBitCount = 24;
+    im->info.bmiHeader.biCompression = BI_RGB;
+
+    // Create a PGM palette
+    for (int i = 0; i < 256; i++) {
+        im->palette[i].rgbBlue = i;
+        im->palette[i].rgbGreen = i;
+        im->palette[i].rgbRed = i;
+    }
+
+    return im;
+}
+
+static struct image *
 newimage(wchar_t *path)
 {
-    HANDLE h = CreateFileW(
+    HANDLE fh = CreateFileW(
         path,
         GENERIC_READ,
         FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
@@ -185,179 +213,172 @@ newimage(wchar_t *path)
         FILE_ATTRIBUTE_NORMAL,
         0
     );
-    if (h == INVALID_HANDLE_VALUE) {
+    if (fh == INVALID_HANDLE_VALUE) {
         return 0;
     }
 
-    DWORD hi, lo = GetFileSize(h, &hi);
+    DWORD hi, lo = GetFileSize(fh, &hi);
     if (hi || (int)lo < 0) {
         // reject files >2GiB
-        CloseHandle(h);
+        CloseHandle(fh);
         return 0;
     }
     int len = lo;
 
-    struct image *im = VirtualAlloc(
-        0, sizeof(*im)+len,
-        MEM_COMMIT, PAGE_READWRITE
-    );
-    if (!im) {
-        CloseHandle(h);
+    HANDLE *map = CreateFileMapping(fh, 0, PAGE_READONLY, 0, len, 0);
+    CloseHandle(fh);
+    if (!map) {
         return 0;
     }
-    im->header = (unsigned char *)im + sizeof(*im);
-    im->info.bmiHeader.biSize = sizeof(im->info);
-    im->info.bmiHeader.biPlanes = 1;
-    im->info.bmiHeader.biBitCount = 24;
-    im->info.bmiHeader.biCompression = BI_RGB;
 
-    // Fill PGM palette
-    for (int i = 0; i < 256; i++) {
-        im->palette[i].rgbBlue = i;
-        im->palette[i].rgbGreen = i;
-        im->palette[i].rgbRed = i;
-    }
-
-    DWORD n;
-    if (!ReadFile(h, im->header, len, &n, 0) || len != (int)n) {
-        image_free(im);
-        CloseHandle(h);
+    unsigned char *imdata = MapViewOfFile(map, FILE_MAP_READ, 0, 0, len);
+    CloseHandle(map);
+    if (!imdata) {
         return 0;
     }
-    CloseHandle(h);
+
+    struct image *im = 0;
+    unsigned char *src = imdata;
+    unsigned char *end = imdata + len;
 
     // is it farbfeld?
-    if (len >= 16 && loadu64le(im->header) == 0x646c656662726166) {
-        unsigned long hdr_w = loadu32be(im->header +  8);
-        unsigned long hdr_h = loadu32be(im->header + 12);
+    if (len >= 16 && loadu64le(imdata) == 0x646c656662726166) {
+        unsigned hdr_w = loadu32be(imdata +  8);
+        unsigned hdr_h = loadu32be(imdata + 12);
         if (hdr_w > DIM_MAX || hdr_h > DIM_MAX) {
             // too large
-            image_free(im);
-            return 0;
+            goto finish;
         }
 
-        long w = hdr_w;
-        long h = hdr_h;
-        if (len < 16 + 8LL*w*h) {
+        int w = hdr_w;
+        int h = hdr_h;
+        if (len < 16 + 8*w*h) {  // cannot overflow
             // file too short
-            image_free(im);
-            return 0;
+            goto finish;
         }
+        int pad = (-w*3) & 3;
 
+        im = allocimage(w, h, 3);
         im->info.bmiHeader.biWidth = w;
         im->info.bmiHeader.biHeight = -h;
-        im->pixels = im->header;
-        unsigned char *dst = im->header;
-        unsigned char *src = im->header + 16;
-        long npixels = w * h;  // cannot overflow
-        for (long i = 0; i < npixels; i++) {
-            dst[i*3+0] = src[i*8+4];
-            dst[i*3+1] = src[i*8+2];
-            dst[i*3+2] = src[i*8+0];
+        src += 16;
+        for (int y = 0; y < h; y++) {
+            unsigned char *dst = im->pixels + y*(3*w + pad);
+            for (int x = 0; x < w; x++) {
+                dst[x*3+0] = src[4];
+                dst[x*3+1] = src[2];
+                dst[x*3+2] = src[0];
+                src += 8;
+            }
         }
-        return im;
+        goto finish;
     }
 
     // is it Netpbm?
     struct netpbm pbm = {0};
     for (int ps = 0, off = 0, done = 0; !done;) {
         if (off >= len) {
-            image_free(im);
-            return 0;
+            goto finish;
         }
-        ps = netpbm_parse(ps, im->header[off++], &pbm, DIM_MAX);
+        ps = netpbm_parse(ps, imdata[off++], &pbm, DIM_MAX);
         switch (ps) {
         case NETPBM_OVERFLOW:
         case NETPBM_INVALID:
-            image_free(im);
-            return 0;
+            goto finish;
         case NETPBM_DONE:
             if (pbm.dims[2] != 255) {
                 // Unsupported depth
-                image_free(im);
-                return 0;
+                goto finish;
+            }
+            int nchannels = pbm.type==2 || pbm.type==5 ? 1 : 3;
+            im = allocimage(pbm.dims[0], pbm.dims[1], nchannels);
+            if (!im) {
+                goto finish;
             }
             im->info.bmiHeader.biWidth = pbm.dims[0];
             im->info.bmiHeader.biHeight = -pbm.dims[1];
-            im->pixels = im->header + off;
+            src = imdata + off;
             done = 1;
         }
     }
 
+    int w = pbm.dims[0];
+    int h = pbm.dims[1];
+
     switch (pbm.type) {
     default: {
         // Unsupported format
-        image_free(im);
-        return 0;
+        image_free(im); im = 0;
+        goto finish;
     } break;
 
     case 2: {
-        // Convert in-place into 8-bit indexed grayscale that happens to
-        // match the P5 format. Since each pixel is at least two ASCII
-        // bytes, the indexed form is strictly smaller than the input.
-        // (The last pixel may be one byte, which is still fine.)
         im->info.bmiHeader.biBitCount = 8;
         im->info.bmiHeader.biClrUsed = 256;
-        long long npixels = 1LL * pbm.dims[0] * pbm.dims[1];
-        unsigned char *src = im->pixels;
-        unsigned char *end = im->header + len;
-        for (long long i = 0; i < npixels; i++) {
-            src = asciibyte(im->pixels+i, src, end);
-            if (!src) {
-                image_free(im);
-                return 0;
+        int pad = -w & 3;
+        for (int y = 0; y < h; y++) {
+            unsigned char *dst = im->pixels + y*(w + pad);
+            for (int x = 0; x < w; x++) {
+                src = asciibyte(dst+x, src, end);
+                if (!src) {
+                    image_free(im); im = 0;
+                    goto finish;
+                }
             }
         }
     } break;
 
     case 3: {
-        // Convert in-place into the P6 format. Since each pixel is at
-        // least six ASCII bytes, the P6 form is strictly smaller than
-        // the input. (The last pixel may be five bytes, which is still
-        // fine.)
-        long long nsubpixels = 3LL * pbm.dims[0] * pbm.dims[1];
-        unsigned char *src = im->pixels;
-        unsigned char *end = im->header + len;
-        for (long long i = 0; i < nsubpixels; i += 3) {
-            for (int j = 2; j >= 0; j--) {
-                src = asciibyte(im->pixels+i+j, src, end);
-                if (!src) {
-                    image_free(im);
-                    return 0;
+        int pad = (-w*3) & 3;
+        for (int y = 0; y < h; y++) {
+            unsigned char *dst = im->pixels + y*(3*w + pad);
+            for (int x = 0; x < w; x++) {
+                for (int j = 2; j >= 0; j--) {
+                    src = asciibyte(dst+3*x+j, src, end);
+                    if (!src) {
+                        image_free(im); im = 0;
+                        goto finish;
+                    }
                 }
             }
         }
     } break;
 
     case 5: {
-        // Treat as 8-bit indexed image.
+        int pad = -w & 3;
         im->info.bmiHeader.biBitCount = 8;
         im->info.bmiHeader.biClrUsed = 256;
-        // Already in correct format, check the length
-        long long expect = 1LL * pbm.dims[0] * pbm.dims[1];
-        ptrdiff_t actual = im->header + len - im->pixels;
-        if (actual < expect) {
-            image_free(im);
-            return 0;
+        if (w*h > end-src) {
+            image_free(im); im = 0;
+            goto finish;
+        }
+        for (int y = 0; y < h; y++) {
+            unsigned char *dst = im->pixels + y*(w + pad);
+            for (int x = 0; x < w; x++) {
+                dst[x] = *src++;
+            }
         }
     } break;
 
     case 6: {
-        // Mostly in correct format, check the length
-        long long expect = 3LL * pbm.dims[0] * pbm.dims[1];
-        ptrdiff_t actual = im->header + len - im->pixels;
-        if (actual < expect) {
-            image_free(im);
-            return 0;
+        int pad = (-w*3) & 3;
+        if (3*w*h > end-src) {
+            image_free(im); im = 0;
+            goto finish;
         }
-        // Swap R and B
-        for (long i = 0; i < (long)expect; i += 3) {
-            unsigned char t = im->pixels[i+0];
-            im->pixels[i+0] = im->pixels[i+2];
-            im->pixels[i+2] = t;
+        for (int y = 0; y < h; y++) {
+            unsigned char *dst = im->pixels + y*(3*w + pad);
+            for (int x = 0; x < w; x++) {
+                dst[3*x+2] = *src++;
+                dst[3*x+1] = *src++;
+                dst[3*x+0] = *src++;
+            }
         }
     } break;
     }
+
+    finish:
+    UnmapViewOfFile(imdata);
     return im;
 }
 
