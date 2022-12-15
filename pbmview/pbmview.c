@@ -123,6 +123,119 @@ netpbm_parse(int state, int c, struct netpbm *pbm, int max)
     }
 }
 
+struct qoidecoder {
+    int width, height, count, alpha, srgb, error;
+    unsigned char *p, *end;  // internal
+    int last, run;           // internal
+    unsigned c, table[64];   // internal
+};
+
+// Validate the image header and populate a decoder with the image
+// metadata (width, height, alpha, srgb). Image dimensions can always be
+// multiplied without overflow. If the header is invalid, the error flag
+// will be set immediately.
+//
+// Call the decoder exactly width*height times, or until the error flag
+// is set. Alternatively, call until "count" reaches zero, then the
+// error flag indicates if the entire decode was successful.
+static struct qoidecoder qoidecoder(const void *buf, int len)
+{
+    struct qoidecoder q = {0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0xff000000, {0}};
+    if (len < 14) {
+        return q;
+    }
+
+    unsigned char *p = (void *)buf;
+    unsigned g = (unsigned)p[ 0]<<24 | p[ 1]<<16 | p[ 2]<< 8 | p[ 3];
+    unsigned w = (unsigned)p[ 4]<<24 | p[ 5]<<16 | p[ 6]<< 8 | p[ 7];
+    unsigned h = (unsigned)p[ 8]<<24 | p[ 9]<<16 | p[10]<< 8 | p[11];
+    if (g!=0x716f6966U || (!w&&h) || (!h&&w) || p[12]-3u>1 || p[13]>1) {
+        return q;  // invalid header
+    }
+    if (w>0x7fffffffU || h>0x7fffffffU) {
+        return q;  // unreasonably huge dimensions
+    }
+    if ((h && w>0x7fffffffU/h) || (w && h>0x7fffffffU/w)) {
+        return q;  // multiplying dimensions will overflow
+    }
+
+    q.p      = p + 14;
+    q.end    = p + len;
+    q.width  = w;
+    q.height = h;
+    q.count  = w * h;
+    q.error  = 0;
+    q.alpha  = p[12]==4;
+    q.srgb   = p[13]==1;
+    return q;
+}
+
+// Decode the next ABGR pixel. The error flag is sticky, and it is
+// permitted to continue "decoding" even when the error flag is set.
+static unsigned qoidecode(struct qoidecoder *q)
+{
+    if (!q->count || q->error || q->p==q->end) {
+        error: q->error=1, q->count=0;
+        return 0;
+    } else if (q->run) {
+        q->run--;
+    } else {
+        int n, v=*q->p++;
+        unsigned char *p=q->p, r, g, b, a;
+        switch (v&0xc0) {
+        case 0x00:  // INDEX
+            if (q->last == v) goto error;
+            q->c = q->table[v];
+            goto skiptable;
+        case 0x40:  // DIFF
+            r=q->c, g=q->c>>8, b=q->c>>16, a=q->c>>24;
+            r += (v>>4 & 3) - 2;
+            g += (v>>2 & 3) - 2;
+            b += (v>>0 & 3) - 2;
+            q->c = r | g<<8 | b<<16 | (unsigned)a<<24;
+            break;
+        case 0x80:  // LUMA
+            n = v - (0x80 + 32);
+            if (q->end-p < 1) goto error;
+            r=q->c, g=q->c>>8, b=q->c>>16, a=q->c>>24;
+            r += n + (*p>>4) - 8;
+            g += n;
+            b += n + (*p&15) - 8;
+            q->c = r | g<<8 | b<<16 | (unsigned)a<<24;
+            q->p += 1;
+            break;
+        case 0xc0:
+            switch ((n = v&63)) {
+            case 63:  // RGBA
+                if (q->end-p < 4) goto error;
+                q->c = p[0] | p[1]<<8 | p[2]<<16 | (unsigned)p[3]<<24;
+                q->p += 4;
+                break;
+            case 62:  // RGB
+                if (q->end-p < 3) goto error;
+                r=p[0], g=p[1], b=p[2], a=q->c>>24;
+                q->c = r | g<<8 | b<<16 | (unsigned)a<<24;
+                q->p += 3;
+                break;
+            default:  // RUN
+                if (q->count < n) goto error;
+                q->run = n;
+                goto skiptable;
+            }
+        }
+        r=q->c, g=q->c>>8, b=q->c>>16, a=q->c>>24;
+        q->table[(r*3 + g*5 + b*7 + a*11)&63] = q->c;
+        skiptable: q->last = v;
+    }
+
+    if (!--q->count) {
+        q->error |= q->end-q->p<8 || q->p[0] || q->p[1] || q->p[2] ||
+            q->p[3] || q->p[4] || q->p[5] || q->p[6] || q->p[7]!=1;
+    }
+    return q->c;
+}
+
+
 // Decode an ASCII byte value from src to dst, returning updated src. Returns
 // null on invalid input.
 static unsigned char *
@@ -186,6 +299,8 @@ allocimage(int width, int height, int nchannels)
         return 0;
     }
 
+    im->info.bmiHeader.biWidth = width;
+    im->info.bmiHeader.biHeight = -height;
     im->info.bmiHeader.biSize = sizeof(im->info);
     im->info.bmiHeader.biPlanes = 1;
     im->info.bmiHeader.biBitCount = 24;
@@ -198,6 +313,179 @@ allocimage(int width, int height, int nchannels)
         im->palette[i].rgbRed = i;
     }
 
+    return im;
+}
+
+static struct image *
+decode_farbfeld(unsigned char *imdata, int len)
+{
+    if (len < 16 || loadu64le(imdata) != 0x646c656662726166) {
+        return 0;
+    }
+
+    int w = loadu32be(imdata +  8);
+    int h = loadu32be(imdata + 12);
+    if (w<0 || w>DIM_MAX || h<0 || h>DIM_MAX || len-16<8*w*h) {
+        return 0;
+    }
+    int pad = (-w*3) & 3;
+
+    struct image *im = allocimage(w, h, 3);
+    if (!im) {
+        return 0;
+    }
+
+    imdata += 16;
+    for (int y = 0; y < h; y++) {
+        unsigned char *dst = im->pixels + y*(3*w + pad);
+        for (int x = 0; x < w; x++) {
+            dst[x*3+0] = imdata[4];
+            dst[x*3+1] = imdata[2];
+            dst[x*3+2] = imdata[0];
+            imdata += 8;
+        }
+    }
+    return im;
+}
+
+static struct image *
+decode_netpbm(unsigned char *imdata, int len)
+{
+    struct image *im = 0;
+    unsigned char *end = imdata + len;
+
+    struct netpbm pbm = {0};
+    for (int ps = 0, off = 0, done = 0; !done;) {
+        if (off >= len) {
+            return 0;
+        }
+        ps = netpbm_parse(ps, imdata[off++], &pbm, DIM_MAX);
+        switch (ps) {
+        case NETPBM_OVERFLOW:
+        case NETPBM_INVALID:
+            return 0;
+        case NETPBM_DONE:
+            if (pbm.dims[2] != 255) {
+                // Unsupported depth
+                return 0;
+            }
+            int nchannels = pbm.type==2 || pbm.type==5 ? 1 : 3;
+            im = allocimage(pbm.dims[0], pbm.dims[1], nchannels);
+            if (!im) {
+                return 0;
+            }
+            imdata += off;
+            done = 1;
+        }
+    }
+
+    int w = pbm.dims[0];
+    int h = pbm.dims[1];
+
+    switch (pbm.type) {
+    default: {
+        // Unsupported format
+        image_free(im);
+        return 0;
+    } break;
+
+    case 2: {
+        im->info.bmiHeader.biBitCount = 8;
+        im->info.bmiHeader.biClrUsed = 256;
+        int pad = -w & 3;
+        for (int y = 0; y < h; y++) {
+            unsigned char *dst = im->pixels + y*(w + pad);
+            for (int x = 0; x < w; x++) {
+                imdata = asciibyte(dst+x, imdata, end);
+                if (!imdata) {
+                    image_free(im);
+                    return 0;
+                }
+            }
+        }
+    } break;
+
+    case 3: {
+        int pad = (-w*3) & 3;
+        for (int y = 0; y < h; y++) {
+            unsigned char *dst = im->pixels + y*(3*w + pad);
+            for (int x = 0; x < w; x++) {
+                for (int j = 2; j >= 0; j--) {
+                    imdata = asciibyte(dst+3*x+j, imdata, end);
+                    if (!imdata) {
+                        image_free(im);
+                        return 0;
+                    }
+                }
+            }
+        }
+    } break;
+
+    case 5: {
+        int pad = -w & 3;
+        im->info.bmiHeader.biBitCount = 8;
+        im->info.bmiHeader.biClrUsed = 256;
+        if (w*h > end-imdata) {
+            image_free(im);
+            return 0;
+        }
+        for (int y = 0; y < h; y++) {
+            unsigned char *dst = im->pixels + y*(w + pad);
+            for (int x = 0; x < w; x++) {
+                dst[x] = *imdata++;
+            }
+        }
+    } break;
+
+    case 6: {
+        int pad = (-w*3) & 3;
+        if (3*w*h > end-imdata) {
+            image_free(im);
+            return 0;
+        }
+        for (int y = 0; y < h; y++) {
+            unsigned char *dst = im->pixels + y*(3*w + pad);
+            for (int x = 0; x < w; x++) {
+                dst[3*x+2] = *imdata++;
+                dst[3*x+1] = *imdata++;
+                dst[3*x+0] = *imdata++;
+            }
+        }
+    } break;
+    }
+    return im;
+}
+
+static struct image *
+decode_qoi(unsigned char *imdata, int len)
+{
+    struct qoidecoder q = qoidecoder(imdata, len);
+    if (q.error || q.width>DIM_MAX || q.height>DIM_MAX) {
+        return 0;
+    }
+    int w = q.width;
+    int h = q.height;
+    int pad = (-w*3) & 3;
+
+    struct image *im = allocimage(w, h, 3);
+    if (!im) {
+        return 0;
+    }
+
+    for (int y = 0; y < h; y++) {
+        unsigned char *dst = im->pixels + y*(3*w + pad);
+        for (int x = 0; x < w; x++) {
+            unsigned c = qoidecode(&q);
+            dst[x*3+0] = c >> 16;
+            dst[x*3+1] = c >>  8;
+            dst[x*3+2] = c >>  0;
+        }
+    }
+
+    if (q.error) {
+        image_free(im);
+        im = 0;
+    }
     return im;
 }
 
@@ -238,146 +526,9 @@ newimage(wchar_t *path)
     }
 
     struct image *im = 0;
-    unsigned char *src = imdata;
-    unsigned char *end = imdata + len;
-
-    // is it farbfeld?
-    if (len >= 16 && loadu64le(imdata) == 0x646c656662726166) {
-        unsigned hdr_w = loadu32be(imdata +  8);
-        unsigned hdr_h = loadu32be(imdata + 12);
-        if (hdr_w > DIM_MAX || hdr_h > DIM_MAX) {
-            // too large
-            goto finish;
-        }
-
-        int w = hdr_w;
-        int h = hdr_h;
-        if (len < 16 + 8*w*h) {  // cannot overflow
-            // file too short
-            goto finish;
-        }
-        int pad = (-w*3) & 3;
-
-        im = allocimage(w, h, 3);
-        im->info.bmiHeader.biWidth = w;
-        im->info.bmiHeader.biHeight = -h;
-        src += 16;
-        for (int y = 0; y < h; y++) {
-            unsigned char *dst = im->pixels + y*(3*w + pad);
-            for (int x = 0; x < w; x++) {
-                dst[x*3+0] = src[4];
-                dst[x*3+1] = src[2];
-                dst[x*3+2] = src[0];
-                src += 8;
-            }
-        }
-        goto finish;
-    }
-
-    // is it Netpbm?
-    struct netpbm pbm = {0};
-    for (int ps = 0, off = 0, done = 0; !done;) {
-        if (off >= len) {
-            goto finish;
-        }
-        ps = netpbm_parse(ps, imdata[off++], &pbm, DIM_MAX);
-        switch (ps) {
-        case NETPBM_OVERFLOW:
-        case NETPBM_INVALID:
-            goto finish;
-        case NETPBM_DONE:
-            if (pbm.dims[2] != 255) {
-                // Unsupported depth
-                goto finish;
-            }
-            int nchannels = pbm.type==2 || pbm.type==5 ? 1 : 3;
-            im = allocimage(pbm.dims[0], pbm.dims[1], nchannels);
-            if (!im) {
-                goto finish;
-            }
-            im->info.bmiHeader.biWidth = pbm.dims[0];
-            im->info.bmiHeader.biHeight = -pbm.dims[1];
-            src = imdata + off;
-            done = 1;
-        }
-    }
-
-    int w = pbm.dims[0];
-    int h = pbm.dims[1];
-
-    switch (pbm.type) {
-    default: {
-        // Unsupported format
-        image_free(im); im = 0;
-        goto finish;
-    } break;
-
-    case 2: {
-        im->info.bmiHeader.biBitCount = 8;
-        im->info.bmiHeader.biClrUsed = 256;
-        int pad = -w & 3;
-        for (int y = 0; y < h; y++) {
-            unsigned char *dst = im->pixels + y*(w + pad);
-            for (int x = 0; x < w; x++) {
-                src = asciibyte(dst+x, src, end);
-                if (!src) {
-                    image_free(im); im = 0;
-                    goto finish;
-                }
-            }
-        }
-    } break;
-
-    case 3: {
-        int pad = (-w*3) & 3;
-        for (int y = 0; y < h; y++) {
-            unsigned char *dst = im->pixels + y*(3*w + pad);
-            for (int x = 0; x < w; x++) {
-                for (int j = 2; j >= 0; j--) {
-                    src = asciibyte(dst+3*x+j, src, end);
-                    if (!src) {
-                        image_free(im); im = 0;
-                        goto finish;
-                    }
-                }
-            }
-        }
-    } break;
-
-    case 5: {
-        int pad = -w & 3;
-        im->info.bmiHeader.biBitCount = 8;
-        im->info.bmiHeader.biClrUsed = 256;
-        if (w*h > end-src) {
-            image_free(im); im = 0;
-            goto finish;
-        }
-        for (int y = 0; y < h; y++) {
-            unsigned char *dst = im->pixels + y*(w + pad);
-            for (int x = 0; x < w; x++) {
-                dst[x] = *src++;
-            }
-        }
-    } break;
-
-    case 6: {
-        int pad = (-w*3) & 3;
-        if (3*w*h > end-src) {
-            image_free(im); im = 0;
-            goto finish;
-        }
-        for (int y = 0; y < h; y++) {
-            unsigned char *dst = im->pixels + y*(3*w + pad);
-            for (int x = 0; x < w; x++) {
-                dst[3*x+2] = *src++;
-                dst[3*x+1] = *src++;
-                dst[3*x+0] = *src++;
-            }
-        }
-    } break;
-    }
-
-    finish:
+    im = im ? im : decode_farbfeld(imdata, len);
+    im = im ? im : decode_netpbm(imdata, len);
+    im = im ? im : decode_qoi(imdata, len);
     UnmapViewOfFile(imdata);
     return im;
 }
