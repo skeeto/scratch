@@ -130,18 +130,18 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv)
                 } break;
         }
 
-        switch (c & 0x1f0880) {  // WTF-8/UTF-8 encoding
-        case 0x00000: *buf++ = 0x00 | ((c >>  0)     ); break;
-        case 0x00080: *buf++ = 0xc0 | ((c >>  6)     );
-                      *buf++ = 0x80 | ((c >>  0) & 63); break;
-        case 0x00800:
-        case 0x00880: *buf++ = 0xe0 | ((c >> 12)     );
-                      *buf++ = 0x80 | ((c >>  6) & 63);
-                      *buf++ = 0x80 | ((c >>  0) & 63); break;
-        default     : *buf++ = 0xf0 | ((c >> 18)     );
-                      *buf++ = 0x80 | ((c >> 12) & 63);
-                      *buf++ = 0x80 | ((c >>  6) & 63);
-                      *buf++ = 0x80 | ((c >>  0) & 63);
+        // WTF-8/UTF-8 encoding
+        switch ((c >= 0x80) + (c >= 0x800) + (c >= 0x10000)) {
+        case 0: *buf++ = 0x00 | ((c >>  0)     ); break;
+        case 1: *buf++ = 0xc0 | ((c >>  6)     );
+                *buf++ = 0x80 | ((c >>  0) & 63); break;
+        case 2: *buf++ = 0xe0 | ((c >> 12)     );
+                *buf++ = 0x80 | ((c >>  6) & 63);
+                *buf++ = 0x80 | ((c >>  0) & 63); break;
+        case 3: *buf++ = 0xf0 | ((c >> 18)     );
+                *buf++ = 0x80 | ((c >> 12) & 63);
+                *buf++ = 0x80 | ((c >>  6) & 63);
+                *buf++ = 0x80 | ((c >>  0) & 63); break;
         }
     }
 
