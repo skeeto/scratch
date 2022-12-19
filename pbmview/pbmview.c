@@ -273,6 +273,10 @@ asciibyte(unsigned char *dst, unsigned char *src, unsigned char *end)
     }
 }
 
+struct argb {
+    unsigned char a, r, g, b;
+};
+
 // A parsed Netpbm image ready to be blitted to a DC. Image data is
 // allocated just beyond this structure.
 struct image {
@@ -290,7 +294,7 @@ image_free(struct image *im)
 }
 
 static struct image *
-allocimage(int width, int height, int nchannels)
+image_new(int width, int height, int nchannels)
 {
     int pad = (-width*nchannels) & 3;
     int len = (nchannels*width + pad)*height;
@@ -306,7 +310,8 @@ allocimage(int width, int height, int nchannels)
     im->info.bmiHeader.biHeight = -height;
     im->info.bmiHeader.biSize = sizeof(im->info);
     im->info.bmiHeader.biPlanes = 1;
-    im->info.bmiHeader.biBitCount = 24;
+    im->info.bmiHeader.biBitCount = nchannels==1 ? 8 : 24;
+    im->info.bmiHeader.biClrUsed = nchannels==1 ? 256 : 0;
     im->info.bmiHeader.biCompression = BI_RGB;
 
     // Create a PGM palette
@@ -317,6 +322,32 @@ allocimage(int width, int height, int nchannels)
     }
 
     return im;
+}
+
+static inline void
+image_rgb(struct image *im, int x, int y, struct argb c)
+{
+    int w = im->info.bmiHeader.biWidth;
+    int m = im->info.bmiHeader.biBitCount==8 ? 1 : 3;
+    int pad = (-w*m)&3;
+    unsigned char *dst = im->pixels + y*(m*w + pad) + m*x;
+    dst[0] = c.b;
+    dst[1] = c.g;
+    dst[2] = c.r;
+}
+
+static inline void
+image_argb(struct image *im, int x, int y, struct argb c)
+{
+    float a = c.a / 255.0f;
+    unsigned char bg = (x>>4^y>>4)&1 ? 0x66 : 0xaa;
+    struct argb blend = {
+        255,
+        c.r*a + bg*(1 - a),
+        c.g*a + bg*(1 - a),
+        c.b*a + bg*(1 - a)
+    };
+    image_rgb(im, x, y, blend);
 }
 
 static struct image *
@@ -331,20 +362,17 @@ decode_farbfeld(unsigned char *imdata, int len)
     if (w<0 || w>DIM_MAX || h<0 || h>DIM_MAX || len-16<8*w*h) {
         return 0;
     }
-    int pad = (-w*3) & 3;
 
-    struct image *im = allocimage(w, h, 3);
+    struct image *im = image_new(w, h, 3);
     if (!im) {
         return 0;
     }
 
     imdata += 16;
     for (int y = 0; y < h; y++) {
-        unsigned char *dst = im->pixels + y*(3*w + pad);
         for (int x = 0; x < w; x++) {
-            dst[x*3+0] = imdata[4];
-            dst[x*3+1] = imdata[2];
-            dst[x*3+2] = imdata[0];
+            struct argb c = {imdata[6], imdata[0], imdata[2], imdata[4]};
+            image_argb(im, x, y, c);
             imdata += 8;
         }
     }
@@ -373,7 +401,7 @@ decode_netpbm(unsigned char *imdata, int len)
                 return 0;
             }
             int nchannels = pbm.type==2 || pbm.type==5 ? 1 : 3;
-            im = allocimage(pbm.dims[0], pbm.dims[1], nchannels);
+            im = image_new(pbm.dims[0], pbm.dims[1], nchannels);
             if (!im) {
                 return 0;
             }
@@ -393,65 +421,59 @@ decode_netpbm(unsigned char *imdata, int len)
     } break;
 
     case 2: {
-        im->info.bmiHeader.biBitCount = 8;
-        im->info.bmiHeader.biClrUsed = 256;
-        int pad = -w & 3;
         for (int y = 0; y < h; y++) {
-            unsigned char *dst = im->pixels + y*(w + pad);
             for (int x = 0; x < w; x++) {
-                imdata = asciibyte(dst+x, imdata, end);
+                unsigned char v;
+                imdata = asciibyte(&v, imdata, end);
                 if (!imdata) {
                     image_free(im);
                     return 0;
                 }
+                image_rgb(im, x, y, (struct argb){255, v, v, v});
             }
         }
     } break;
 
     case 3: {
-        int pad = (-w*3) & 3;
         for (int y = 0; y < h; y++) {
-            unsigned char *dst = im->pixels + y*(3*w + pad);
             for (int x = 0; x < w; x++) {
-                for (int j = 2; j >= 0; j--) {
-                    imdata = asciibyte(dst+3*x+j, imdata, end);
+                unsigned char rgb[3];
+                for (int j = 0; j < 3; j++) {
+                    imdata = asciibyte(rgb+j, imdata, end);
                     if (!imdata) {
                         image_free(im);
                         return 0;
                     }
                 }
+                struct argb c = {255, rgb[0], rgb[1], rgb[2]};
+                image_rgb(im, x, y, c);
             }
         }
     } break;
 
     case 5: {
-        int pad = -w & 3;
-        im->info.bmiHeader.biBitCount = 8;
-        im->info.bmiHeader.biClrUsed = 256;
         if (w*h > end-imdata) {
             image_free(im);
             return 0;
         }
         for (int y = 0; y < h; y++) {
-            unsigned char *dst = im->pixels + y*(w + pad);
             for (int x = 0; x < w; x++) {
-                dst[x] = *imdata++;
+                unsigned char v = *imdata++;
+                image_rgb(im, x, y, (struct argb){255, v, v, v});
             }
         }
     } break;
 
     case 6: {
-        int pad = (-w*3) & 3;
         if (3*w*h > end-imdata) {
             image_free(im);
             return 0;
         }
         for (int y = 0; y < h; y++) {
-            unsigned char *dst = im->pixels + y*(3*w + pad);
             for (int x = 0; x < w; x++) {
-                dst[3*x+2] = *imdata++;
-                dst[3*x+1] = *imdata++;
-                dst[3*x+0] = *imdata++;
+                struct argb c = {255, imdata[0], imdata[1], imdata[2]};
+                image_rgb(im, x, y, c);
+                imdata += 3;
             }
         }
     } break;
@@ -468,20 +490,17 @@ decode_qoi(unsigned char *imdata, int len)
     }
     int w = q.width;
     int h = q.height;
-    int pad = (-w*3) & 3;
 
-    struct image *im = allocimage(w, h, 3);
+    struct image *im = image_new(w, h, 3);
     if (!im) {
         return 0;
     }
 
     for (int y = 0; y < h; y++) {
-        unsigned char *dst = im->pixels + y*(3*w + pad);
         for (int x = 0; x < w; x++) {
-            unsigned c = qoidecode(&q);
-            dst[x*3+0] = c >> 16;
-            dst[x*3+1] = c >>  8;
-            dst[x*3+2] = c >>  0;
+            unsigned abgr = qoidecode(&q);
+            struct argb c = {abgr>>24, abgr, abgr>>8, abgr>>16};
+            image_argb(im, x, y, c);
         }
     }
 
