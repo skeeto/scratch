@@ -30,10 +30,7 @@ static struct qoidecoder qoidecoder(const void *buf, int len)
     if (g!=0x716f6966U || (!w&&h) || (!h&&w) || p[12]-3u>1 || p[13]>1) {
         return q;  // invalid header
     }
-    if (w>0x7fffffffU || h>0x7fffffffU) {
-        return q;  // unreasonably huge dimensions
-    }
-    if ((h && w>0x7fffffffU/h) || (w && h>0x7fffffffU/w)) {
+    if (h && w>0x7fffffffU/h) {
         return q;  // multiplying dimensions will overflow
     }
 
