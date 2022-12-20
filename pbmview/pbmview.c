@@ -149,16 +149,13 @@ static struct qoidecoder qoidecoder(const void *buf, int len)
     }
 
     unsigned char *p = (void *)buf;
-    unsigned g = (unsigned)p[ 0]<<24 | p[ 1]<<16 | p[ 2]<< 8 | p[ 3];
-    unsigned w = (unsigned)p[ 4]<<24 | p[ 5]<<16 | p[ 6]<< 8 | p[ 7];
-    unsigned h = (unsigned)p[ 8]<<24 | p[ 9]<<16 | p[10]<< 8 | p[11];
+    unsigned g = loadu32be(p+0);
+    unsigned w = loadu32be(p+4);
+    unsigned h = loadu32be(p+8);
     if (g!=0x716f6966U || (!w&&h) || (!h&&w) || p[12]-3u>1 || p[13]>1) {
         return q;  // invalid header
     }
-    if (w>0x7fffffffU || h>0x7fffffffU) {
-        return q;  // unreasonably huge dimensions
-    }
-    if ((h && w>0x7fffffffU/h) || (w && h>0x7fffffffU/w)) {
+    if (h && w>0x7fffffffU/h) {
         return q;  // multiplying dimensions will overflow
     }
 
@@ -244,7 +241,7 @@ static unsigned qoidecode(struct qoidecoder *q)
 static unsigned char *
 asciibyte(unsigned char *dst, unsigned char *src, unsigned char *end)
 {
-    for (int n = 0, b = 0; ;) {
+    for (int n=0, b=0; ;) {
         if (src == end) {
             if (!n) {
                 return 0;
@@ -328,19 +325,27 @@ static inline void
 image_rgb(struct image *im, int x, int y, struct argb c)
 {
     int w = im->info.bmiHeader.biWidth;
-    int m = im->info.bmiHeader.biBitCount==8 ? 1 : 3;
-    int pad = (-w*m)&3;
-    unsigned char *dst = im->pixels + y*(m*w + pad) + m*x;
+    int pad = (-w*3)&3;
+    unsigned char *dst = im->pixels + y*(3*w + pad) + 3*x;
     dst[0] = c.b;
     dst[1] = c.g;
     dst[2] = c.r;
 }
 
 static inline void
+image_idx(struct image *im, int x, int y, unsigned char v)
+{
+    int w = im->info.bmiHeader.biWidth;
+    int pad = -w&3;
+    unsigned char *dst = im->pixels + y*(w + pad) + x;
+    dst[0] = v;
+}
+
+static inline void
 image_argb(struct image *im, int x, int y, struct argb c)
 {
     float a = c.a / 255.0f;
-    unsigned char bg = (x>>4^y>>4)&1 ? 0x66 : 0xaa;
+    unsigned char bg = ((x^y)>>4)&1 ? 0x66 : 0xaa;
     struct argb blend = {
         255,
         c.r*a + bg*(1 - a),
@@ -353,7 +358,7 @@ image_argb(struct image *im, int x, int y, struct argb c)
 static struct image *
 decode_farbfeld(unsigned char *imdata, int len)
 {
-    if (len < 16 || loadu64le(imdata) != 0x646c656662726166) {
+    if (len<16 || loadu64le(imdata)!=0x646c656662726166) {
         return 0;
     }
 
@@ -386,7 +391,7 @@ decode_netpbm(unsigned char *imdata, int len)
     unsigned char *end = imdata + len;
 
     struct netpbm pbm = {0};
-    for (int ps = 0, off = 0, done = 0; !done;) {
+    for (int ps=0, off=0, done=0; !done;) {
         if (off >= len) {
             return 0;
         }
@@ -429,7 +434,7 @@ decode_netpbm(unsigned char *imdata, int len)
                     image_free(im);
                     return 0;
                 }
-                image_rgb(im, x, y, (struct argb){255, v, v, v});
+                image_idx(im, x, y, v);
             }
         }
     } break;
@@ -459,7 +464,7 @@ decode_netpbm(unsigned char *imdata, int len)
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 unsigned char v = *imdata++;
-                image_rgb(im, x, y, (struct argb){255, v, v, v});
+                image_idx(im, x, y, v);
             }
         }
     } break;
