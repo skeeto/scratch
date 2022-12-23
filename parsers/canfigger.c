@@ -40,9 +40,9 @@ static int canfigger(int state, struct canfigger *t, char *buf, int len)
             switch (*beg++) {
             case '#':  // comment
                 while (beg<end && *beg++!='\n') {}
-                continue;
+                break;
             case '\t': case '\n': case '\v': case '\f': case '\r': case ' ':
-                continue;
+                break;
             default:
                 t->type = CANFIGGER_KEY;
                 t->beg = beg - 1;
@@ -99,10 +99,6 @@ static int canfigger(int state, struct canfigger *t, char *buf, int len)
 #include <string.h>
 
 #define E(t, s) {s, s+sizeof(s)-1, CANFIGGER_##t}
-#define C(s, ...) do {\
-        char buf##__LINE__[] = s; \
-        check(buf, sizeof(s)-1, __VA_ARGS__); \
-    } while (0)
 
 static void check(char *buf, int len, struct canfigger *expect)
 {
