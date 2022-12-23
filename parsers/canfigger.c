@@ -3,14 +3,19 @@
 // The canfigger format is like INI, but has no sections. This parser
 // matches the idiosyncracies, particularly with whitespace, of the
 // original parser, except that there is no distinction between "values"
-// and "attributes" (i.e. values beyond the first). Advantages of this
-// parser:
+// and "attributes" (i.e. values beyond the first).
+//
+// Advantages:
 // * Simpler, minimalist API: one function, one struct
 // * No allocations
 // * No libc use
+// * No practical maximum length for keys or values
 // * 80% smaller implementation
 // * Better performance
 // * Better license
+// Disadvantages:
+// * Hardcoded delimiter (comma)
+// * Entire raw config must be loaded at once
 //
 // Ref: https://github.com/andy5995/canfigger
 // This is free and unencumbered software released into the public domain.
