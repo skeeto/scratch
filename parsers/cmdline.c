@@ -97,13 +97,13 @@ cmdline_to_argv8(const unsigned short *cmd, char **argv)
                                state -= 2;
                                break;
                            } // fallthrough
-                default  : cmd--;
+                default  : cmd -= 1 + (c >= 0x10000);
                            state -= 2;
                            continue;
                 case 0x5c: slash++;
                 } break;
         case 5: switch (c) {  // quoted token exit
-                default  : cmd--;
+                default  : cmd -= 1 + (c >= 0x10000);
                            state = 1;
                            continue;
                 case 0x22: state = 1;
@@ -298,20 +298,35 @@ main(void)
     }
 
     static const struct {
-        unsigned short cmd[4];
+        short argvi;  // position to test (argv[0] is special)
+        short skip;   // encoding directions to be skipped (bitflag)
+        unsigned short cmd[6];
         char wtf8[8];
     } tests16[] = {
-        {{0xd800},         {0xed, 0xa0, 0x80}},
-        {{0xdcff},         {0xed, 0xb3, 0xbf}},
-        {{0xdbc4, 0xde34}, {0xf4, 0x81, 0x88, 0xb4}},
-        {{0xde34, 0xdbc4}, {0xed, 0xb8, 0xb4, 0xed, 0xaf, 0x84}},
-        {{0x03c0},         {0xcf, 0x80}},
+        {0, 1, {0xd800},         {0xed, 0xa0, 0x80}},
+        {0, 0, {0xdcff},         {0xed, 0xb3, 0xbf}},
+        {0, 0, {0xdbc4, 0xde34}, {0xf4, 0x81, 0x88, 0xb4}},
+        {0, 0, {0xde34, 0xdbc4}, {0xed, 0xb8, 0xb4, 0xed, 0xaf, 0x84}},
+        {0, 0, {0x03c0},         {0xcf, 0x80}},
+        {0, 0, {0x005c, 0x0040}, {0x5c, 0x40}},
+        // BMP following meta characters
+        {0, 0, {0x005c, 0x03c0},                 {0x5c, 0xcf, 0x80}},
+        {1, 0, {0x0020, 0x005c, 0x03c0},         {0x5c, 0xcf, 0x80}},
+        {1, 2, {0x0020, 0x0022, 0x0022, 0x03c0}, {0xcf, 0x80}},
+        // Surrogates (of U+2070E) following meta characters
+        {0, 0, {0x005c, 0xd841, 0xdf0e},
+               {0x5c, 0xf0, 0xa0, 0x9c, 0x8e}},
+        {1, 0, {0x0020, 0x005c, 0xd841, 0xdf0e},
+               {0x5c, 0xf0, 0xa0, 0x9c, 0x8e}},
+        {1, 2, {0x0020, 0x0022, 0x0022, 0xd841, 0xdf0e},
+               {0xf0, 0xa0, 0x9c, 0x8e}},
     };
 
     // Test ill-formed UTF-16 to WTF-8
-    for (int i = 1; i < (int)(sizeof(tests16)/sizeof(*tests16)); i++) {
+    for (int i = 0; i < (int)(sizeof(tests16)/sizeof(*tests16)); i++) {
+        if (tests16[i].skip&1) continue;
         cmdline_to_argv8(tests16[i].cmd, argv);
-        if (strcmp(argv[0], tests16[i].wtf8)) {
+        if (strcmp(argv[tests16[i].argvi], tests16[i].wtf8)) {
             printf("FAIL: [%d] ill-formed UTF-16 to WTF-8\n", i);
             fails++;
         }
@@ -319,9 +334,11 @@ main(void)
 
     // Test WTF-8 to ill-formed UTF-16
     for (int i = 0; i < (int)(sizeof(tests16)/sizeof(*tests16)); i++) {
-        char *argv[] = {(char *)tests16[i].wtf8, 0};
-        cmdline_from_argv8(cmd, CMDLINE_CMD_MAX, argv);
-        int match = 1;
+        if (tests16[i].skip&2) continue;
+        char *argv[] = {"", 0, 0};
+        argv[tests16[i].argvi] = (char *)tests16[i].wtf8;
+        int cmdlen = cmdline_from_argv8(cmd, CMDLINE_CMD_MAX, argv);
+        int match = !cmd[cmdlen] && !tests16[i].cmd[cmdlen];
         for (int j = 0; match && (cmd[j] || tests16[i].cmd[j]); j++) {
             match = cmd[j] == tests16[i].cmd[j];
         }
