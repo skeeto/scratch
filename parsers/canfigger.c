@@ -26,13 +26,13 @@ struct canfigger {
 };
 
 // Parse the next token, returning the next parser state. The initial
-// parser state is zero. The buffer is destroyed as it's parsed, and all
-// tokens are null-terminated if, and only if, the buffer itself has a
-// null terminator just beyond its end (i.e. not included in len).
-static int canfigger(int state, struct canfigger *t, char *buf, int len)
+// parser state is zero. If the input has a spare byte just beyond its
+// length, such as a null terminator, it's always safe to write a zero
+// into the token end pointer to null terminate it.
+static int canfigger(int state, struct canfigger *t, const char *buf, int len)
 {
-    char *beg = buf + (state<0 ? -state : state);
-    char *end = buf + len;
+    char *beg = (char *)buf + (state<0 ? -state : state);
+    char *end = (char *)buf + len;
 
     // negative state: parsing values, otherwise parsing keys
     if (state >= 0) {
@@ -49,10 +49,8 @@ static int canfigger(int state, struct canfigger *t, char *buf, int len)
                 t->end = beg;
                 while (beg < end) {
                     switch (*beg++) {
-                    case '=' : *t->end = 0;
-                               return buf - beg;
-                    case '\n': *t->end = 0;
-                               return beg - buf;
+                    case '=' : return buf - beg;
+                    case '\n': return beg - buf;
                     case '\t':
                     case '\v':
                     case '\f':
@@ -74,10 +72,8 @@ static int canfigger(int state, struct canfigger *t, char *buf, int len)
         t->beg = t->end = beg;
         while (beg < end) {
             switch (*beg++) {
-            case '\n': *t->end = 0;
-                       return beg - buf;
-            case ',' : *t->end = 0;
-                       return buf - beg;
+            case '\n': return beg - buf;
+            case ',' : return buf - beg;
             case '\t':
             case '\v':
             case '\f':
@@ -199,7 +195,6 @@ int main(void)
 {
     static char buf[1<<20];
     int len = fread(buf, 1, sizeof(buf)-1, stdin);
-    buf[len] = 0;
     for (int state = 0;;) {
         struct canfigger t;
         state = canfigger(state, &t, buf, len);
@@ -210,9 +205,84 @@ int main(void)
         case CANFIGGER_VAL:
             putchar('\t'); // fallthrough
         case CANFIGGER_KEY:
+            *t.end = 0;
             printf("%d:%s\n", (int)(t.end-t.beg), t.beg);
             break;
         }
     }
+}
+
+
+#elif EXAMPLE1
+// Sums values per key, demonstrating peek/back-off when reading values.
+//  $ cc -DEXAMPLE1 -o example canfigger.c
+//  $ printf 'a=1,2,3\nb=4,5,6,-7' | ./example
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(void)
+{
+    static char buf[1<<20];
+    int len = fread(buf, 1, sizeof(buf)-1, stdin);
+    for (int state = 0;;) {
+        long long sum = 0;
+        struct canfigger key, val;
+        state = canfigger(state, &key, buf, len);
+        switch (key.type) {
+        case CANFIGGER_EOF:
+            fflush(stdout);
+            return ferror(stdout);
+        case CANFIGGER_VAL:
+            abort();  // impossible
+        case CANFIGGER_KEY:
+            // Read values until a non-value appears, then discard that
+            // last parser state so that it's re-read in the outer loop.
+            for (int next = state;; state = next) {
+                next = canfigger(state, &val, buf, len);
+                if (val.type != CANFIGGER_VAL) {
+                    break;
+                }
+                *val.end = 0;  // for atoi()
+                sum += (unsigned long long)atoi(val.beg);
+            }
+            printf("%.*s %lld\n", (int)(key.end-key.beg), key.beg, sum);
+        }
+    }
+}
+
+
+#elif EXAMPLE2
+// Sums values per key, demonstrating a state machine that does not
+// require peek/back-off.
+//  $ cc -DEXAMPLE2 -o example canfigger.c
+//  $ printf 'a=1,2,3\nb=4,5,6,-7' | ./example
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(void)
+{
+    long long sum;
+    static char buf[1<<20];
+    int len = fread(buf, 1, sizeof(buf)-1, stdin);
+    struct canfigger tok, key = {0, 0, CANFIGGER_KEY};
+    for (int state = 0; key.type == CANFIGGER_KEY;) {
+        state = canfigger(state, &tok, buf, len);
+        switch (tok.type) {
+        case CANFIGGER_EOF:
+        case CANFIGGER_KEY:
+            if (key.beg) {
+                fwrite(key.beg, key.end-key.beg, 1, stdout);
+                printf(" %lld\n", sum);
+            }
+            sum = 0;
+            key = tok;
+            break;
+        case CANFIGGER_VAL:
+            *tok.end = 0;  // for atoi()
+            sum += (unsigned long long)atoi(tok.beg);
+        }
+    }
+    fflush(stdout);
+    return ferror(stdout);
 }
 #endif
