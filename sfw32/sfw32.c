@@ -138,9 +138,7 @@ int WinMainCRTStartup(void)
     int i, off;
     WNDCLASSA wndclass = {0};
 
-    /*InitCommonControls();*/
-    INITCOMMONCONTROLSEX cc = {sizeof(cc), -1};
-    InitCommonControlsEx(&cc);
+    InitCommonControls();
 
     wndclass.lpfnWndProc = proc;
     wndclass.lpszClassName = "sfcw";
