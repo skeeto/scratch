@@ -1,6 +1,6 @@
 /* Starflight Code Wheel
  * Like Pat Shearon's code wheel, but more portable and no .NET.
- * This is free and unencumbered software released into the public domain.
+ * Released into the public domain (except perhaps the code table itself)
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>

@@ -1,0 +1,2 @@
+1 ICON "sfcw.ico"
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "sfcw.exe.manifest"
