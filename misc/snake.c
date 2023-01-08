@@ -1,7 +1,7 @@
 // SDL2 snake game
 //   $ cc -o snake snake.c $(sdl2-config --cflags --libs)
 // This is free and unencumbered software released into the public domain.
-#include <SDL.h>
+#include "SDL.h"
 
 #if MINI && _WIN32
 // Minimalist Windows build:
@@ -132,12 +132,25 @@ static void snake_turn(struct snake *s, enum dir dir)
 
 int main(int argc, char **argv)
 {
-    SDL_Init(SDL_INIT_VIDEO);
+    if (SDL_Init(SDL_INIT_VIDEO)) {
+        SDL_Log("snake: SDL_Init(): %s", SDL_GetError());
+        return 1;
+    }
+
     SDL_Window *w = SDL_CreateWindow(
         "Snake", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         WIDTH*SCALE, HEIGHT*SCALE, 0
     );
+    if (!w) {
+        SDL_Log("snake: SDL_CreateWindow(): %s", SDL_GetError());
+        return 1;
+    }
+
     SDL_Renderer *r = SDL_CreateRenderer(w, -1, SDL_RENDERER_PRESENTVSYNC);
+    if (!r) {
+        SDL_Log("snake: SDL_CreateRenderer(): %s", SDL_GetError());
+        return 1;
+    }
 
     Uint64 rng = 0;
     int bg = 0xffffff;
