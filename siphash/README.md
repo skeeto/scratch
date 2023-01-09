@@ -18,9 +18,9 @@ In Go style, finalization function does not modify the context, allowing more
 input to be appended after the digest is computed. To clone the context, copy
 it.
 
-For a non-incremental, header library of SipHash: [**siphash.h**][hdr].
+For a non-incremental, header library of SipHash: [**siphash-embed.h**][hdr].
 
 
-[hdr]: https://gist.github.com/skeeto/c8838cee7e97fbec483ae3cf58627154
+[hdr]: siphash-embed.h
 [min]: https://nullprogram.com/blog/2018/06/10/
 [sh]: https://cr.yp.to/siphash/siphash-20120620.pdf
