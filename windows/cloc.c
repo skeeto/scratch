@@ -975,7 +975,7 @@ static int clocmain(int argc, Char16 **argv)
         padcolumn(stdout, extwidth-heading);
         OUTSTR(stdout, "   files    blanks     lines\n");
     } else {
-        extwidth += maxlen(totals->totals, 0);
+        extwidth += maxlen(totals->totals, 6);
     }
 
     for (Path *t = totals->totals; t; t = t->next) {
