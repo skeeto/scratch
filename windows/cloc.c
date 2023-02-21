@@ -1,7 +1,12 @@
 // cloc: Count Lines of Code
 //   $ gcc -nostartfiles -o cloc.exe cloc.c
 //   $ cloc -qn10 src/ lib/
+// TODO: abstract "Char16" paths into opaque objects, or UTF-8
+// TODO: then write a Linux platform layer
 // This is free and unencumbered software released into the public domain.
+
+
+// Basic definitions
 
 typedef int Bool;
 typedef unsigned char Byte;
@@ -12,14 +17,14 @@ typedef __INT64_TYPE__ Int64;
 typedef __UINT64_TYPE__ Uint64;
 typedef __PTRDIFF_TYPE__ Size;
 typedef __SIZE_TYPE__ Usize;
-
 #define Size_MAX (Size)((Usize)-1 >> 1)
-#define SIZEOF(e) (Size)(sizeof(e))
-#define NEW(a, t) (t *)alloc(a, SIZEOF(t))
-#define ARRAY(a, t, n) (t *)alloc(a, SIZEOF(t)*(n))
-#define SAVEPOINT(a) __builtin_setjmp((a)->jmp)
-#define OUTSTR(o, s) outbytes(o, (Byte *)s, SIZEOF(s)-1)
-#define ZERO(x) zero(x, SIZEOF(*x))
+
+#if __amd64 || __i686
+  #define PAUSE __builtin_ia32_pause()
+#else
+  #define PAUSE
+#endif
+
 #ifdef DEBUG
   #define ASSERT(c) if (!(c)) __builtin_trap()
 #else
@@ -27,62 +32,73 @@ typedef __SIZE_TYPE__ Usize;
 #endif
 
 
-// Win32 API
+// Platform API
+
+#define Path_MAX 260
 
 typedef struct {
-    Uint32 attr;
-    Uint32 create[2], access[2], write[2];
-    Uint32 size[2];
-    Uint32 reserved1[2];
-    Char16 name[260];
-    Char16 altname[14];
-    Uint32 reserved2[2];
-} FindData;
+    Byte *buf;
+    Size len;
+} PlatformMap;
 
-typedef Usize Handle;
-char CloseHandle(Handle)
-    __attribute__((stdcall,dllimport));
-Char16 **CommandLineToArgvW(Char16 *, int *)
-    __attribute__((stdcall,dllimport,malloc));
-Handle CreateFileMappingA(Handle, void *, int, Uint32, Uint32, void *)
-    __attribute__((stdcall,dllimport));
-Handle CreateFileW(Char16 *, int, int, void *, int, int, void *)
-    __attribute__((dllimport,stdcall));
-Handle CreateThread(void *, Size, int (__stdcall*)(void *), void *, int, int *)
-    __attribute__((dllimport,stdcall));
-Handle FindFirstFileW(Char16 *, FindData *)
-    __attribute__((dllimport,stdcall));
-char FindNextFileW(Handle, FindData *)
-    __attribute__((dllimport,stdcall));
-char FindClose(Handle)
-    __attribute__((dllimport,stdcall));
-void ExitProcess(int)
-    __attribute__((dllimport,stdcall,noreturn));
-Char16 *GetCommandLineW(void)
-    __attribute__((stdcall,dllimport,malloc));
-Uint32 GetFileSize(Handle, Uint32 *)
-    __attribute__((dllimport,stdcall));
-void *GetProcAddress(Handle, void *)
-    __attribute__((stdcall,dllimport));
-Handle GetStdHandle(int)
-    __attribute__((dllimport,stdcall));
-void GetSystemInfo(void *)
-    __attribute__((dllimport,stdcall));
-Handle LoadLibraryA(void *)
-    __attribute__((stdcall,dllimport));
-void *MapViewOfFile(Handle, int, Uint32, Uint32, Size)
-    __attribute__((stdcall,dllimport,malloc));
-void OutputDebugStringA(void *)
-    __attribute__((stdcall,dllimport));
-char UnmapViewOfFile(void *)
-    __attribute__((stdcall,dllimport));
-void *VirtualAlloc(void *, Size, int, int)
-    __attribute__((dllimport,stdcall,malloc));
-char WriteFile(Handle, void *, int, int *, void *)
-    __attribute__((dllimport,stdcall));
+typedef struct {
+    void *handle;
+    Char16 name[Path_MAX];
+    Bool dir;
+    Bool first;
+} PlatformDir;
+
+typedef struct {
+    // Heap
+    void *heap;
+    Size heapsize;
+
+    // Write to standard output (1) or error (2)
+    Bool (*write)(int, void *, Size);
+
+    // File loading
+    Bool (*map)(PlatformMap *, Char16 *);
+    void (*unmap)(PlatformMap *);
+
+    // Directory listing
+    Bool (*diropen)(PlatformDir *, Char16 *);
+    Bool (*dirnext)(PlatformDir *);
+
+    // Futex (optional: may be no-op)
+    void (*wait)(unsigned *, unsigned);
+    void (*wake)(unsigned *);
+    void (*wakeall)(unsigned *);
+
+    // Debug log (null-terminated, may be no-op)
+    void (*debug)(Byte *);
+} Platform;
+
+
+// Application API
+
+// Initialize the application, establishing a context object. Returns a
+// null pointer if initialization fails. Otherwise the platform will
+// spin up an appropriate number of threads, possibly zero, passing this
+// context pointer to each thread.
+static void *clocinit(Platform *, int argc, Char16 **argv);
+
+// Worker thread entry point. The platform passes the non-null pointer
+// returned by clocinit().
+static void clocthread(void *context);
+
+// Main application entry point, passed the non-null pointer returned by
+// the clocinit(). The return value is the exit status.
+static int clocmain(void *context);
 
 
 // Application
+
+#define SIZEOF(e) (Size)(sizeof(e))
+#define NEW(a, t) (t *)alloc(a, SIZEOF(t))
+#define ARRAY(a, t, n) (t *)alloc(a, SIZEOF(t)*(n))
+#define SAVEPOINT(a) __builtin_setjmp((a)->jmp)
+#define OUTSTR(o, s) outbytes(o, (Byte *)s, SIZEOF(s)-1)
+#define ZERO(x) zero(x, SIZEOF(*x))
 
 __attribute__((optimize("no-tree-loop-distribute-patterns")))
 static void zero(void *p, Size size)
@@ -107,16 +123,6 @@ static Arena *placearena(void *mem, Size size)
     a->cap = size;
     a->off = SIZEOF(Arena);
     return a;
-}
-
-static Arena *newarena(int exp)
-{
-    Size size = (Size)1 << exp;
-    void *mem = VirtualAlloc(0, size, 0x3000, 4);
-    if (mem) {
-        placearena(mem, size);
-    }
-    return mem;
 }
 
 __attribute__((malloc,alloc_size(2)))
@@ -146,7 +152,7 @@ static void lock(Mutex *m)
         if (ticket == current) {
             break;
         }
-        __builtin_ia32_pause();
+        PAUSE;
     }
 }
 
@@ -160,7 +166,7 @@ typedef struct Path {
     Int64 files;
     Int64 lines;
     Int64 blanks;
-    Char16 path[260];
+    Char16 path[Path_MAX];
 } Path;
 
 static int pathcmp(Path *x, Path *y)
@@ -188,10 +194,10 @@ static int pathlen(Path *p)
     return len;
 }
 
-static Bool tally(Path *path)
+static Bool tally(Platform *plt, Path *path)
 {
-    Handle file = CreateFileW(path->path, 0x80000000u, 7, 0, 3, 128, 0);
-    if (file == (Handle)-1) {
+    PlatformMap map;
+    if (!plt->map(&map, path->path)) {
         return 0;
     }
 
@@ -215,35 +221,10 @@ static Bool tally(Path *path)
         path->path[0] = 0;
     }
 
-    Uint32 hi, lo;
-    lo = GetFileSize(file, &hi);
-    Uint64 size = (Uint64)hi<<32 | lo;
-    if (size > Size_MAX) {
-        CloseHandle(file);
-        return 0;
-    } else if (!lo) {
-        CloseHandle(file);
-        path->files = 1;
-        return 1;
-    }
-    Size len = size;
-
-    Handle map = CreateFileMappingA(file, 0, 2, hi, lo, 0);
-    CloseHandle(file);
-    if (!map) {
-        return 0;
-    }
-
-    Byte *src = MapViewOfFile(map, 4, 0, 0, lo);
-    CloseHandle(map);
-    if (!src) {
-        return 0;
-    }
-
     Bool blank = 1;
     Size line = 0;
-    for (Size i = 0; i < len; i++) {
-        switch (src[i]) {
+    for (Size i = 0; i < map.len; i++) {
+        switch (map.buf[i]) {
         case ' ' :
         case '\r':
         case '\t': line++;
@@ -263,14 +244,7 @@ static Bool tally(Path *path)
         path->blanks += blank;
     }
 
-    // NOTE: The map limit on x64 is practically unlimited, even on the
-    // largest source code directories, so don't waste time unmapping
-    // individual files. Since these are backed by real files, not the
-    // page file, leaving these mappings alive is cheap.
-    #ifndef _WIN64
-    UnmapViewOfFile(src);
-    #endif
-
+    plt->unmap(&map);
     path->files = 1;
     return 1;
 }
@@ -316,9 +290,6 @@ typedef struct {
     Path **slots;
     Path *freelist;
     Totals *totals;
-    __attribute__((stdcall)) Int32 (*wait)(void *, void *, Size, void *);
-    __attribute__((stdcall)) Int32 (*wake)(void *);
-    __attribute__((stdcall)) Int32 (*wakeall)(void *);
     #if DEBUG
     Size wakes, waits;
     #endif
@@ -331,21 +302,6 @@ typedef struct {
     Bool shutdown;
 } WorkQueue;
 
-__attribute__((stdcall))
-static Int32 fakewait(void *a, void *b, Size c, void *d)
-{
-    (void)a; (void)b; (void)c; (void)d;
-    __builtin_ia32_pause();
-    return 0;
-}
-
-__attribute__((stdcall))
-static Int32 fakewake(void *a)
-{
-    (void)a;
-    return 0;
-}
-
 static WorkQueue *newqueue(Arena *a, int exp, Totals *totals)
 {
     WorkQueue *q = NEW(a, WorkQueue);
@@ -353,22 +309,6 @@ static WorkQueue *newqueue(Arena *a, int exp, Totals *totals)
     q->mask = len - 1;
     q->slots = ARRAY(a, Path *, len);
     q->totals = totals;
-
-    // NOTE: Manually load the futex API. It's only available in more
-    // recent Windows releases, plus it's nicer not directly link with
-    // ntdll.dll. Everything still works correctly with the "fake" no-op
-    // implementations, just a bit less efficiently.
-    Handle ntdll = LoadLibraryA("ntdll.dll");
-    if (ntdll) {
-        q->wait = GetProcAddress(ntdll, "RtlWaitOnAddress");
-        q->wake = GetProcAddress(ntdll, "RtlWakeAddressSingle");
-        q->wakeall = GetProcAddress(ntdll, "RtlWakeAddressAll");
-    }
-    if (!q->wait || !q->wake || !q->wakeall) {
-        q->wait = fakewait;
-        q->wake = fakewake;
-        q->wakeall = fakewake;
-    }
 
     return q;
 }
@@ -396,7 +336,7 @@ static void freepath(WorkQueue *q, Path *path)
     unlock(&q->freelock);
 }
 
-static Path *pop(WorkQueue *q)
+static Path *pop(Platform *plt, WorkQueue *q)
 {
     for (int tries = 0;; tries++) {
         lock(&q->slotlock);
@@ -413,18 +353,18 @@ static Path *pop(WorkQueue *q)
         }
 
         if (tries < 1<<8) {
-            __builtin_ia32_pause();
+            PAUSE;
         } else {
             #if DEBUG
             __atomic_fetch_add(&q->waits, 1, __ATOMIC_RELAXED);
             #endif
-            q->wait(&q->head, &head, SIZEOF(head), 0);
+            plt->wait(&q->head, head);
             tries = 0;
         }
     }
 }
 
-static Bool push(WorkQueue *q, Path *path)
+static Bool push(Platform *plt, WorkQueue *q, Path *path)
 {
     lock(&q->slotlock);
     unsigned nexthead = (q->head + 1) & q->mask;
@@ -440,12 +380,12 @@ static Bool push(WorkQueue *q, Path *path)
         #if DEBUG
         __atomic_fetch_add(&q->wakes, 1, __ATOMIC_RELAXED);
         #endif
-        q->wakeall(&q->head);
+        plt->wakeall(&q->head);
     }
     return 1;
 }
 
-static void complete(WorkQueue *q)
+static void complete(Platform *plt, WorkQueue *q)
 {
     __atomic_add_fetch(&q->completed, 1, __ATOMIC_SEQ_CST);
     lock(&q->slotlock);
@@ -455,11 +395,11 @@ static void complete(WorkQueue *q)
         #if DEBUG
         __atomic_fetch_add(&q->wakes, 1, __ATOMIC_RELAXED);
         #endif
-        q->wake(&q->completed);
+        plt->wake(&q->completed);
     }
 }
 
-static void wait(WorkQueue *q)
+static void wait(Platform *plt, WorkQueue *q)
 {
     // NOTE: q->head is not stored concurrently, so locking is unnecessary
     unsigned target = q->head;
@@ -469,15 +409,15 @@ static void wait(WorkQueue *q)
 
     // Help finish the queue
     for (;;) {
-        Path *path = pop(q);
+        Path *path = pop(plt, q);
         if (!path) {
             break;
         }
-        tally(path);
+        tally(plt, path);
         if (!accumulate(q->totals, path)) {
             freepath(q, path);
         }
-        complete(q);
+        complete(plt, q);
     }
 
     // Wait for completion
@@ -489,7 +429,7 @@ static void wait(WorkQueue *q)
         #if DEBUG
         __atomic_fetch_add(&q->waits, 1, __ATOMIC_RELAXED);
         #endif
-        q->wait(&q->completed, &got, SIZEOF(got), 0);
+        plt->wait(&q->completed, got);
     }
 }
 
@@ -520,52 +460,33 @@ static Path *unshift(Dirs *dirs)
     return path;
 }
 
-__attribute__((stdcall))
-static int clocthread(void *arg)
-{
-    WorkQueue *q = arg;
-    for (;;) {
-        Path *path = pop(q);
-        if (!path) {
-            // NOTE: Mainly in case RtlWaitOnAddress wasn't available,
-            // to avoiding spinning during the final tally and printout.
-            // It's not important that the thread actually terminates.
-            break;
-        }
-        tally(path);
-        if (!accumulate(q->totals, path)) {
-            freepath(q, path);
-        }
-        complete(q);
-    }
-    return 0;
-}
-
 typedef struct {
     Byte *buf;
     Size len;
     Size cap;
-    Handle sink;
+    Platform *plt;
+    int fd;
     Bool error;
 } Out;
 
-static Out *newout(Arena *a, int exp, Handle sink)
+static Out *newout(Platform *plt, Arena *a, Size cap, int fd)
 {
     Out *out = NEW(a, Out);
-    out->cap = (Size)1 << exp;
+    out->cap = cap;
     out->buf = ARRAY(a, Byte, out->cap);
-    out->sink = sink;
+    out->plt = plt;
+    out->fd = fd;
     return out;
 }
 
-static Out *newstdout(Arena *a)
+static Out *newstdout(Platform *plt, Arena *a)
 {
-    return newout(a, 12, GetStdHandle(-11));
+    return newout(plt, a, 1<<12, 1);
 }
 
-static Out *newstderr(Arena *a)
+static Out *newstderr(Platform *plt, Arena *a)
 {
-    return newout(a, 7, GetStdHandle(-12));
+    return newout(plt, a, 1<<7, 2);
 }
 
 static Out *newmemout(Arena *a, Byte *buf, Size len)
@@ -573,21 +494,17 @@ static Out *newmemout(Arena *a, Byte *buf, Size len)
     Out *out = NEW(a, Out);
     out->buf = buf;
     out->cap = len;
-    out->sink = (Handle)-1;
+    out->fd  = -1;
     return out;
 }
 
 static void flush(Out *out)
 {
-    // TODO: GetConsoleMode + WriteConsole
-    // On the other hand, the only unicode text in the output is the
-    // file extension listings. How often are these non-ASCII?
     if (!out->error) {
-        if (out->sink == (Handle)-1) {
+        if (out->fd == -1) {
             out->error |= 1;
         } else if (out->len) {
-            int n;
-            out->error |= !WriteFile(out->sink, out->buf, out->len, &n, 0);
+            out->error |= !out->plt->write(out->fd, out->buf, out->len);
             out->len = 0;
         }
     }
@@ -657,6 +574,39 @@ static Size outwstr(Out *out, Char16 *s)
         }
     }
     return len;
+}
+
+typedef struct {
+    Platform *plt;
+    Arena *arena;
+    Out *stderr;
+    Totals *totals;
+    WorkQueue *queue;
+    Dirs *dirs;
+    Size limit;
+    Bool heading;
+    Bool fastquit;
+} Cloc;
+
+static void clocthread(void *context)
+{
+    Cloc *cloc = context;
+    Platform *plt = cloc->plt;
+    WorkQueue *q = cloc->queue;
+    for (;;) {
+        Path *path = pop(plt, q);
+        if (!path) {
+            // NOTE: Mainly in case RtlWaitOnAddress wasn't available,
+            // to avoiding spinning during the final tally and printout.
+            // It's not important that the thread actually terminates.
+            break;
+        }
+        tally(plt, path);
+        if (!accumulate(q->totals, path)) {
+            freepath(q, path);
+        }
+        complete(plt, q);
+    }
 }
 
 static Path *fromstr(Arena *a, WorkQueue *q, Char16 *dir, Char16 *name)
@@ -833,73 +783,77 @@ static Size parsesize(Char16 *s)
     return len ? size : -1;
 }
 
-static int numcores(void)
+static void *clocinit(Platform *plt, int argc, Char16 **argv)
 {
-    struct {
-        int a, b;
-        void *c, *d, *e;
-        int f, g, h, i;
-    } tmp;
-    GetSystemInfo(&tmp);
-    ASSERT(tmp.f > 0);
-    return tmp.f;
-}
-
-static int clocmain(int argc, Char16 **argv)
-{
-    Arena *a = newarena(28);
-    Out *stderr = newstderr(a);  // pre-allocate in case of OOM
+    Arena *a = placearena(plt->heap, plt->heapsize);
+    Out *stderr = newstderr(plt, a);  // pre-allocate in case of OOM
     if (SAVEPOINT(a)) {
         OUTSTR(stderr, "cloc: out of memory\n");
         flush(stderr);
-        return 1;
+        return 0;
     }
 
     GetOpt *wgo = NEW(a, GetOpt);
-    Totals *totals = NEW(a, Totals);
-    WorkQueue *queue = newqueue(a, 14, totals);
-    Dirs *dirs = NEW(a, Dirs);
-
-    Size limit = -1;
-    Bool heading = 1;
+    Cloc *cloc = NEW(a, Cloc);
+    cloc->plt = plt;
+    cloc->arena = a;
+    cloc->stderr = stderr;
+    cloc->totals = NEW(a, Totals);
+    cloc->queue = newqueue(a, 14, cloc->totals);
+    cloc->dirs = NEW(a, Dirs);
+    cloc->limit = -1;
+    cloc->heading = 1;
+    cloc->fastquit = 0;
 
     for (int option; (option = wgetopt(wgo, argc, argv, "hn:q")) != -1;) {
         switch (option) {
         case 'h':
-            return usage(newstdout(a));
+            cloc->fastquit = 1;
+            return usage(newstdout(plt, a)) ? 0 : cloc;
         case 'n':
-            limit = parsesize(wgo->optarg);
-            if (limit < 0) {
+            cloc->limit = parsesize(wgo->optarg);
+            if (cloc->limit < 0) {
                 OUTSTR(stderr, "cloc: invalid -n: \"");
                 outwstr(stderr, wgo->optarg);
                 OUTSTR(stderr, "\"\n");
                 flush(stderr);
-                return 1;
+                return 0;
             }
             break;
         case 'q':
-            heading = 0;
+            cloc->heading = 0;
             break;
         default:
             usage(stderr);
-            return 1;
+            return 0;
         }
     }
 
     if (wgo->optind == argc) {
-        append(dirs, fromstr(a, queue, L".", L""));
+        append(cloc->dirs, fromstr(a, cloc->queue, L".", L""));
     } else {
         for (int i = wgo->optind; i < argc; i++) {
-            append(dirs, fromstr(a, queue, argv[i], L""));
+            append(cloc->dirs, fromstr(a, cloc->queue, argv[i], L""));
         }
     }
 
-    int numproc = (numcores() + 1) / 2;
-    for (int i = 0; i < numproc; i++) {
-        Handle thread = CreateThread(0, 0, clocthread, queue, 0, 0);
-        ASSERT(thread);
-        CloseHandle(thread);
+    return cloc;
+}
+
+static int clocmain(void *context)
+{
+    Cloc *cloc = context;
+    Platform *plt = cloc->plt;
+    Arena *a = cloc->arena;
+    if (SAVEPOINT(a)) {
+        OUTSTR(cloc->stderr, "cloc: out of memory\n");
+        flush(cloc->stderr);
+        return 0;
     }
+
+    Dirs *dirs = cloc->dirs;
+    WorkQueue *queue = cloc->queue;
+    Totals *totals = cloc->totals;
 
     for (;;) {
         Path *dir = unshift(dirs);
@@ -907,46 +861,37 @@ static int clocmain(int argc, Char16 **argv)
             break;
         }
 
-        Path *glob = fromstr(a, queue, dir->path, L"*");
-        if (!glob) {
-            continue;
-        }
-
-        FindData fd;
-        Handle h = FindFirstFileW(glob->path, &fd);
-        freepath(queue, glob);
-        if (h == (Handle)-1) {
+        PlatformDir handle;
+        if (!plt->diropen(&handle, dir->path)) {
             freepath(queue, dir);
             continue;
         }
 
-        do {
-            if (fd.name[0] == '.' || (fd.attr&0x02)) {
+        while (plt->dirnext(&handle)) {
+            if (handle.name[0] == '.') {
                 continue;
-            } else if (fd.attr&0x10) {
-                Path *nextdir = fromstr(a, queue, dir->path, fd.name);
+            } else if (handle.dir) {
+                Path *nextdir = fromstr(a, queue, dir->path, handle.name);
                 if (!nextdir) continue;
                 append(dirs, nextdir);
             } else {
-                Path *path = fromstr(a, queue, dir->path, fd.name);
+                Path *path = fromstr(a, queue, dir->path, handle.name);
                 if (!path) continue;
-                if (!push(queue, path)) {
-                    tally(path);
+                if (!push(plt, queue, path)) {
+                    tally(plt, path);
                     if (!accumulate(totals, path)) {
                         freepath(queue, path);
                     }
                 }
             }
-        } while (FindNextFileW(h, &fd));
-
+        }
         freepath(queue, dir);
-        FindClose(h);
     }
-    wait(queue);
+    wait(plt, queue);
 
     totals->totals = sort(totals->totals);
-    if (limit >= 0) {
-        totals->totals = truncate(totals->totals, limit);
+    if (cloc->limit >= 0) {
+        totals->totals = truncate(totals->totals, cloc->limit);
     }
 
     #if DEBUG
@@ -963,13 +908,13 @@ static int clocmain(int argc, Char16 **argv)
     OUTSTR(dbg, " waits, ");
     outint64(dbg, 0, queue->wakes);
     OUTSTR(dbg, " wakes\n");
-    OutputDebugStringA(msg);
+    plt->debug(msg);
     #endif
 
-    Out *stdout = newstdout(a);
+    Out *stdout = newstdout(plt, a);
 
     int extwidth = 1;
-    if (heading) {
+    if (cloc->heading) {
         int heading = OUTSTR(stdout, "extension");
         extwidth += maxlen(totals->totals, heading);
         padcolumn(stdout, extwidth-heading);
@@ -998,13 +943,278 @@ static int clocmain(int argc, Char16 **argv)
 }
 
 
-// Platform
-// TODO: move all Win32 declarations and calls below this line
+// Win32 Platform
+
+typedef Usize Handle;
+
+typedef struct {
+    Uint32 attr;
+    Uint32 create[2], access[2], write[2];
+    Uint32 size[2];
+    Uint32 reserved1[2];
+    Char16 name[Path_MAX];
+    Char16 altname[14];
+    Uint32 reserved2[2];
+} FindData;  // a.k.a. WIN32_FIND_DATAW
+
+Handle FindFirstFileW(Char16 *, FindData *)
+    __attribute__((dllimport,stdcall));
+char FindNextFileW(Handle, FindData *)
+    __attribute__((dllimport,stdcall));
+char FindClose(Handle)
+    __attribute__((dllimport,stdcall));
+
+Char16 **CommandLineToArgvW(Char16 *, int *)
+    __attribute__((stdcall,dllimport,malloc));
+Char16 *GetCommandLineW(void)
+    __attribute__((stdcall,dllimport,malloc));
+
+void ExitProcess(int)
+    __attribute__((dllimport,stdcall,noreturn));
+
+Uint32 GetFileSize(Handle, Uint32 *)
+    __attribute__((dllimport,stdcall));
+
+void *GetProcAddress(Handle, void *)
+    __attribute__((stdcall,dllimport));
+Handle LoadLibraryA(void *)
+    __attribute__((stdcall,dllimport));
+
+Handle GetStdHandle(int)
+    __attribute__((dllimport,stdcall));
+char WriteFile(Handle, void *, int, int *, void *)
+    __attribute__((dllimport,stdcall));
+
+char CloseHandle(Handle)
+    __attribute__((stdcall,dllimport));
+Handle CreateFileMappingA(Handle, void *, int, Uint32, Uint32, void *)
+    __attribute__((stdcall,dllimport));
+Handle CreateFileW(Char16 *, int, int, void *, int, int, void *)
+    __attribute__((dllimport,stdcall));
+void *MapViewOfFile(Handle, int, Uint32, Uint32, Size)
+    __attribute__((stdcall,dllimport,malloc));
+char UnmapViewOfFile(void *)
+    __attribute__((stdcall,dllimport));
+
+Handle CreateThread(void *, Size, int (__stdcall*)(void *), void *, int, int *)
+    __attribute__((dllimport,stdcall));
+void GetSystemInfo(void *)
+    __attribute__((dllimport,stdcall));
+void OutputDebugStringA(void *)
+    __attribute__((stdcall,dllimport));
+void *VirtualAlloc(void *, Size, int, int)
+    __attribute__((dllimport,stdcall,malloc));
+
+static Bool win32_write(int fd, void *buf, Size len)
+{
+    // TODO: GetConsoleMode + WriteConsole
+    // On the other hand, the only unicode text in the output is the
+    // file extension listings. How often are these non-ASCII?
+    ASSERT(len < (Size)(-1u>>1));
+    int dummy;
+    Handle h = GetStdHandle(-10 - fd);
+    return WriteFile(h, buf, len, &dummy, 0);
+}
+
+static Bool win32_map(PlatformMap *map, Char16 *path)
+{
+    map->buf = 0;
+    map->len = 0;
+
+    Handle file = CreateFileW(path, 0x80000000u, 7, 0, 3, 128, 0);
+    if (file == (Handle)-1) {
+        return 0;
+    }
+
+    Uint32 hi, lo;
+    lo = GetFileSize(file, &hi);
+    Uint64 size = (Uint64)hi<<32 | lo;
+    if (size > Size_MAX) {
+        CloseHandle(file);
+        return 0;
+    } else if (!lo) {
+        CloseHandle(file);
+        return 1;
+    }
+    Size len = size;
+
+    Handle m = CreateFileMappingA(file, 0, 2, hi, lo, 0);
+    CloseHandle(file);
+    if (!m) {
+        return 0;
+    }
+
+    Byte *buf = MapViewOfFile(m, 4, 0, 0, lo);
+    CloseHandle(m);
+    if (!buf) {
+        return 0;
+    }
+
+    map->buf = buf;
+    map->len = len;
+    return 1;
+}
+
+static void win32_unmap(PlatformMap *m)
+{
+    // NOTE: The map limit on x64 is practically unlimited, even on the
+    // largest source code directories, so don't waste time unmapping
+    // individual files. Since these are backed by real files, not the
+    // page file, leaving these mappings alive is cheap.
+    #ifndef _WIN64
+    UnmapViewOfFile(m->buf);
+    #endif
+}
+
+static Bool win32_diropen(PlatformDir *dir, Char16 *path)
+{
+    ASSERT(path[0]);
+
+    int len = 0;
+    Char16 glob[Path_MAX+2];
+    for (len = 0; path[len]; len++) {
+        ASSERT(len < Path_MAX-1);
+        glob[len] = path[len];
+    }
+    if (glob[len-1]!='/' && glob[len-1]!='\\') {
+        glob[len++] = '\\';
+    }
+    glob[len++] = '*';
+    glob[len] = 0;
+
+    FindData fd;
+    Handle h = FindFirstFileW(glob, &fd);
+    if (h == (Handle)-1) {
+        return 0;
+    }
+    Bool hidden = !!(fd.attr&0x02);
+
+    dir->handle = (void *)h;
+    for (int i = 0; i < Path_MAX; i++) {
+        dir->name[i] = fd.name[i];
+    }
+    dir->dir = !!(fd.attr&0x10);
+    dir->first = !hidden;
+    return 1;
+}
+
+static Bool win32_dirnext(PlatformDir *dir)
+{
+    if (dir->first) {
+        dir->first = 0;
+        return 1;
+    }
+
+    FindData fd;
+    while (FindNextFileW((Handle)dir->handle, &fd)) {
+        Bool hidden = !!(fd.attr&0x02);
+        if (!hidden) {
+            dir->dir = !!(fd.attr&0x10);
+            for (int i = 0; i < Path_MAX; i++) {
+                dir->name[i] = fd.name[i];
+            }
+            return 1;
+        }
+    }
+
+    FindClose((Handle)dir->handle);
+    return 0;
+}
+
+static Int32 (*win32_RtlWaitOnAddress)(void *, void *, Size, void *)
+    __attribute__((stdcall));
+static Int32 (*win32_RtlWakeAddressSingle)(void *)
+    __attribute__((stdcall));
+static Int32 (*win32_RtlWakeAddressAll)(void *)
+    __attribute__((stdcall));
+
+static void win32_wait(unsigned *addr, unsigned current)
+{
+    if (win32_RtlWaitOnAddress) {
+        win32_RtlWaitOnAddress(addr, &current, sizeof(*addr), 0);
+    } else {
+        PAUSE;
+    }
+}
+
+static void win32_wake(unsigned *addr)
+{
+    if (win32_RtlWakeAddressSingle) {
+        win32_RtlWakeAddressSingle(addr);
+    }
+}
+
+static void win32_wakeall(unsigned *addr)
+{
+    if (win32_RtlWakeAddressAll) {
+        win32_RtlWakeAddressAll(addr);
+    }
+}
+
+static void win32_debug(Byte *msg)
+{
+    OutputDebugStringA(msg);
+}
+
+static int numcores(void)
+{
+    struct {
+        int a, b;
+        void *c, *d, *e;
+        int f, g, h, i;
+    } tmp;
+    GetSystemInfo(&tmp);
+    ASSERT(tmp.f > 0);
+    return tmp.f;
+}
+
+__attribute__((stdcall))
+static int win32_thread(void *context)
+{
+    clocthread(context);
+    return 0;
+}
 
 __attribute__((externally_visible))
 void mainCRTStartup(void)
 {
+    // NOTE: Manually load the futex API. It's only available in more
+    // recent Windows releases, plus it's nicer not directly link with
+    // ntdll.dll. Everything still works correctly with the "fake" no-op
+    // implementations, just a bit less efficiently.
+    Handle ntdll = LoadLibraryA("ntdll.dll");
+    if (ntdll) {
+        win32_RtlWaitOnAddress =
+            GetProcAddress(ntdll, "RtlWaitOnAddress");
+        win32_RtlWakeAddressSingle =
+            GetProcAddress(ntdll, "RtlWakeAddressSingle");
+        win32_RtlWakeAddressAll =
+            GetProcAddress(ntdll, "RtlWakeAddressAll");
+    }
+
+    Platform plt = {0};
+    plt.heapsize = (Size)1 << 28;
+    plt.heap = VirtualAlloc(0, plt.heapsize, 0x3000, 4);
+    plt.write = win32_write;
+    plt.map = win32_map;
+    plt.unmap = win32_unmap;
+    plt.diropen = win32_diropen;
+    plt.dirnext = win32_dirnext;
+    plt.wait = win32_wait;
+    plt.wake = win32_wake;
+    plt.wakeall = win32_wakeall;
+    plt.debug = win32_debug;
+
     int argc;
     Char16 **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    ExitProcess(clocmain(argc, argv));
+    void *context = clocinit(&plt, argc, argv);
+    if (!context) {
+        ExitProcess(2);
+    }
+
+    int numproc = (numcores() + 1) / 2;
+    for (int i = 0; i < numproc; i++) {
+        CloseHandle(CreateThread(0, 0, win32_thread, context, 0, 0));
+    }
+    ExitProcess(clocmain(context));
 }
