@@ -715,7 +715,8 @@ typedef struct {
 
 static int wgetopt(GetOpt *x, int argc, Char16 **argv, char *optstring)
 {
-    Char16 *arg = argv[!x->optind ? (x->optind += !!argc) : x->optind];
+    x->optind += !x->optind;
+    Char16 *arg = x->optind<argc ? argv[x->optind] : 0;
     if (arg && arg[0] == '-' && arg[1] == '-' && !arg[2]) {
         x->optind++;
         return -1;
