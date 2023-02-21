@@ -1,20 +1,20 @@
 // cloc: Count Lines of Code
 //   $ gcc -nostartfiles -o cloc.exe cloc.c
 //   $ cloc -qn10 src/ lib/
-// TODO: abstract "Char16" paths into opaque objects, or UTF-8
+// TODO: abstract "C16" paths into opaque objects, or UTF-8
 // TODO: then write a Linux platform layer
 // This is free and unencumbered software released into the public domain.
 
 
 // Basic definitions
 
-typedef int Bool;
-typedef unsigned char Byte;
-typedef __UINT16_TYPE__ Char16;
-typedef __INT32_TYPE__ Int32;
-typedef __UINT32_TYPE__ Uint32;
-typedef __INT64_TYPE__ Int64;
-typedef __UINT64_TYPE__ Uint64;
+typedef __UINT8_TYPE__ U8;
+typedef __UINT16_TYPE__ C16;
+typedef __INT32_TYPE__ I32;
+typedef __UINT32_TYPE__ U32;
+typedef __INT64_TYPE__ I64;
+typedef __UINT64_TYPE__ U64;
+typedef I32 B32;
 typedef __PTRDIFF_TYPE__ Size;
 typedef __SIZE_TYPE__ Usize;
 #define Size_MAX (Size)((Usize)-1 >> 1)
@@ -37,15 +37,15 @@ typedef __SIZE_TYPE__ Usize;
 #define Path_MAX 260
 
 typedef struct {
-    Byte *buf;
+    U8 *buf;
     Size len;
 } PlatformMap;
 
 typedef struct {
     void *handle;
-    Char16 name[Path_MAX];
-    Bool dir;
-    Bool first;
+    C16 name[Path_MAX];
+    B32 dir;
+    B32 first;
 } PlatformDir;
 
 typedef struct {
@@ -54,23 +54,23 @@ typedef struct {
     Size heapsize;
 
     // Write to standard output (1) or error (2)
-    Bool (*write)(int, void *, Size);
+    B32 (*write)(I32, void *, Size);
 
     // File loading
-    Bool (*map)(PlatformMap *, Char16 *);
+    B32 (*map)(PlatformMap *, C16 *);
     void (*unmap)(PlatformMap *);
 
     // Directory listing
-    Bool (*diropen)(PlatformDir *, Char16 *);
-    Bool (*dirnext)(PlatformDir *);
+    B32 (*diropen)(PlatformDir *, C16 *);
+    B32 (*dirnext)(PlatformDir *);
 
     // Futex (optional: may be no-op)
-    void (*wait)(unsigned *, unsigned);
-    void (*wake)(unsigned *);
-    void (*wakeall)(unsigned *);
+    void (*wait)(U32 *, U32);
+    void (*wake)(U32 *);
+    void (*wakeall)(U32 *);
 
     // Debug log (null-terminated, may be no-op)
-    void (*debug)(Byte *);
+    void (*debug)(U8 *);
 } Platform;
 
 
@@ -80,7 +80,7 @@ typedef struct {
 // null pointer if initialization fails. Otherwise the platform will
 // spin up an appropriate number of threads, possibly zero, passing this
 // context pointer to each thread.
-static void *clocinit(Platform *, int argc, Char16 **argv);
+static void *clocinit(Platform *, I32 argc, C16 **argv);
 
 // Worker thread entry point. The platform passes the non-null pointer
 // returned by clocinit().
@@ -88,7 +88,7 @@ static void clocthread(void *context);
 
 // Main application entry point, passed the non-null pointer returned by
 // the clocinit(). The return value is the exit status.
-static int clocmain(void *context);
+static I32 clocmain(void *context);
 
 
 // Application
@@ -97,13 +97,13 @@ static int clocmain(void *context);
 #define NEW(a, t) (t *)alloc(a, SIZEOF(t))
 #define ARRAY(a, t, n) (t *)alloc(a, SIZEOF(t)*(n))
 #define SAVEPOINT(a) __builtin_setjmp((a)->jmp)
-#define OUTSTR(o, s) outbytes(o, (Byte *)s, SIZEOF(s)-1)
+#define OUTSTR(o, s) outbytes(o, (U8 *)s, SIZEOF(s)-1)
 #define ZERO(x) zero(x, SIZEOF(*x))
 
 __attribute__((optimize("no-tree-loop-distribute-patterns")))
 static void zero(void *p, Size size)
 {
-    Byte *b = p;
+    U8 *b = p;
     for (Size i = 0; i < size; i++) {
         b[i] = 0;
     }
@@ -133,22 +133,22 @@ static void *alloc(Arena *a, Size size)
     if (avail < size) {
         __builtin_longjmp(a->jmp, 1);
     }
-    Byte *p = (Byte *)a + a->off;
+    U8 *p = (U8 *)a + a->off;
     zero(p, size);
     a->off += size;
     return p;
 }
 
 typedef struct {
-    int tickets;
-    int current;
+    I32 tickets;
+    I32 current;
 } Mutex;
 
 static void lock(Mutex *m)
 {
-    int ticket = __atomic_fetch_add(&m->tickets, 1, __ATOMIC_RELAXED);
+    I32 ticket = __atomic_fetch_add(&m->tickets, 1, __ATOMIC_RELAXED);
     for (;;) {
-        int current = __atomic_load_n(&m->current, __ATOMIC_ACQUIRE);
+        I32 current = __atomic_load_n(&m->current, __ATOMIC_ACQUIRE);
         if (ticket == current) {
             break;
         }
@@ -163,20 +163,20 @@ static void unlock(Mutex *m)
 
 typedef struct Path {
     struct Path *next;
-    Int64 files;
-    Int64 lines;
-    Int64 blanks;
-    Char16 path[Path_MAX];
+    I64 files;
+    I64 lines;
+    I64 blanks;
+    C16 path[Path_MAX];
 } Path;
 
-static int pathcmp(Path *x, Path *y)
+static I32 pathcmp(Path *x, Path *y)
 {
     if (x->lines != y->lines) {
         return x->lines > y->lines ? -1 : +1;
     } else if (x->files != y->files) {
         return x->files > y->files ? -1 : +1;
     } else {
-        for (int i = 0;; i++) {
+        for (I32 i = 0;; i++) {
             if (x->path[i] != y->path[i]) {
                 return x->path[i]<y->path[i] ? -1 : +1;
             }
@@ -187,14 +187,14 @@ static int pathcmp(Path *x, Path *y)
     __builtin_unreachable();
 }
 
-static int pathlen(Path *p)
+static I32 pathlen(Path *p)
 {
-    int len = 0;
+    I32 len = 0;
     for (; p->path[len]; len++) {}
     return len;
 }
 
-static Bool tally(Platform *plt, Path *path)
+static B32 tally(Platform *plt, Path *path)
 {
     PlatformMap map;
     if (!plt->map(&map, path->path)) {
@@ -202,7 +202,7 @@ static Bool tally(Platform *plt, Path *path)
     }
 
     // Truncate path to just its extension
-    int ext = 0;
+    I32 ext = 0;
     for (; path->path[ext]; ext++) {}
     for (; ext; ext--) {
         switch (path->path[ext-1]) {
@@ -214,14 +214,14 @@ static Bool tally(Platform *plt, Path *path)
         break;
     }
     if (ext) {
-        for (int i = 0; path->path[i]; i++) {
+        for (I32 i = 0; path->path[i]; i++) {
             path->path[i] = path->path[ext+i];
         }
     } else {
         path->path[0] = 0;
     }
 
-    Bool blank = 1;
+    B32 blank = 1;
     Size line = 0;
     for (Size i = 0; i < map.len; i++) {
         switch (map.buf[i]) {
@@ -254,7 +254,7 @@ typedef struct {
     Mutex lock;
 } Totals;
 
-static Bool match(Char16 *a, Char16 *b)
+static B32 match(C16 *a, C16 *b)
 {
     while (*a && *b) {
         if (*a++ != *b++) {
@@ -264,7 +264,7 @@ static Bool match(Char16 *a, Char16 *b)
     return *a == *b;
 }
 
-static Bool accumulate(Totals *totals, Path *path)
+static B32 accumulate(Totals *totals, Path *path)
 {
     if (!path->files) {
         return 0;
@@ -293,16 +293,16 @@ typedef struct {
     #if DEBUG
     Size wakes, waits;
     #endif
-    unsigned mask;
-    unsigned head;
-    unsigned tail;
-    unsigned completed;
+    U32 mask;
+    U32 head;
+    U32 tail;
+    U32 completed;
     Mutex slotlock;
     Mutex freelock;
-    Bool shutdown;
+    B32 shutdown;
 } WorkQueue;
 
-static WorkQueue *newqueue(Arena *a, int exp, Totals *totals)
+static WorkQueue *newqueue(Arena *a, I32 exp, Totals *totals)
 {
     WorkQueue *q = NEW(a, WorkQueue);
     Size len = (Size)1 << exp;
@@ -338,9 +338,9 @@ static void freepath(WorkQueue *q, Path *path)
 
 static Path *pop(Platform *plt, WorkQueue *q)
 {
-    for (int tries = 0;; tries++) {
+    for (I32 tries = 0;; tries++) {
         lock(&q->slotlock);
-        unsigned head = q->head;
+        U32 head = q->head;
         if (q->head != q->tail) {
             Path *path = q->slots[q->tail++ & q->mask];
             unlock(&q->slotlock);
@@ -364,16 +364,16 @@ static Path *pop(Platform *plt, WorkQueue *q)
     }
 }
 
-static Bool push(Platform *plt, WorkQueue *q, Path *path)
+static B32 push(Platform *plt, WorkQueue *q, Path *path)
 {
     lock(&q->slotlock);
-    unsigned nexthead = (q->head + 1) & q->mask;
-    unsigned masktail = q->tail & q->mask;
+    U32 nexthead = (q->head + 1) & q->mask;
+    U32 masktail = q->tail & q->mask;
     if (nexthead == masktail) {
         unlock(&q->slotlock);
         return 0;  // no room
     }
-    Bool wake = q->head == q->tail;
+    B32 wake = q->head == q->tail;
     q->slots[q->head++ & q->mask] = path;
     unlock(&q->slotlock);
     if (wake) {
@@ -389,7 +389,7 @@ static void complete(Platform *plt, WorkQueue *q)
 {
     __atomic_add_fetch(&q->completed, 1, __ATOMIC_SEQ_CST);
     lock(&q->slotlock);
-    Bool wake = q->completed == q->head;
+    B32 wake = q->completed == q->head;
     unlock(&q->slotlock);
     if (wake) {
         #if DEBUG
@@ -402,7 +402,7 @@ static void complete(Platform *plt, WorkQueue *q)
 static void wait(Platform *plt, WorkQueue *q)
 {
     // NOTE: q->head is not stored concurrently, so locking is unnecessary
-    unsigned target = q->head;
+    U32 target = q->head;
 
     // If threads cannot wait, request termination.
     __atomic_store_n(&q->shutdown, 1, __ATOMIC_RELAXED);
@@ -422,7 +422,7 @@ static void wait(Platform *plt, WorkQueue *q)
 
     // Wait for completion
     for (;;) {
-        unsigned got = __atomic_load_n(&q->completed, __ATOMIC_SEQ_CST);
+        U32 got = __atomic_load_n(&q->completed, __ATOMIC_SEQ_CST);
         if (got == target) {
             return;
         }
@@ -461,19 +461,19 @@ static Path *unshift(Dirs *dirs)
 }
 
 typedef struct {
-    Byte *buf;
+    U8 *buf;
     Size len;
     Size cap;
     Platform *plt;
-    int fd;
-    Bool error;
+    I32 fd;
+    B32 error;
 } Out;
 
-static Out *newout(Platform *plt, Arena *a, Size cap, int fd)
+static Out *newout(Platform *plt, Arena *a, Size cap, I32 fd)
 {
     Out *out = NEW(a, Out);
     out->cap = cap;
-    out->buf = ARRAY(a, Byte, out->cap);
+    out->buf = ARRAY(a, U8, out->cap);
     out->plt = plt;
     out->fd = fd;
     return out;
@@ -489,7 +489,7 @@ static Out *newstderr(Platform *plt, Arena *a)
     return newout(plt, a, 1<<7, 2);
 }
 
-static Out *newmemout(Arena *a, Byte *buf, Size len)
+static Out *newmemout(Arena *a, U8 *buf, Size len)
 {
     Out *out = NEW(a, Out);
     out->buf = buf;
@@ -510,15 +510,15 @@ static void flush(Out *out)
     }
 }
 
-static Size outbytes(Out *out, Byte *b, Size len)
+static Size outbytes(Out *out, U8 *b, Size len)
 {
-    Byte *end = b + len;
+    U8 *end = b + len;
     while (!out->error && b<end) {
-        int avail = out->cap - out->len;
+        Size avail = out->cap - out->len;
         Size left = end - b;
-        int amount = avail<left ? avail : left;
+        Size amount = avail<left ? avail : left;
 
-        for (int i = 0; i < amount; i++) {
+        for (Size i = 0; i < amount; i++) {
             out->buf[out->len+i] = b[i];
         }
         b += amount;
@@ -531,19 +531,19 @@ static Size outbytes(Out *out, Byte *b, Size len)
     return len;
 }
 
-static Size outbyte(Out *out, Byte b)
+static Size outbyte(Out *out, U8 b)
 {
     outbytes(out, &b, 1);
     return 1;
 }
 
-static Size outint64(Out *out, int width, Int64 x)
+static Size outint64(Out *out, I32 width, I64 x)
 {
-    Byte tmp[32];
+    U8 tmp[32];
     ASSERT(width <= SIZEOF(tmp));
-    Byte *end = tmp + SIZEOF(tmp);
-    Byte *p = end;
-    Int64 t = x>0 ? -x : x;
+    U8 *end = tmp + SIZEOF(tmp);
+    U8 *p = end;
+    I64 t = x>0 ? -x : x;
     do {
         *--p = '0' - t%10;
     } while (t /= 10);
@@ -557,11 +557,11 @@ static Size outint64(Out *out, int width, Int64 x)
     return end - p;
 }
 
-static Size outwstr(Out *out, Char16 *s)
+static Size outwstr(Out *out, C16 *s)
 {
     Size len = 0;
     while (s[len]) {
-        Char16 c = s[len++];
+        C16 c = s[len++];
         if (c < 0x80) {
             outbyte(out, c);
         } else if (c < 0x800) {
@@ -584,8 +584,8 @@ typedef struct {
     WorkQueue *queue;
     Dirs *dirs;
     Size limit;
-    Bool heading;
-    Bool fastquit;
+    B32 heading;
+    B32 fastquit;
 } Cloc;
 
 static void clocthread(void *context)
@@ -609,9 +609,9 @@ static void clocthread(void *context)
     }
 }
 
-static Path *fromstr(Arena *a, WorkQueue *q, Char16 *dir, Char16 *name)
+static Path *fromstr(Arena *a, WorkQueue *q, C16 *dir, C16 *name)
 {
-    int i = 0;
+    I32 i = 0;
     Path *p = newpath(a, q);
     while (i < SIZEOF(p->path)-2 && *dir) {
         p->path[i++] = *dir++;
@@ -692,31 +692,31 @@ static Path *truncate(Path *list, Size newlen)
     return list;
 }
 
-static int maxlen(Path *list, int max)
+static I32 maxlen(Path *list, I32 max)
 {
     for (Path *p = list; p; p = p->next) {
-        int len = pathlen(p);
+        I32 len = pathlen(p);
         max = len>max ? len : max;
     }
     return max;
 }
 
-static void padcolumn(Out *out, int width)
+static void padcolumn(Out *out, I32 width)
 {
-    for (int i = 0; i < width; i++) {
+    for (I32 i = 0; i < width; i++) {
         outbyte(out, ' ');
     }
 }
 
 typedef struct {
-    Char16 *optarg;
-    int optind, optopt, optpos;
+    C16 *optarg;
+    I32 optind, optopt, optpos;
 } GetOpt;
 
-static int wgetopt(GetOpt *x, int argc, Char16 **argv, char *optstring)
+static I32 wgetopt(GetOpt *x, I32 argc, C16 **argv, char *optstring)
 {
     x->optind += !x->optind;
-    Char16 *arg = x->optind<argc ? argv[x->optind] : 0;
+    C16 *arg = x->optind<argc ? argv[x->optind] : 0;
     if (arg && arg[0] == '-' && arg[1] == '-' && !arg[2]) {
         x->optind++;
         return -1;
@@ -755,7 +755,7 @@ static int wgetopt(GetOpt *x, int argc, Char16 **argv, char *optstring)
     }
 }
 
-static Bool usage(Out *out)
+static B32 usage(Out *out)
 {
     OUTSTR(out, "usage: cloc [-hq] [-n INT] [DIR]...\n");
     OUTSTR(out, "  -h      print this help message\n");
@@ -765,12 +765,12 @@ static Bool usage(Out *out)
     return out->error;
 }
 
-static Size parsesize(Char16 *s)
+static Size parsesize(C16 *s)
 {
     Size len = 0;
     Size size = 0;
     for (; s[len]; len++) {
-        Char16 v = s[len] - '0';
+        C16 v = s[len] - '0';
         if (v > 9) {
             return -1;
         }
@@ -784,7 +784,7 @@ static Size parsesize(Char16 *s)
     return len ? size : -1;
 }
 
-static void *clocinit(Platform *plt, int argc, Char16 **argv)
+static void *clocinit(Platform *plt, I32 argc, C16 **argv)
 {
     Arena *a = placearena(plt->heap, plt->heapsize);
     Out *stderr = newstderr(plt, a);  // pre-allocate in case of OOM
@@ -806,7 +806,7 @@ static void *clocinit(Platform *plt, int argc, Char16 **argv)
     cloc->heading = 1;
     cloc->fastquit = 0;
 
-    for (int option; (option = wgetopt(wgo, argc, argv, "hn:q")) != -1;) {
+    for (I32 option; (option = wgetopt(wgo, argc, argv, "hn:q")) != -1;) {
         switch (option) {
         case 'h':
             cloc->fastquit = 1;
@@ -833,7 +833,7 @@ static void *clocinit(Platform *plt, int argc, Char16 **argv)
     if (wgo->optind == argc) {
         append(cloc->dirs, fromstr(a, cloc->queue, L".", L""));
     } else {
-        for (int i = wgo->optind; i < argc; i++) {
+        for (I32 i = wgo->optind; i < argc; i++) {
             append(cloc->dirs, fromstr(a, cloc->queue, argv[i], L""));
         }
     }
@@ -841,7 +841,7 @@ static void *clocinit(Platform *plt, int argc, Char16 **argv)
     return cloc;
 }
 
-static int clocmain(void *context)
+static I32 clocmain(void *context)
 {
     Cloc *cloc = context;
     Platform *plt = cloc->plt;
@@ -900,7 +900,7 @@ static int clocmain(void *context)
     // means less wait/wake but more memory use. The goal is to make the
     // queue just large enough that wait/wake is very low, but no larger
     // since that quickly ramps up memory use (more live Path objects).
-    Byte msg[128];
+    U8 msg[128];
     ZERO(&msg);
     Out *dbg = newmemout(a, msg, SIZEOF(msg)-1);
     outint64(dbg, 0, a->off >> 10);
@@ -914,9 +914,9 @@ static int clocmain(void *context)
 
     Out *stdout = newstdout(plt, a);
 
-    int extwidth = 1;
+    I32 extwidth = 1;
     if (cloc->heading) {
-        int heading = OUTSTR(stdout, "extension");
+        I32 heading = OUTSTR(stdout, "extension");
         extwidth += maxlen(totals->totals, heading);
         padcolumn(stdout, extwidth-heading);
         OUTSTR(stdout, "   files    blanks     lines\n");
@@ -949,31 +949,31 @@ static int clocmain(void *context)
 typedef Usize Handle;
 
 typedef struct {
-    Uint32 attr;
-    Uint32 create[2], access[2], write[2];
-    Uint32 size[2];
-    Uint32 reserved1[2];
-    Char16 name[Path_MAX];
-    Char16 altname[14];
-    Uint32 reserved2[2];
+    U32 attr;
+    U32 create[2], access[2], write[2];
+    U32 size[2];
+    U32 reserved1[2];
+    C16 name[Path_MAX];
+    C16 altname[14];
+    U32 reserved2[2];
 } FindData;  // a.k.a. WIN32_FIND_DATAW
 
-Handle FindFirstFileW(Char16 *, FindData *)
+Handle FindFirstFileW(C16 *, FindData *)
     __attribute__((dllimport,stdcall));
-char FindNextFileW(Handle, FindData *)
+I32 FindNextFileW(Handle, FindData *)
     __attribute__((dllimport,stdcall));
-char FindClose(Handle)
+I32 FindClose(Handle)
     __attribute__((dllimport,stdcall));
 
-Char16 **CommandLineToArgvW(Char16 *, int *)
+C16 **CommandLineToArgvW(C16 *, I32 *)
     __attribute__((stdcall,dllimport,malloc));
-Char16 *GetCommandLineW(void)
+C16 *GetCommandLineW(void)
     __attribute__((stdcall,dllimport,malloc));
 
-void ExitProcess(int)
+void ExitProcess(U32)
     __attribute__((dllimport,stdcall,noreturn));
 
-Uint32 GetFileSize(Handle, Uint32 *)
+U32 GetFileSize(Handle, U32 *)
     __attribute__((dllimport,stdcall));
 
 void *GetProcAddress(Handle, void *)
@@ -981,43 +981,43 @@ void *GetProcAddress(Handle, void *)
 Handle LoadLibraryA(void *)
     __attribute__((stdcall,dllimport));
 
-Handle GetStdHandle(int)
+Handle GetStdHandle(I32)
     __attribute__((dllimport,stdcall));
-char WriteFile(Handle, void *, int, int *, void *)
+I32 WriteFile(Handle, void *, U32, U32 *, void *)
     __attribute__((dllimport,stdcall));
 
-char CloseHandle(Handle)
+I32 CloseHandle(Handle)
     __attribute__((stdcall,dllimport));
-Handle CreateFileMappingA(Handle, void *, int, Uint32, Uint32, void *)
+Handle CreateFileMappingA(Handle, void *, U32, U32, U32, void *)
     __attribute__((stdcall,dllimport));
-Handle CreateFileW(Char16 *, int, int, void *, int, int, void *)
+Handle CreateFileW(C16 *, U32, U32, void *, U32, U32, void *)
     __attribute__((dllimport,stdcall));
-void *MapViewOfFile(Handle, int, Uint32, Uint32, Size)
+void *MapViewOfFile(Handle, U32, U32, U32, Size)
     __attribute__((stdcall,dllimport,malloc));
-char UnmapViewOfFile(void *)
+I32 UnmapViewOfFile(void *)
     __attribute__((stdcall,dllimport));
 
-Handle CreateThread(void *, Size, int (__stdcall*)(void *), void *, int, int *)
+Handle CreateThread(void *, Size, U32 (__stdcall*)(void *), void *, U32, U32 *)
     __attribute__((dllimport,stdcall));
 void GetSystemInfo(void *)
     __attribute__((dllimport,stdcall));
 void OutputDebugStringA(void *)
     __attribute__((stdcall,dllimport));
-void *VirtualAlloc(void *, Size, int, int)
+void *VirtualAlloc(void *, Size, U32, U32)
     __attribute__((dllimport,stdcall,malloc));
 
-static Bool win32_write(int fd, void *buf, Size len)
+static B32 win32_write(I32 fd, void *buf, Size len)
 {
     // TODO: GetConsoleMode + WriteConsole
     // On the other hand, the only unicode text in the output is the
     // file extension listings. How often are these non-ASCII?
     ASSERT(len < (Size)(-1u>>1));
-    int dummy;
+    U32 dummy;
     Handle h = GetStdHandle(-10 - fd);
     return WriteFile(h, buf, len, &dummy, 0);
 }
 
-static Bool win32_map(PlatformMap *map, Char16 *path)
+static B32 win32_map(PlatformMap *map, C16 *path)
 {
     map->buf = 0;
     map->len = 0;
@@ -1027,9 +1027,9 @@ static Bool win32_map(PlatformMap *map, Char16 *path)
         return 0;
     }
 
-    Uint32 hi, lo;
+    U32 hi, lo;
     lo = GetFileSize(file, &hi);
-    Uint64 size = (Uint64)hi<<32 | lo;
+    U64 size = (U64)hi<<32 | lo;
     if (size > Size_MAX) {
         CloseHandle(file);
         return 0;
@@ -1045,7 +1045,7 @@ static Bool win32_map(PlatformMap *map, Char16 *path)
         return 0;
     }
 
-    Byte *buf = MapViewOfFile(m, 4, 0, 0, lo);
+    U8 *buf = MapViewOfFile(m, 4, 0, 0, lo);
     CloseHandle(m);
     if (!buf) {
         return 0;
@@ -1067,12 +1067,12 @@ static void win32_unmap(PlatformMap *m)
     #endif
 }
 
-static Bool win32_diropen(PlatformDir *dir, Char16 *path)
+static B32 win32_diropen(PlatformDir *dir, C16 *path)
 {
     ASSERT(path[0]);
 
-    int len = 0;
-    Char16 glob[Path_MAX+2];
+    I32 len = 0;
+    C16 glob[Path_MAX+2];
     for (len = 0; path[len]; len++) {
         ASSERT(len < Path_MAX-1);
         glob[len] = path[len];
@@ -1088,10 +1088,10 @@ static Bool win32_diropen(PlatformDir *dir, Char16 *path)
     if (h == (Handle)-1) {
         return 0;
     }
-    Bool hidden = !!(fd.attr&0x02);
+    B32 hidden = !!(fd.attr&0x02);
 
     dir->handle = (void *)h;
-    for (int i = 0; i < Path_MAX; i++) {
+    for (I32 i = 0; i < Path_MAX; i++) {
         dir->name[i] = fd.name[i];
     }
     dir->dir = !!(fd.attr&0x10);
@@ -1099,7 +1099,7 @@ static Bool win32_diropen(PlatformDir *dir, Char16 *path)
     return 1;
 }
 
-static Bool win32_dirnext(PlatformDir *dir)
+static B32 win32_dirnext(PlatformDir *dir)
 {
     if (dir->first) {
         dir->first = 0;
@@ -1108,10 +1108,10 @@ static Bool win32_dirnext(PlatformDir *dir)
 
     FindData fd;
     while (FindNextFileW((Handle)dir->handle, &fd)) {
-        Bool hidden = !!(fd.attr&0x02);
+        B32 hidden = !!(fd.attr&0x02);
         if (!hidden) {
             dir->dir = !!(fd.attr&0x10);
-            for (int i = 0; i < Path_MAX; i++) {
+            for (I32 i = 0; i < Path_MAX; i++) {
                 dir->name[i] = fd.name[i];
             }
             return 1;
@@ -1122,14 +1122,14 @@ static Bool win32_dirnext(PlatformDir *dir)
     return 0;
 }
 
-static Int32 (*win32_RtlWaitOnAddress)(void *, void *, Size, void *)
+static I32 (*win32_RtlWaitOnAddress)(void *, void *, Size, void *)
     __attribute__((stdcall));
-static Int32 (*win32_RtlWakeAddressSingle)(void *)
+static I32 (*win32_RtlWakeAddressSingle)(void *)
     __attribute__((stdcall));
-static Int32 (*win32_RtlWakeAddressAll)(void *)
+static I32 (*win32_RtlWakeAddressAll)(void *)
     __attribute__((stdcall));
 
-static void win32_wait(unsigned *addr, unsigned current)
+static void win32_wait(U32 *addr, U32 current)
 {
     if (win32_RtlWaitOnAddress) {
         win32_RtlWaitOnAddress(addr, &current, sizeof(*addr), 0);
@@ -1138,31 +1138,31 @@ static void win32_wait(unsigned *addr, unsigned current)
     }
 }
 
-static void win32_wake(unsigned *addr)
+static void win32_wake(U32 *addr)
 {
     if (win32_RtlWakeAddressSingle) {
         win32_RtlWakeAddressSingle(addr);
     }
 }
 
-static void win32_wakeall(unsigned *addr)
+static void win32_wakeall(U32 *addr)
 {
     if (win32_RtlWakeAddressAll) {
         win32_RtlWakeAddressAll(addr);
     }
 }
 
-static void win32_debug(Byte *msg)
+static void win32_debug(U8 *msg)
 {
     OutputDebugStringA(msg);
 }
 
-static int numcores(void)
+static I32 numcores(void)
 {
     struct {
-        int a, b;
+        I32 a, b;
         void *c, *d, *e;
-        int f, g, h, i;
+        I32 f, g, h, i;
     } tmp;
     GetSystemInfo(&tmp);
     ASSERT(tmp.f > 0);
@@ -1170,7 +1170,7 @@ static int numcores(void)
 }
 
 __attribute__((stdcall))
-static int win32_thread(void *context)
+static U32 win32_thread(void *context)
 {
     clocthread(context);
     return 0;
@@ -1206,15 +1206,15 @@ void mainCRTStartup(void)
     plt.wakeall = win32_wakeall;
     plt.debug = win32_debug;
 
-    int argc;
-    Char16 **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    I32 argc;
+    C16 **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     void *context = clocinit(&plt, argc, argv);
     if (!context) {
         ExitProcess(2);
     }
 
-    int numproc = (numcores() + 1) / 2;
-    for (int i = 0; i < numproc; i++) {
+    I32 numproc = (numcores() + 1) / 2;
+    for (I32 i = 0; i < numproc; i++) {
         CloseHandle(CreateThread(0, 0, win32_thread, context, 0, 0));
     }
     ExitProcess(clocmain(context));
