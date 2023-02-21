@@ -737,7 +737,7 @@ static int wgetopt(GetOpt *x, int argc, Char16 **argv, char *optstring)
                 x->optind++;
                 x->optpos = 0;
                 return x->optopt;
-            } else if (argv[x->optind+1]) {
+            } else if (x->optind+1 < argc) {
                 x->optarg = argv[x->optind+1];
                 x->optind += 2;
                 x->optpos = 0;
