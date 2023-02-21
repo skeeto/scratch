@@ -1058,13 +1058,7 @@ static B32 win32_map(PlatformMap *map, C16 *path)
 
 static void win32_unmap(PlatformMap *m)
 {
-    // NOTE: The map limit on x64 is practically unlimited, even on the
-    // largest source code directories, so don't waste time unmapping
-    // individual files. Since these are backed by real files, not the
-    // page file, leaving these mappings alive is cheap.
-    #ifndef _WIN64
     UnmapViewOfFile(m->buf);
-    #endif
 }
 
 static B32 win32_diropen(PlatformDir *dir, C16 *path)
