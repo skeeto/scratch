@@ -122,6 +122,7 @@ static Arena *placearena(void *mem, Size size)
     ZERO(a);
     a->cap = size;
     a->off = SIZEOF(Arena);
+    a->off += -a->off & 7;
     return a;
 }
 
@@ -129,6 +130,7 @@ __attribute__((malloc,alloc_size(2)))
 static void *alloc(Arena *a, Size size)
 {
     ASSERT(size >= 0);
+    size += -size & 7;
     Size avail = a->cap - a->off;
     if (avail < size) {
         __builtin_longjmp(a->jmp, 1);
@@ -1198,14 +1200,14 @@ static I32 numcores(void)
     return tmp.f;
 }
 
-__attribute__((stdcall))
+__attribute__((stdcall,force_align_arg_pointer))
 static U32 win32_thread(void *context)
 {
     clocthread(context);
     return 0;
 }
 
-__attribute__((externally_visible))
+__attribute__((externally_visible,force_align_arg_pointer))
 void mainCRTStartup(void)
 {
     // NOTE: Manually load the futex API. It's only available in more
