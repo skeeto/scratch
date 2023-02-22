@@ -537,19 +537,54 @@ static Size outbyte(Out *out, U8 b)
     return 1;
 }
 
-static Size outint64(Out *out, I32 width, I64 x)
+static Size outsize(Out *out, I32 width, Size x)
 {
     U8 tmp[32];
     ASSERT(width <= SIZEOF(tmp));
     U8 *end = tmp + SIZEOF(tmp);
     U8 *p = end;
-    I64 t = x>0 ? -x : x;
+    Size t = x>0 ? -x : x;
     do {
         *--p = '0' - t%10;
     } while (t /= 10);
     if (x < 0) {
         *--p = '-';
     }
+    while (end-p < width) {
+        *--p = ' ';
+    }
+    outbytes(out, p, end-p);
+    return end - p;
+}
+
+static U32 divmod64by32(U64 *num, U32 den)
+{
+    #if __i686__
+    // Avoid libgcc __udivmoddi4 by using x86 div instruction
+    U32 mod;
+    U32 lo = *num;
+    U32 hi = *num >> 32;
+    __asm("divl %4"
+          : "=d"(mod), "=a"(lo)
+          : "0"(hi%den), "1"(lo), "rm"(den));
+    *num = (U64)(hi/den)<<32 | lo;
+    return mod;
+    #else
+    U32 mod = *num % den;
+    *num /= den;
+    return mod;
+    #endif
+}
+
+static Size outu64(Out *out, I32 width, U64 x)
+{
+    U8 tmp[32];
+    ASSERT(width <= SIZEOF(tmp));
+    U8 *end = tmp + SIZEOF(tmp);
+    U8 *p = end;
+    do {
+        *--p = '0' + divmod64by32(&x, 10);
+    } while (x);
     while (end-p < width) {
         *--p = ' ';
     }
@@ -903,11 +938,11 @@ static I32 clocmain(void *context)
     U8 msg[128];
     ZERO(&msg);
     Out *dbg = newmemout(a, msg, SIZEOF(msg)-1);
-    outint64(dbg, 0, a->off >> 10);
+    outsize(dbg, 0, a->off >> 10);
     OUTSTR(dbg, "KiB, ");
-    outint64(dbg, 0, queue->waits);
+    outsize(dbg, 0, queue->waits);
     OUTSTR(dbg, " waits, ");
-    outint64(dbg, 0, queue->wakes);
+    outsize(dbg, 0, queue->wakes);
     OUTSTR(dbg, " wakes\n");
     plt->debug(msg);
     #endif
@@ -934,9 +969,9 @@ static I32 clocmain(void *context)
         }
         padcolumn(stdout, width);
 
-        outint64(stdout, 8, t->files);
-        outint64(stdout, 10, t->blanks);
-        outint64(stdout, 10, t->lines);
+        outu64(stdout, 8, t->files);
+        outu64(stdout, 10, t->blanks);
+        outu64(stdout, 10, t->lines);
         outbyte(stdout, '\n');
     }
     flush(stdout);
