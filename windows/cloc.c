@@ -985,8 +985,10 @@ static I32 clocmain(Cloc *context)
 
 // Win32 Platform
 
-typedef Iptr Handle;
-#define INVALID_HANDLE ((Iptr)-1)
+typedef struct {Iptr value;} Handle;
+#define INIT_HANDLE(h) {h}
+#define RAW_HANDLE(h) (h).value
+#define INVALID_HANDLE(h) ((h).value == -1)
 
 typedef struct {
     U32 attr;
@@ -1063,7 +1065,7 @@ static B32 win32_map(PlatformMap *map, C16 *path)
     map->len = 0;
 
     Handle file = CreateFileW(path, 0x80000000u, 7, 0, 3, 128, 0);
-    if (file == INVALID_HANDLE) {
+    if (INVALID_HANDLE(file)) {
         return 0;
     }
 
@@ -1081,7 +1083,7 @@ static B32 win32_map(PlatformMap *map, C16 *path)
 
     Handle m = CreateFileMappingA(file, 0, 2, hi, lo, 0);
     CloseHandle(file);
-    if (!m) {
+    if (!RAW_HANDLE(m)) {
         return 0;
     }
 
@@ -1119,12 +1121,12 @@ static B32 win32_diropen(PlatformDir *dir, C16 *path)
 
     FindData fd;
     Handle h = FindFirstFileW(glob, &fd);
-    if (h == INVALID_HANDLE) {
+    if (INVALID_HANDLE(h)) {
         return 0;
     }
     B32 hidden = !!(fd.attr&0x02);
 
-    dir->handle = h;
+    dir->handle = RAW_HANDLE(h);
     for (I32 i = 0; i < Path_MAX; i++) {
         dir->name[i] = fd.name[i];
     }
@@ -1141,7 +1143,8 @@ static B32 win32_dirnext(PlatformDir *dir)
     }
 
     FindData fd;
-    while (FindNextFileW((Handle)dir->handle, &fd)) {
+    Handle h = INIT_HANDLE(dir->handle);
+    while (FindNextFileW(h, &fd)) {
         B32 hidden = !!(fd.attr&0x02);
         if (!hidden) {
             dir->dir = !!(fd.attr&0x10);
@@ -1152,7 +1155,7 @@ static B32 win32_dirnext(PlatformDir *dir)
         }
     }
 
-    FindClose((Handle)dir->handle);
+    FindClose(h);
     return 0;
 }
 
@@ -1218,7 +1221,7 @@ void mainCRTStartup(void)
     // ntdll.dll. Everything still works correctly with the "fake" no-op
     // implementations, just a bit less efficiently.
     Handle ntdll = LoadLibraryA("ntdll.dll");
-    if (ntdll) {
+    if (RAW_HANDLE(ntdll)) {
         win32_RtlWaitOnAddress =
             GetProcAddress(ntdll, "RtlWaitOnAddress");
         win32_RtlWakeAddressSingle =
