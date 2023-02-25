@@ -15,9 +15,9 @@ typedef __UINT32_TYPE__ U32;
 typedef __INT64_TYPE__ I64;
 typedef __UINT64_TYPE__ U64;
 typedef I32 B32;
+typedef __INTPTR_TYPE__ Iptr;
 typedef __PTRDIFF_TYPE__ Size;
-typedef __SIZE_TYPE__ Usize;
-#define Size_MAX (Size)((Usize)-1 >> 1)
+#define Size_MAX __PTRDIFF_MAX__
 
 #if __amd64 || __i686
   #define PAUSE __builtin_ia32_pause()
@@ -983,7 +983,8 @@ static I32 clocmain(void *context)
 
 // Win32 Platform
 
-typedef Usize Handle;
+typedef Iptr Handle;
+#define INVALID_HANDLE ((Iptr)-1)
 
 typedef struct {
     U32 attr;
@@ -1060,7 +1061,7 @@ static B32 win32_map(PlatformMap *map, C16 *path)
     map->len = 0;
 
     Handle file = CreateFileW(path, 0x80000000u, 7, 0, 3, 128, 0);
-    if (file == (Handle)-1) {
+    if (file == INVALID_HANDLE) {
         return 0;
     }
 
@@ -1116,12 +1117,12 @@ static B32 win32_diropen(PlatformDir *dir, C16 *path)
 
     FindData fd;
     Handle h = FindFirstFileW(glob, &fd);
-    if (h == (Handle)-1) {
+    if (h == INVALID_HANDLE) {
         return 0;
     }
     B32 hidden = !!(fd.attr&0x02);
 
-    dir->handle = (void *)h;
+    dir->handle = h;
     for (I32 i = 0; i < Path_MAX; i++) {
         dir->name[i] = fd.name[i];
     }
