@@ -8,6 +8,7 @@
 
 // Basic definitions
 
+typedef unsigned char Byte;
 typedef __UINT8_TYPE__ U8;
 typedef __UINT16_TYPE__ C16;
 typedef __INT32_TYPE__ I32;
@@ -37,12 +38,12 @@ typedef __PTRDIFF_TYPE__ Size;
 #define Path_MAX 260
 
 typedef struct {
-    U8 *buf;
+    Byte *buf;
     Size len;
 } PlatformMap;
 
 typedef struct {
-    void *handle;
+    Iptr handle;
     C16 name[Path_MAX];
     B32 dir;
     B32 first;
@@ -50,11 +51,11 @@ typedef struct {
 
 typedef struct {
     // Heap
-    void *heap;
+    Byte *heap;
     Size heapsize;
 
     // Write to standard output (1) or error (2)
-    B32 (*write)(I32, void *, Size);
+    B32 (*write)(I32, U8 *, Size);
 
     // File loading
     B32 (*map)(PlatformMap *, C16 *);
@@ -76,19 +77,21 @@ typedef struct {
 
 // Application API
 
+typedef struct Cloc Cloc;
+
 // Initialize the application, establishing a context object. Returns a
 // null pointer if initialization fails. Otherwise the platform will
 // spin up an appropriate number of threads, possibly zero, passing this
 // context pointer to each thread.
-static void *clocinit(Platform *, I32 argc, C16 **argv);
+static Cloc *clocinit(Platform *, I32 argc, C16 **argv);
 
 // Worker thread entry point. The platform passes the non-null pointer
 // returned by clocinit().
-static void clocthread(void *context);
+static void clocthread(Cloc *context);
 
 // Main application entry point, passed the non-null pointer returned by
 // the clocinit(). The return value is the exit status.
-static I32 clocmain(void *context);
+static I32 clocmain(Cloc *context);
 
 
 // Application
@@ -97,28 +100,27 @@ static I32 clocmain(void *context);
 #define NEW(a, t) (t *)alloc(a, SIZEOF(t))
 #define ARRAY(a, t, n) (t *)alloc(a, SIZEOF(t)*(n))
 #define SAVEPOINT(a) __builtin_setjmp((a)->jmp)
-#define OUTSTR(o, s) outbytes(o, (U8 *)s, SIZEOF(s)-1)
-#define ZERO(x) zero(x, SIZEOF(*x))
+#define OUTSTR(o, s) outu8s(o, (U8 *)s, SIZEOF(s)-1)
+#define ZERO(x) zero((Byte *)x, SIZEOF(*x))
 
 __attribute__((optimize("no-tree-loop-distribute-patterns")))
-static void zero(void *p, Size size)
+static void zero(Byte *p, Size size)
 {
-    U8 *b = p;
     for (Size i = 0; i < size; i++) {
-        b[i] = 0;
+        p[i] = 0;
     }
 }
 
 typedef struct {
     Size cap;
     Size off;
-    void *jmp[5];
+    Iptr jmp[5];
 } Arena;
 
-static Arena *placearena(void *mem, Size size)
+static Arena *placearena(Byte *mem, Size size)
 {
     ASSERT(size >= SIZEOF(Arena));
-    Arena *a = mem;
+    Arena *a = (Arena *)mem;
     ZERO(a);
     a->cap = size;
     a->off = SIZEOF(Arena);
@@ -127,7 +129,7 @@ static Arena *placearena(void *mem, Size size)
 }
 
 __attribute__((malloc,alloc_size(2)))
-static void *alloc(Arena *a, Size size)
+static Byte *alloc(Arena *a, Size size)
 {
     ASSERT(size >= 0);
     size += -size & 7;
@@ -135,7 +137,7 @@ static void *alloc(Arena *a, Size size)
     if (avail < size) {
         __builtin_longjmp(a->jmp, 1);
     }
-    U8 *p = (U8 *)a + a->off;
+    Byte *p = (Byte *)a + a->off;
     zero(p, size);
     a->off += size;
     return p;
@@ -512,7 +514,7 @@ static void flush(Out *out)
     }
 }
 
-static Size outbytes(Out *out, U8 *b, Size len)
+static Size outu8s(Out *out, U8 *b, Size len)
 {
     U8 *end = b + len;
     while (!out->error && b<end) {
@@ -533,9 +535,9 @@ static Size outbytes(Out *out, U8 *b, Size len)
     return len;
 }
 
-static Size outbyte(Out *out, U8 b)
+static Size outu8(Out *out, U8 b)
 {
-    outbytes(out, &b, 1);
+    outu8s(out, &b, 1);
     return 1;
 }
 
@@ -555,7 +557,7 @@ static Size outsize(Out *out, I32 width, Size x)
     while (end-p < width) {
         *--p = ' ';
     }
-    outbytes(out, p, end-p);
+    outu8s(out, p, end-p);
     return end - p;
 }
 
@@ -590,7 +592,7 @@ static Size outu64(Out *out, I32 width, U64 x)
     while (end-p < width) {
         *--p = ' ';
     }
-    outbytes(out, p, end-p);
+    outu8s(out, p, end-p);
     return end - p;
 }
 
@@ -600,20 +602,20 @@ static Size outwstr(Out *out, C16 *s)
     while (s[len]) {
         C16 c = s[len++];
         if (c < 0x80) {
-            outbyte(out, c);
+            outu8(out, c);
         } else if (c < 0x800) {
-            outbyte(out, 0xc0 | ((c >>  6)       ));
-            outbyte(out, 0x80 | ((c >>  0) & 0x3f));
+            outu8(out, 0xc0 | ((c >>  6)       ));
+            outu8(out, 0x80 | ((c >>  0) & 0x3f));
         } else {
-            outbyte(out, 0xe0 | ((c >> 12)       ));
-            outbyte(out, 0x80 | ((c >>  6) & 0x3f));
-            outbyte(out, 0x80 | ((c >>  0) & 0x3f));
+            outu8(out, 0xe0 | ((c >> 12)       ));
+            outu8(out, 0x80 | ((c >>  6) & 0x3f));
+            outu8(out, 0x80 | ((c >>  0) & 0x3f));
         }
     }
     return len;
 }
 
-typedef struct {
+struct Cloc {
     Platform *plt;
     Arena *arena;
     Out *stderr;
@@ -623,9 +625,9 @@ typedef struct {
     Size limit;
     B32 heading;
     B32 fastquit;
-} Cloc;
+};
 
-static void clocthread(void *context)
+static void clocthread(Cloc *context)
 {
     Cloc *cloc = context;
     Platform *plt = cloc->plt;
@@ -741,7 +743,7 @@ static I32 maxlen(Path *list, I32 max)
 static void padcolumn(Out *out, I32 width)
 {
     for (I32 i = 0; i < width; i++) {
-        outbyte(out, ' ');
+        outu8(out, ' ');
     }
 }
 
@@ -750,7 +752,7 @@ typedef struct {
     I32 optind, optopt, optpos;
 } GetOpt;
 
-static I32 wgetopt(GetOpt *x, I32 argc, C16 **argv, char *optstring)
+static I32 wgetopt(GetOpt *x, I32 argc, C16 **argv, U8 *optstring)
 {
     x->optind += !x->optind;
     C16 *arg = x->optind<argc ? argv[x->optind] : 0;
@@ -821,7 +823,7 @@ static Size parsesize(C16 *s)
     return len ? size : -1;
 }
 
-static void *clocinit(Platform *plt, I32 argc, C16 **argv)
+static Cloc *clocinit(Platform *plt, I32 argc, C16 **argv)
 {
     Arena *a = placearena(plt->heap, plt->heapsize);
     Out *stderr = newstderr(plt, a);  // pre-allocate in case of OOM
@@ -843,8 +845,8 @@ static void *clocinit(Platform *plt, I32 argc, C16 **argv)
     cloc->heading = 1;
     cloc->fastquit = 0;
 
-    for (I32 option; (option = wgetopt(wgo, argc, argv, "hn:q")) != -1;) {
-        switch (option) {
+    for (I32 opt; (opt = wgetopt(wgo, argc, argv, (U8 *)"hn:q")) != -1;) {
+        switch (opt) {
         case 'h':
             cloc->fastquit = 1;
             return usage(newstdout(plt, a)) ? 0 : cloc;
@@ -878,7 +880,7 @@ static void *clocinit(Platform *plt, I32 argc, C16 **argv)
     return cloc;
 }
 
-static I32 clocmain(void *context)
+static I32 clocmain(Cloc *context)
 {
     Cloc *cloc = context;
     Platform *plt = cloc->plt;
@@ -964,7 +966,7 @@ static I32 clocmain(void *context)
     for (Path *t = totals->totals; t; t = t->next) {
         Size width = extwidth;
         if (t->path[0]) {
-            width -= outbyte(stdout, '.');
+            width -= outu8(stdout, '.');
             width -= outwstr(stdout, t->path);
         } else {
             width -= OUTSTR(stdout, "(none)");
@@ -974,7 +976,7 @@ static I32 clocmain(void *context)
         outu64(stdout, 8, t->files);
         outu64(stdout, 10, t->blanks);
         outu64(stdout, 10, t->lines);
-        outbyte(stdout, '\n');
+        outu8(stdout, '\n');
     }
     flush(stdout);
     return stdout->error;
@@ -1044,7 +1046,7 @@ void OutputDebugStringA(void *)
 void *VirtualAlloc(void *, Size, U32, U32)
     __attribute__((dllimport,stdcall,malloc));
 
-static B32 win32_write(I32 fd, void *buf, Size len)
+static B32 win32_write(I32 fd, U8 *buf, Size len)
 {
     // TODO: GetConsoleMode + WriteConsole
     // On the other hand, the only unicode text in the output is the
@@ -1083,7 +1085,7 @@ static B32 win32_map(PlatformMap *map, C16 *path)
         return 0;
     }
 
-    U8 *buf = MapViewOfFile(m, 4, 0, 0, lo);
+    void *buf = MapViewOfFile(m, 4, 0, 0, lo);
     CloseHandle(m);
     if (!buf) {
         return 0;
@@ -1240,7 +1242,7 @@ void mainCRTStartup(void)
 
     I32 argc;
     C16 **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    void *context = clocinit(&plt, argc, argv);
+    Cloc *context = clocinit(&plt, argc, argv);
     if (!context) {
         ExitProcess(2);
     }
