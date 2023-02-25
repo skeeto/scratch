@@ -55,7 +55,7 @@ typedef struct {
     Size heapsize;
 
     // Write to standard output (1) or error (2)
-    B32 (*write)(I32, U8 *, Size);
+    B32 (*write)(I32, U8 *, I32);
 
     // File loading
     B32 (*map)(PlatformMap *, C16 *);
@@ -308,12 +308,12 @@ typedef struct {
 
 static WorkQueue *newqueue(Arena *a, I32 exp, Totals *totals)
 {
+    ASSERT(exp < 31);
     WorkQueue *q = NEW(a, WorkQueue);
-    Size len = (Size)1 << exp;
+    I32 len = (I32)1 << exp;
     q->mask = len - 1;
     q->slots = ARRAY(a, Path *, len);
     q->totals = totals;
-
     return q;
 }
 
@@ -475,6 +475,7 @@ typedef struct {
 
 static Out *newout(Platform *plt, Arena *a, Size cap, I32 fd)
 {
+    ASSERT(cap < 0x7fffffff);
     Out *out = NEW(a, Out);
     out->cap = cap;
     out->buf = ARRAY(a, U8, out->cap);
@@ -508,7 +509,8 @@ static void flush(Out *out)
         if (out->fd == -1) {
             out->error |= 1;
         } else if (out->len) {
-            out->error |= !out->plt->write(out->fd, out->buf, out->len);
+            ASSERT(out->len < 0x7fffffff);
+            out->error |= !out->plt->write(out->fd, out->buf, (I32)out->len);
             out->len = 0;
         }
     }
@@ -549,7 +551,7 @@ static Size outsize(Out *out, I32 width, Size x)
     U8 *p = end;
     Size t = x>0 ? -x : x;
     do {
-        *--p = '0' - t%10;
+        *--p = '0' - (U8)(t%10);
     } while (t /= 10);
     if (x < 0) {
         *--p = '-';
@@ -566,15 +568,15 @@ static U32 divmod64by32(U64 *num, U32 den)
     #if __i686__
     // Avoid libgcc __udivmoddi4 by using x86 div instruction
     U32 mod;
-    U32 lo = *num;
-    U32 hi = *num >> 32;
+    U32 lo = (U32)*num;
+    U32 hi = (U32)(*num >> 32);
     __asm("divl %4"
           : "=d"(mod), "=a"(lo)
           : "0"(hi%den), "1"(lo), "rm"(den));
     *num = (U64)(hi/den)<<32 | lo;
     return mod;
     #else
-    U32 mod = *num % den;
+    U32 mod = (U32)(*num % den);
     *num /= den;
     return mod;
     #endif
@@ -587,7 +589,7 @@ static Size outu64(Out *out, I32 width, U64 x)
     U8 *end = tmp + SIZEOF(tmp);
     U8 *p = end;
     do {
-        *--p = '0' + divmod64by32(&x, 10);
+        *--p = '0' + (U8)divmod64by32(&x, 10);
     } while (x);
     while (end-p < width) {
         *--p = ' ';
@@ -602,14 +604,14 @@ static Size outwstr(Out *out, C16 *s)
     while (s[len]) {
         C16 c = s[len++];
         if (c < 0x80) {
-            outu8(out, c);
+            outu8(out, (U8)c);
         } else if (c < 0x800) {
-            outu8(out, 0xc0 | ((c >>  6)       ));
-            outu8(out, 0x80 | ((c >>  0) & 0x3f));
+            outu8(out, 0xc0 | ((U8)(c >>  6)       ));
+            outu8(out, 0x80 | ((U8)(c >>  0) & 0x3f));
         } else {
-            outu8(out, 0xe0 | ((c >> 12)       ));
-            outu8(out, 0x80 | ((c >>  6) & 0x3f));
-            outu8(out, 0x80 | ((c >>  0) & 0x3f));
+            outu8(out, 0xe0 | ((U8)(c >> 12)       ));
+            outu8(out, 0x80 | ((U8)(c >>  6) & 0x3f));
+            outu8(out, 0x80 | ((U8)(c >>  0) & 0x3f));
         }
     }
     return len;
@@ -731,7 +733,7 @@ static Path *truncate(Path *list, Size newlen)
     return list;
 }
 
-static I32 maxlen(Path *list, I32 max)
+static Size maxlen(Path *list, Size max)
 {
     for (Path *p = list; p; p = p->next) {
         I32 len = pathlen(p);
@@ -740,9 +742,9 @@ static I32 maxlen(Path *list, I32 max)
     return max;
 }
 
-static void padcolumn(Out *out, I32 width)
+static void padcolumn(Out *out, Size width)
 {
-    for (I32 i = 0; i < width; i++) {
+    for (Size i = 0; i < width; i++) {
         outu8(out, ' ');
     }
 }
@@ -953,9 +955,9 @@ static I32 clocmain(Cloc *context)
 
     Out *stdout = newstdout(plt, a);
 
-    I32 extwidth = 1;
+    Size extwidth = 1;
     if (cloc->heading) {
-        I32 heading = OUTSTR(stdout, "extension");
+        Size heading = OUTSTR(stdout, "extension");
         extwidth += maxlen(totals->totals, heading);
         padcolumn(stdout, extwidth-heading);
         OUTSTR(stdout, "   files    blanks     lines\n");
@@ -1048,12 +1050,11 @@ void OutputDebugStringA(void *)
 void *VirtualAlloc(void *, Size, U32, U32)
     __attribute__((dllimport,stdcall,malloc));
 
-static B32 win32_write(I32 fd, U8 *buf, Size len)
+static B32 win32_write(I32 fd, U8 *buf, I32 len)
 {
     // TODO: GetConsoleMode + WriteConsole
     // On the other hand, the only unicode text in the output is the
     // file extension listings. How often are these non-ASCII?
-    ASSERT(len < (Size)(-1u>>1));
     U32 dummy;
     Handle h = GetStdHandle(-10 - fd);
     return WriteFile(h, buf, len, &dummy, 0);
@@ -1079,7 +1080,7 @@ static B32 win32_map(PlatformMap *map, C16 *path)
         CloseHandle(file);
         return 1;
     }
-    Size len = size;
+    Size len = (Size)size;
 
     Handle m = CreateFileMappingA(file, 0, 2, hi, lo, 0);
     CloseHandle(file);
