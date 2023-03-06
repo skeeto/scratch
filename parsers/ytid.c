@@ -10,16 +10,20 @@
  */
 static int findid(int state, char id[24], unsigned char c)
 {
-    /* A hand-compiled state machine for this regular expression:
+    /* A hand-compiled DFA for this regular expression:
      *   /"externalId"\s*:\s*"(UC[-_a-zA-Z0-9]{22})"/
      * Where "id" will be populated with the sub-group match.
      */
     switch (state) {
     case  0: case  1: case  2: case  3: case  4: case  5:
     case  6: case  7: case  8: case  9: case 10: case 11:
-        return c==(unsigned char)"\"externalId\""[state] ? state+1 : 0;
+        return c==(unsigned char)"\"externalId\""[state] ? state+1 : c=='"';
     case 12:
         switch (c) {
+        case '"':
+            return 1;
+        case 'e':
+            return 2;
         case '\t': case '\n': case '\r': case ' ':
             return 12;
         case ':':
@@ -64,7 +68,7 @@ int main(void)
     char err[] = "ytid: no channel ID found\n";
     char id[25] = "........................\n";
     while ((c = getchar()) != EOF) {
-        state = findid(state, id, c);
+        state = findid(state, id, (unsigned char)c);
         if (state < 0) {
             fwrite(id, sizeof(id), 1, stdout);
             fflush(stdout);
