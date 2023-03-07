@@ -30,8 +30,6 @@ typedef unsigned char Byte;
   #define __atomic_fetch_add(p, a, c) (_InterlockedIncrement((long *)p) - a)
   #define __atomic_load_n(p, c) (*(volatile int *)p)
   #define __atomic_store_n(p, a, c) (*(volatile int *)p = a)
-  #pragma comment(lib, "kernel32.lib")
-  #pragma comment(linker, "/subsystem:console")
 #endif
 
 
@@ -608,6 +606,11 @@ static int summarize_main(void *arg)
 
 #ifdef _WIN32
 // Windows platform
+
+#ifdef _MSC_VER
+  #pragma comment(lib, "kernel32.lib")
+  #pragma comment(linker, "/subsystem:console")
+#endif
 
 typedef int BOOL;
 typedef unsigned DWORD;
