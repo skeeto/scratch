@@ -239,9 +239,11 @@ static Size append(Output *output, Byte *buf, Size len)
     while (left && !output->error) {
         int avail = output->cap - output->len;
         int count = left<avail ? (int)left : avail;
+        Byte *dst = output->buf + output->len;
         for (int i = 0; i < count; i++) {
-            output->buf[output->len++] = buf[i];
+            dst[i] = buf[i];
         }
+        output->len += count;
         buf += count;
         left -= count;
         if (output->len == output->cap) {
