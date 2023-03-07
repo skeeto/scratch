@@ -6,8 +6,7 @@
 // MSVC:
 //    C:\>cl /O2 /GS- getip.c
 //
-// Note: Unfortunately this program usually hangs on exit due to an old DLL
-// unload deadlock defect in wininet.dll. Please fix this, Microsoft!
+// This is free and unencumbered software released into the public domain.
 #include <windows.h>
 #include <wininet.h>
 #if defined(_MSC_VER)
