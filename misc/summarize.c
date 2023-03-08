@@ -774,13 +774,12 @@ int main(void)
     }
 
     int clone_flags = 0;
+    clone_flags |= CLONE_FILES;
+    clone_flags |= CLONE_FS;
+    clone_flags |= CLONE_SIGHAND;
+    clone_flags |= CLONE_SYSVSEM;
     clone_flags |= CLONE_THREAD;
     clone_flags |= CLONE_VM;
-    clone_flags |= CLONE_FS;
-    clone_flags |= CLONE_FILES;
-    clone_flags |= CLONE_SIGHAND;
-    clone_flags |= CLONE_THREAD;
-    clone_flags |= CLONE_SYSVSEM;
     void *stack = (Byte *)heap + heap_size;
     if (clone(linux_thread, stack, clone_flags, ctx, 0, 0, 0) == -1) {
         return 1;
