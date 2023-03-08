@@ -147,10 +147,10 @@ static void parsedouble(DoubleParser *p, Byte b)
         } else if (b == '.') {
             p->divisor = 10;
             p->state = ParserState_FRACTIONAL;
-        } else if (!whitespace(b)) {
-            p->state = ParserState_INVALID;
         } else if (b == '\n') {
             p->state = ParserState_INIT;
+        } else {
+            p->state = ParserState_INVALID;
         }
         break;
 
