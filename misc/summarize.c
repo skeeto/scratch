@@ -749,7 +749,7 @@ static Bool platform_wait(int *p, int expect, int ms)
 
 static void platform_wake(int *p)
 {
-    syscall(SYS_futex, p, FUTEX_WAKE);
+    syscall(SYS_futex, p, FUTEX_WAKE, 1);
 }
 
 static int linux_thread(void *ctx)
