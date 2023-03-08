@@ -617,9 +617,10 @@ static int summarize_main(void *arg)
 typedef int BOOL;
 typedef unsigned DWORD;
 typedef intptr_t HANDLE;
+typedef DWORD (__stdcall *THRFUN)(void *);
 
 __declspec(dllimport)
-void *__stdcall VirtualAlloc(void *, Size, DWORD, DWORD);
+void *__stdcall VirtualAlloc(void *, size_t, DWORD, DWORD);
 __declspec(dllimport)
 void __stdcall ExitProcess(unsigned);
 
@@ -636,8 +637,7 @@ __declspec(dllimport)
 void *__stdcall GetProcAddress(HANDLE, char *);
 
 __declspec(dllimport)
-HANDLE __stdcall
-CreateThread(void *, Size, DWORD (__stdcall*)(void *), void *, DWORD, DWORD *);
+HANDLE __stdcall CreateThread(void *, size_t, THRFUN, void *, DWORD, DWORD *);
 __declspec(dllimport)
 void __stdcall Sleep(DWORD);
 
@@ -657,7 +657,7 @@ static Size platform_read(int fd, Byte *buf, Size len)
     return ReadFile(h, buf, (DWORD)len, &n, 0) ? n : 0;
 }
 
-static int (__stdcall *nt_RtlWaitOnAddress)(void *, void *, Size, void *);
+static int (__stdcall *nt_RtlWaitOnAddress)(void *, void *, size_t, void *);
 static int (__stdcall *nt_RtlWakeAddressAll)(void *);
 
 static Bool platform_wait(int *p, int expect, int ms)
