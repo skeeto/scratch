@@ -235,8 +235,9 @@ static void flush(Output *output)
 #define APPEND_STR(output, s) append(output, (Byte *)s, SIZEOF(s)-1)
 static Size append(Output *output, Byte *buf, Size len)
 {
-    Size left = len;
-    while (left && !output->error) {
+    Byte *end = buf + len;
+    while (buf<end && !output->error) {
+        Size left = end - buf;
         int avail = output->cap - output->len;
         int count = left<avail ? (int)left : avail;
         Byte *dst = output->buf + output->len;
@@ -245,7 +246,6 @@ static Size append(Output *output, Byte *buf, Size len)
         }
         output->len += count;
         buf += count;
-        left -= count;
         if (output->len == output->cap) {
             flush(output);
         }
