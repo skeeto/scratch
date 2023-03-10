@@ -614,6 +614,12 @@ static int summarize_main(void *arg)
   #pragma comment(linker, "/subsystem:console")
 #endif
 
+#if __i686__
+  #define ENTRYPOINT __attribute((force_align_arg_pointer))
+#else
+  #define ENTRYPOINT
+#endif
+
 typedef int BOOL;
 typedef unsigned DWORD;
 typedef intptr_t HANDLE;
@@ -678,15 +684,14 @@ static void platform_wake(int *p)
     }
 }
 
+ENTRYPOINT
 static DWORD __stdcall win32_thread(void *arg)
 {
     summarize_thread(arg);
     return 0;
 }
 
-#if __i686__
-__attribute__((force_align_arg_pointer))
-#endif
+ENTRYPOINT
 void mainCRTStartup(void)
 {
     HANDLE ntdll = LoadLibraryA("ntdll.dll");
