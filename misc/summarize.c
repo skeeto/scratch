@@ -498,7 +498,7 @@ typedef struct {
 static Input *newinput(Arena *arena)
 {
     Input *input = NEW(arena, Input);
-    input->cap = 1<<16;
+    input->cap = 1<<14;
     input->buf = alloc(arena, input->cap, 0);
     return input;
 }
