@@ -622,7 +622,7 @@ static int summarize_main(void *arg)
 
 typedef int BOOL;
 typedef unsigned DWORD;
-typedef intptr_t HANDLE;
+typedef ptrdiff_t HANDLE;
 typedef DWORD (__stdcall *THRFUN)(void *);
 
 __declspec(dllimport)
