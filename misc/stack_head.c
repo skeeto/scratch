@@ -102,7 +102,7 @@ static long newthread(struct stack_head *stack)
         "ret\n"
         :
         : "a"(SYS_clone), "S"(0x50f00L)
-        : "rcx", "r11", "memory"
+        : "rdi", "rcx", "r11", "memory"
     );
 }
 
