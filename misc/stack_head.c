@@ -1,5 +1,5 @@
 // libc-free x86-64 Linux multi-threading example
-//   $ cc -nostdlib example.c
+//   $ cc -nostdlib stack_head.c
 // Ref: https://nullprogram.com/blog/2023/03/23/
 // This is free and unencumbered software released into the public domain.
 
@@ -68,20 +68,20 @@ static void exit(int status)
 }
 
 __attribute((noreturn))
-static void exit_group(int r)
+static void exit_group(int status)
 {
-    SYSCALL1(SYS_exit_group, r);
+    SYSCALL1(SYS_exit_group, status);
     __builtin_unreachable();
 }
 
 static void futex_wait(int *futex, int expect)
 {
-    SYSCALL4(SYS_futex, futex, FUTEX_WAIT, expect, 0L);
+    SYSCALL4(SYS_futex, futex, FUTEX_WAIT, expect, 0);
 }
 
 static void futex_wake(int *futex)
 {
-    SYSCALL3(SYS_futex, futex, FUTEX_WAKE, 1U>>1);
+    SYSCALL3(SYS_futex, futex, FUTEX_WAKE, 0x7fffffff);
 }
 
 struct __attribute((aligned(16))) stack_head {
