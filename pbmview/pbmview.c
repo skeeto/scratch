@@ -4,8 +4,7 @@
 // and QOI. Monitors for changes and automatically refreshes.
 //
 // Usage: $ pbmview.exe path/to/image.ppm
-// Build: $ cc -s -Os -nostdlib -mwindows -o pbmview.exe pbmview.c
-//             -lkernel32 -lshell32 -luser32 -lgdi32 -lshlwapi
+// Build: $ cc -Os -s -nostartfiles -mwindows -o pbmview pbmview.c -lshlwapi
 //        $ cl /O2 pbmview.c
 //
 // This is free and unencumbered software released into the public domain.
