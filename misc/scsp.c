@@ -15,8 +15,8 @@
 // For Linux, I had figured it out back in 2015, but never used it in a
 // practical application. I wanted to make the raw clone syscall here
 // with as little assembly as possible, including join functionality. I
-// managed to set up the new thread in just 5 instructions (see spawn)
-// after the syscall.
+// managed to spawn the new thread with a simple interface in just 8
+// assembly instructions.
 //
 // The clone syscall is a mess and always requires per-target assembly
 // beyond the syscall itself, because the semantics cannot be expressed
@@ -300,36 +300,45 @@ static void exit_group(int r)
     __builtin_unreachable();
 }
 
-static void threadentry(int *join, void *heap)
+typedef struct __attribute((aligned(16))) {
+    void (*entry)(void *);
+    int join_futex;
+} StackHead;
+
+// Spawn a thread using the configured stack. The caller defines a
+// struct whose first element is a StackHead, a pointer to which is
+// passed to this function. This struct must be allocated at the high
+// end of the stack with proper alignment. (Hint: Treat the stack as an
+// array of these structs and pick the last.) The entry field must be
+// populated with the thread entry point, which receives the StackHead
+// pointer upon entry. That is, a pointer to the custom struct. The new
+// thread must not return from its entry point.
+//
+// The join_futex field will be initialized. It is atomically zeroed
+// after the thread exits, then poked as a single-wakeup futex. To join,
+// futex-wait until the futex is zero. Returns a negative errno or a
+// positive thread id.
+__attribute((naked))
+static int newthread(__attribute((unused)) StackHead *stack)
 {
-    appentry(heap, 1);
-    __atomic_store_n(join, 1, __ATOMIC_RELEASE);
-    syscall3(SYS_futex, (long)join, FUTEX_WAKE, 1);
-    exit(0);
+    __asm volatile (
+        "lea   8(%rdi), %r10\n"     // r10 = &stack->join_futex
+        "movl  $-1, (%r10)\n"       // stack->join_futex = non-zero
+        "mov   $0x1250f00, %esi\n"  // clone flags
+        "xchg  %rdi, %rsi\n"        // args: flags, stack, N/A, &join_futex
+        "mov   $56, %eax\n"         // SYS_clone
+        "syscall\n"
+        "mov   %rsp, %rdi\n"        // thread entry point argument
+        "ret\n"
+    );
 }
 
-// Create a thread that pops two pointer/integer arguments from the
-// provided stack, then returns into the thread entry point. Returns a
-// negative errno or a positive thread id.
-static long spawn(void *stack)
+static void jointhread(StackHead *stack)
 {
-    long r;
-    long flags = 0x50f00;  // CLONE_THREAD, etc.
-    register long r10 asm("r10") = 0;
-    register long r8  asm("r8")  = 0;
-    __asm volatile (
-        "syscall\n"
-        "test %%rax, %%rax\n"
-        "jnz  main%=\n"
-        "pop  %%rdi\n"  // pop join
-        "pop  %%rsi\n"  // pop heap
-        "ret\n"         // jump to entry point
-        "main%=:\n"
-        : "=a"(r)
-        : "a"(SYS_clone), "D"(flags), "S"(stack), "d"(0L), "r"(r10), "r"(r8)
-        : "rcx", "r11", "memory"
-    );
-    return r;
+    int *futex = &stack->join_futex;
+    for (int v; (v = __atomic_load_n(futex, __ATOMIC_ACQUIRE));) {
+        syscall4(SYS_futex, (long)futex, FUTEX_WAIT, v, 0);
+    }
 }
 
 static void platform_write(void *buf, int len)
@@ -344,6 +353,18 @@ static void platform_write(void *buf, int len)
     }
 }
 
+typedef struct {
+    StackHead head;
+    void *heap;
+} ThreadData;
+
+static void threadentry(void *arg)
+{
+    ThreadData *data = arg;
+    appentry(data->heap, 1);
+    exit(0);
+}
+
 __attribute((force_align_arg_pointer))
 void _start(void)
 {
@@ -353,21 +374,18 @@ void _start(void)
     if (p > -4096UL) {
         exit_group(1);
     }
-    void  *heap  = (char *)p;
-    void **stack = (void **)((char *)p + heapsize);
+    ThreadData *data = (ThreadData *)p + heapsize/sizeof(ThreadData) - 1;
+    data->head.entry = threadentry;
+    data->heap = (void *)p;
 
-    appinit(heap);
+    appinit(data->heap);
 
-    int *join = (int *)--stack;  // join futex, and align
-    *--stack = threadentry;
-    *--stack = heap;
-    *--stack = join;
-    long tid = spawn(stack);
+    int tid = newthread(&data->head);
     if (tid < 0) {
         exit_group(1);
     }
-    int r = appentry(heap, 0);
-    syscall4(SYS_futex, (long)join, FUTEX_WAIT, 0, 0);
+    int r = appentry(data->heap, 0);
+    jointhread(&data->head);
     exit_group(r);
 }
 
