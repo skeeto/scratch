@@ -322,23 +322,20 @@ __attribute((naked))
 static int newthread(__attribute((unused)) StackHead *stack)
 {
     __asm volatile (
-        "lea   8(%rdi), %r10\n"     // r10 = &stack->join_futex
-        "movl  $-1, (%r10)\n"       // stack->join_futex = non-zero
-        "mov   $0x1250f00, %esi\n"  // clone flags
-        "xchg  %rdi, %rsi\n"        // args: flags, stack, N/A, &join_futex
-        "mov   $56, %eax\n"         // SYS_clone
+        "lea   8(%rdi), %r10\n"    // r10 = &stack->join_futex
+        "movl  $1, (%r10)\n"       // stack->join_futex = 1
+        "mov   $0x250f00, %esi\n"  // clone flags
+        "xchg  %rdi, %rsi\n"       // args: flags, stack, N/A, &join_futex
+        "mov   $56, %eax\n"        // SYS_clone
         "syscall\n"
-        "mov   %rsp, %rdi\n"        // thread entry point argument
+        "mov   %rsp, %rdi\n"       // thread entry point argument
         "ret\n"
     );
 }
 
 static void jointhread(StackHead *stack)
 {
-    int *futex = &stack->join_futex;
-    for (int v; (v = __atomic_load_n(futex, __ATOMIC_ACQUIRE));) {
-        syscall4(SYS_futex, (long)futex, FUTEX_WAIT, v, 0);
-    }
+    syscall4(SYS_futex, (long)&stack->join_futex, FUTEX_WAIT, 1, 0);
 }
 
 static void platform_write(void *buf, int len)
