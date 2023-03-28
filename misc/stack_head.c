@@ -96,13 +96,13 @@ __attribute((naked))
 static long newthread(struct stack_head *stack)
 {
     __asm volatile (
-        "xchg   %%rdi, %%rsi\n"
+        "mov  %%rdi, %%rsi\n"     // arg2 = stack
+        "mov  $0x50f00, %%edi\n"  // arg1 = clone flags
+        "mov  $56, %%eax\n"       // SYS_clone
         "syscall\n"
-        "mov    %%rsp, %%rdi\n"
+        "mov  %%rsp, %%rdi\n"     // entry point argument
         "ret\n"
-        :
-        : "a"(SYS_clone), "S"(0x50f00L)
-        : "rdi", "rcx", "r11", "memory"
+        : : : "rax", "rcx", "rsi", "rdi", "r11", "memory"
     );
 }
 
