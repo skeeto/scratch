@@ -322,14 +322,15 @@ __attribute((naked))
 static int newthread(__attribute((unused)) StackHead *stack)
 {
     __asm volatile (
-        "lea   8(%rdi), %r10\n"    // r10 = &stack->join_futex
-        "movl  $1, (%r10)\n"       // stack->join_futex = 1
-        "mov   $0x250f00, %esi\n"  // clone flags
-        "xchg  %rdi, %rsi\n"       // args: flags, stack, N/A, &join_futex
-        "mov   $56, %eax\n"        // SYS_clone
+        "lea   8(%%rdi), %%r10\n"   // arg4 = &stack->join_futex
+        "movl  $1, (%%r10)\n"       // stack->join_futex = 1
+        "mov   %%rdi, %%rsi\n"      // arg2 = stack
+        "mov   $0x250f00, %%edi\n"  // arg1 = clone flags
+        "mov   $56, %%eax\n"        // SYS_clone
         "syscall\n"
-        "mov   %rsp, %rdi\n"       // thread entry point argument
+        "mov   %%rsp, %%rdi\n"      // thread entry point argument
         "ret\n"
+        : : : "rax", "rcx", "rsi", "rdi", "r10", "r11", "memory"
     );
 }
 
