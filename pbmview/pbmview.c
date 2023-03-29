@@ -635,6 +635,9 @@ state_send(struct state *s, struct image *im)
     return 0;
 }
 
+#if __i686__
+__attribute__((force_align_arg_pointer))
+#endif
 static DWORD WINAPI
 state_monitor(void *arg)
 {
@@ -983,6 +986,9 @@ proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
     return 0;
 }
 
+#if __i686__
+__attribute__((force_align_arg_pointer))
+#endif
 int WinMainCRTStartup(void)
 {
     int argc;
