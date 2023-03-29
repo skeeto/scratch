@@ -219,7 +219,7 @@ static unsigned qoidecode(struct qoidecoder *q)
             default:  // RUN
                 if (q->count < n) goto error;
                 q->run = n;
-                goto skiptable;
+                break;
             }
         }
         r=q->c, g=q->c>>8, b=q->c>>16, a=q->c>>24;
