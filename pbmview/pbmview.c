@@ -21,11 +21,21 @@
   #pragma comment(lib, "shlwapi.lib")
   #pragma comment(linker, "/subsystem:windows")
   #pragma function(memset)
-  void *memset(void *d, int c, size_t n) { __stosb(d, c, n); return d; }
+  void *memset(void *d, int c, size_t n)
+  {
+      char *dst = (char *)d;
+      for (; n; n--) *dst++ = (char)c;
+      return d;
+  }
 #endif
 
 #define DIM_MAX (1<<13)  // 8*DIM_MAX*DIM_MAX must not overflow int
-#define wcopy __movsw
+
+static void
+wcopy(wchar_t *dst, const wchar_t *src, size_t len)
+{
+    for (; len; len--) *dst++ = *src++;
+}
 
 // Return non-zero if a and b match, otherwise zero.
 static int
