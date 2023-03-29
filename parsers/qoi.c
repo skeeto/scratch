@@ -18,7 +18,8 @@ struct qoidecoder {
 // error flag indicates if the entire decode was successful.
 static struct qoidecoder qoidecoder(const void *buf, int len)
 {
-    struct qoidecoder q = {0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0xff000000, {0}};
+    struct qoidecoder q = {0};
+    q.error = 1;
     if (len < 14) {
         return q;
     }
@@ -39,9 +40,11 @@ static struct qoidecoder qoidecoder(const void *buf, int len)
     q.width  = w;
     q.height = h;
     q.count  = w * h;
+    q.last   = -1;
     q.error  = 0;
     q.alpha  = p[12]==4;
     q.srgb   = p[13]==1;
+    q.c      = 0xff000000;
     return q;
 }
 
