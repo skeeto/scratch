@@ -1,8 +1,9 @@
 # splitxix33: a splitmix64 with memorable constants
 
 An alternate, memorable set of constants for [splitmix64][] which pass
-BigCrush and PractRand as well as the original constants. Unlike the
-originals, these constants are trivial to memorize:
+BigCrush ~~and PractRand as well as the original constants~~(update: see
+[issue #2][issue]). Unlike the originals, these constants are trivial to
+memorize:
 
 * `1111111111111111111`: gamma and multipliers. That's 19 ones in a row,
   *in decimal*, which is the source of "xix" in the name — roman numerals
@@ -44,4 +45,5 @@ Seeded with zero, the first 40 outputs:
     bfeb360427b31d93 fca22a5c38d9ca7f 51a22288913ba6ac 63006e51981b9c23
 
 
+[issue]: https://github.com/skeeto/scratch/issues/2
 [splitmix64]: http://gee.cs.oswego.edu/dl/papers/oopsla14.pdf
