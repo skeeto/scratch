@@ -21,6 +21,7 @@
 
 typedef int Bool;
 typedef long long I64;
+typedef unsigned long long U64;
 typedef ptrdiff_t Size;
 typedef unsigned char Byte;
 #define SIZEOF(expr) ((Size)sizeof(expr))
@@ -283,11 +284,11 @@ static Size append_double(Output *output, double x)
 
     I64 prec = 1000;  // i.e. 3 decimals
     x += 0.5 / (double)prec;  // round last decimal
-    I64 integral = (I64)x;
-    I64 fractional = (I64)((x - (double)integral)*(double)prec);
-    if (fractional < 0) {
+    if (x >= (double)((U64)-1>>1)) {
         len += APPEND_STR(output, "inf");
     } else {
+        I64 integral = (I64)x;
+        I64 fractional = (I64)((x - (double)integral)*(double)prec);
         len += append_i64(output, integral);
         if (fractional) {
             len += append_byte(output, '.');
