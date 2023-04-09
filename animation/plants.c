@@ -5,7 +5,6 @@
 // Ref: https://github.com/VivekThazhathattil/boredom
 // This is free and unencumbered software released into the public domain.
 #include <stdio.h>
-#include <string.h>
 
 #define SCALE    4
 #define WIDTH    (1280/SCALE)
