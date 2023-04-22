@@ -49,8 +49,8 @@ typedef struct {
     int   reserved2[3];
 } Stream;
 
-typedef int InitProc(Stream *, char *, int);
-typedef int InflateProc(Stream *, int);
+typedef int __stdcall InitProc(Stream *, char *, int);
+typedef int __stdcall InflateProc(Stream *, int);
 typedef struct {
     InitProc    *init;
     InflateProc *inflate;
@@ -71,9 +71,14 @@ static Zlib loadzlib(void)
 static void flush(void *stdout, Stream *z, char *bufout)
 {
     int len = (int)(z->next_out - bufout);
-    if (!WriteFile(stdout, bufout, len, &len, 0)) {
-        DIE("deflate: write to standard output failed");
+    if (len && !WriteFile(stdout, bufout, len, &len, 0)) {
+        DIE("deflate: write to standard output failed\n");
     }
+}
+
+__declspec(noreturn) static void invalid(void)
+{
+    DIE("deflate: input is not a valid DEFLATE stream\n");
 }
 
 #if __i686__
@@ -88,34 +93,46 @@ void mainCRTStartup(void)
 
     Stream z = {0};
     Zlib zlib = loadzlib();
-    int r = zlib.init(&z, "1", sizeof(z));
-    if (r) {
+    if (zlib.init(&z, "1", sizeof(z))) {
         DIE("deflate: zlib initialization failed\n");
     }
 
     for (;;) {
         z.next_in = bufin;
         ReadFile(stdin, bufin, sizeof(bufin), &z.avail_in, 0);
-        int flag = z.avail_in ? 0 : Z_FINISH;
-        for (;;) {
+        if (!z.avail_in) {
+            break;
+        }
+        do {
             z.next_out = bufout;
             z.avail_out = sizeof(bufout);
-            switch (zlib.inflate(&z, flag)) {
+            switch (zlib.inflate(&z, 0)) {
             default:
-                DIE("deflate: input is not a valid DEFLATE stream\n");
+                invalid();
             case Z_STREAM_END:
                 flush(stdout, &z, bufout);
                 ExitProcess(0);
-            case Z_BUF_ERROR:
-                flush(stdout, &z, bufout);
-                continue;
             case Z_OK:
                 flush(stdout, &z, bufout);
-                if (!z.avail_out && z.avail_in) {
-                    continue;
-                }
+                break;
             }
-            break;
+        } while (z.avail_in);
+    }
+
+    for (;;) {
+        z.next_out = bufout;
+        z.avail_out = sizeof(bufout);
+        switch (zlib.inflate(&z, Z_FINISH)) {
+        default:
+            invalid();
+        case Z_STREAM_END:
+            flush(stdout, &z, bufout);
+            ExitProcess(0);
+        case Z_BUF_ERROR:
+            if (z.avail_out) {
+                invalid();
+            }
+            flush(stdout, &z, bufout);
         }
     }
 }
