@@ -153,13 +153,13 @@ void mainCRTStartup(void)
 
     for (;;) {
         z->next_in = bufin;
-        ReadFile(stdin, bufin, sizeof(bufin), &z->avail_in, 0);
+        ReadFile(stdin, bufin, bufsize, &z->avail_in, 0);
         if (!z->avail_in) {
             break;
         }
         do {
             z->next_out = bufout;
-            z->avail_out = sizeof(bufout);
+            z->avail_out = bufsize;
             switch (zlib->inflate(z, 0)) {
             default:           invalid();
             case Z_STREAM_END: flush(stdout, z, bufout);
@@ -171,7 +171,7 @@ void mainCRTStartup(void)
 
     for (;;) {
         z->next_out = bufout;
-        z->avail_out = sizeof(bufout);
+        z->avail_out = bufsize;
         switch (zlib->inflate(z, Z_FINISH)) {
         default:           invalid();
         case Z_STREAM_END: flush(stdout, z, bufout);
