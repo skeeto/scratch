@@ -63,7 +63,7 @@ static int bswap(unsigned char *dst, int dstlen, int base, char *src)
         // Accumulate digit into the total
         int carry = v;
         for (int i = 0; i < len; i++) {
-            int x = dst[-i]*ibase + carry;
+            int x = dst[-i]*ibase + carry;  // FIXME: overflow if ibase>base?
             dst[-i] = (unsigned char)(x % base);
             carry = x / base;
         }
