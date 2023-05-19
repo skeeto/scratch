@@ -1,4 +1,4 @@
-// Practical integer predicate (with tests)
+// Practical number test predicate (with tests)
 //   $ cc -fopenmp -O3 -o practical practical.c
 //   $ cl /openmp /O2 practical.c
 // Ref: https://old.reddit.com/r/dailyprogrammer/comments/13m4bz1
