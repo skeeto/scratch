@@ -9,10 +9,9 @@
 
 #define K 8  // primality test iterations
 
-static uint64_t rand64(void)
+static uint64_t rand64(uint64_t *rng)
 {
-    static uint64_t x = 1;
-    uint64_t r = x = x*0x3243f6a8885a308d + 1;
+    uint64_t r = *rng = *rng*0x3243f6a8885a308d + 1;
     return r ^ r>>32;
 }
 
@@ -43,9 +42,9 @@ static uint64_t modexp(uint64_t b, uint64_t e, uint64_t m)
     return product;
 }
 
-static int iscomposite(uint64_t n, uint64_t d, int r)
+static int iscomposite(uint64_t n, uint64_t d, int r, uint64_t *rng)
 {
-    uint64_t a = 2 + rand64() % (n - 3);
+    uint64_t a = 2 + rand64(rng) % (n - 3);
     if (modexp(a, d, n) == 1)
         return 0;
     for (int i = 0; i < r; i++)
@@ -54,14 +53,14 @@ static int iscomposite(uint64_t n, uint64_t d, int r)
     return 1;
 }
 
-static int isprime(uint64_t n)
+static int isprime(uint64_t n, uint64_t *rng)
 {
     int r = 0;
     uint64_t d = n - 1;
     for (; d % 2 == 0; r++)
         d /= 2;
     for (int i = 0; i < K; i++)
-        if (iscomposite(n, d, r))
+        if (iscomposite(n, d, r, rng))
             return 0;
     return 1;
 }
@@ -85,6 +84,7 @@ static struct reduced divide_out(uint64_t num, uint64_t den)
 
 static int ispractical(uint64_t x)
 {
+    uint64_t rng = -x;
     uint64_t product = 1;
     uint64_t divsum = 1;
     struct reduced r = divide_out(x, 2);
@@ -94,7 +94,7 @@ static int ispractical(uint64_t x)
     if (x>1 && divsum==1) {
         return 0;
     }
-    if (x>1 && isprime(x)) {
+    if (x>1 && isprime(x, &rng)) {
         return x-1 <= divsum;
     }
 
@@ -107,7 +107,7 @@ static int ispractical(uint64_t x)
             x = r.remainder;
             product *= r.product;
             divsum *= r.divsum;
-            if (x>1 && isprime(x)) {
+            if (x>1 && isprime(x, &rng)) {
                 return x-1 <= divsum;
             }
         }
