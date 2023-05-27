@@ -43,7 +43,7 @@ static void getlines(Buffer b, Buffer *restrict lines)
     }
 }
 
-static int compare(Buffer a, Buffer b)
+static Size compare(Buffer a, Buffer b)
 {
     Size len = a.len<b.len ? a.len : b.len;
     for (Size i = 0; i < len; i++) {
@@ -52,25 +52,25 @@ static int compare(Buffer a, Buffer b)
             return c;
         }
     }
-    return a.len==b.len ? 0 : a.len<b.len ? -1 : +1;
+    return a.len - b.len;
 }
 
-static void splitmerge(Buffer *copy, Size beg, Size end, Buffer *orig)
+static void splitmerge(Buffer *dst, Size beg, Size end, Buffer *src)
 {
     if (end - beg <= 1) {
         return;
     }
     Size mid = (end + beg) / 2;
-    splitmerge(orig, beg,  mid, copy);
-    splitmerge(orig, mid, end, copy);
+    splitmerge(src, beg, mid, dst);
+    splitmerge(src, mid, end, dst);
 
     Size i = beg;
     Size j = mid;
     for (Size k = beg; k < end; k++) {
-        if (i<mid && (j>=end || compare(orig[i], orig[j])<=0)) {
-            copy[k] = orig[i++];
+        if (i<mid && (j>=end || compare(src[i], src[j])<=0)) {
+            dst[k] = src[i++];
         } else {
-            copy[k] = orig[j++];
+            dst[k] = src[j++];
         }
     }
 }
@@ -89,13 +89,13 @@ static Lines sort(Buffer b)
     if (!lines) {
         return result;
     }
-    Buffer *copy = lines + count;
+    Buffer *scratch = lines + count;
 
     getlines(b, lines);
     for (Size i = 0; i < count; i++) {
-        copy[i] = lines[i];
+        scratch[i] = lines[i];
     }
-    splitmerge(lines, 0, count, copy);
+    splitmerge(lines, 0, count, scratch);
 
     result.count = count;
     result.lines = lines;
@@ -127,7 +127,7 @@ static void append(Output *o, Byte *buf, Size len)
         for (int i = 0; i < count; i++) {
             dst[i] = buf[i];
         }
-        o->len += (int)count;
+        o->len += count;
         buf += count;
         if (o->len == (int)sizeof(o->buf)) {
             flush(o);
@@ -150,7 +150,7 @@ static Bool sortmain(Buffer input)
         newline(o);
     }
     flush(o);
-    return o->err;
+    return !lines.status || o->err;
 }
 
 
@@ -176,7 +176,6 @@ static Bool fullwrite(Byte *buf, int len)
 
 static Bool mapstdin(Buffer *b)
 {
-    return 0;
     HANDLE stdin = GetStdHandle(STD_INPUT_HANDLE);
 
     LARGE_INTEGER size;
