@@ -1,7 +1,7 @@
 // Lexicographic sort from standard input to standard output
-//   $ cc -nostartfiles -O3 -o sort.exe sort.c
-//   $ cl /O2 sort.c /link /subsystem:console kernel32.lib
-//   $ cc -O3 -o sort sort.c
+// w64devkit:  $ cc -nostartfiles -O3 -o sort.exe sort.c
+// msvc/clang: $ cl /O2 sort.c /link /subsystem:console kernel32.lib
+// linux:      $ cc -O3 -o sort sort.c
 // This is free and unencumbered software released into the public domain.
 
 // Platform Interface
@@ -156,7 +156,50 @@ static Bool sortmain(Buffer input)
 
 // Platform Implementation
 
-#ifdef _WIN32
+#if __AFL_COMPILER
+// $ afl-clang-fast -g3 -fsanitize=address,undefined sort.c
+// $ mkdir i
+// $ seq 100 | shuf >i/100
+// $ afl-fuzz -m32T -ii -oo ./a.out
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+__AFL_FUZZ_INIT();
+
+static void *alloc(Size size, Size len)
+{
+    assert(size > 0);
+    assert(len >= 0);
+    return calloc(size, len);
+}
+
+static Bool fullwrite(Byte *buf, int len)
+{
+    assert(buf);
+    assert(len > 0);
+    return 1;
+}
+
+int main(void)
+{
+    #ifdef __AFL_HAVE_MANUAL_CONTROL
+    __AFL_INIT();
+    #endif
+
+    Buffer input = {0};
+    Byte *fuzzin = __AFL_FUZZ_TESTCASE_BUF;
+    while (__AFL_LOOP(10000)) {
+        input.len = __AFL_FUZZ_TESTCASE_LEN;
+        input.data = realloc(input.data, input.len);
+        memcpy(input.data, fuzzin, input.len);
+        sortmain(input);
+    }
+    return 0;
+}
+
+#elif _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
