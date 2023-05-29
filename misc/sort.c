@@ -60,14 +60,14 @@ static void splitmerge(Buffer *dst, Size beg, Size end, Buffer *src)
     if (end - beg <= 1) {
         return;
     }
-    Size mid = (end + beg) / 2;
+    Size mid = beg + (end - beg)/2;
     splitmerge(src, beg, mid, dst);
     splitmerge(src, mid, end, dst);
 
     Size i = beg;
     Size j = mid;
     for (Size k = beg; k < end; k++) {
-        if (i<mid && (j>=end || compare(src[i], src[j])<=0)) {
+        if (i<mid && (j==end || compare(src[i], src[j])<1)) {
             dst[k] = src[i++];
         } else {
             dst[k] = src[j++];
@@ -78,7 +78,7 @@ static void splitmerge(Buffer *dst, Size beg, Size end, Buffer *src)
 typedef struct {
     Size count;
     Buffer *lines;
-    Bool status;
+    Bool ok;
 } Lines;
 
 static Lines sort(Buffer b)
@@ -99,7 +99,7 @@ static Lines sort(Buffer b)
 
     result.count = count;
     result.lines = lines;
-    result.status = 1;
+    result.ok = 1;
     return result;
 }
 
@@ -150,7 +150,7 @@ static Bool sortmain(Buffer input)
         newline(o);
     }
     flush(o);
-    return !lines.status || o->err;
+    return !lines.ok || o->err;
 }
 
 
@@ -206,7 +206,8 @@ int main(void)
 static void *alloc(ptrdiff_t size, ptrdiff_t count)
 {
     return VirtualAlloc(
-        0, size*count, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE
+        0, size*count,  // NOTE: assumes 64-bit size
+        MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE
     );
 }
 
@@ -246,23 +247,24 @@ static Bool readstdin(Buffer *b)
     HANDLE stdin = GetStdHandle(STD_INPUT_HANDLE);
 
     b->len = 0;
-    b->data = VirtualAlloc(0, (size_t)1<<40, MEM_RESERVE, PAGE_READWRITE);
+    b->data = VirtualAlloc(
+        0, (size_t)1<<40,  // NOTE: assumes 64-bit size
+        MEM_RESERVE, PAGE_READWRITE
+    );
     if (!b->data) {
         return 0;
     }
 
-    size_t cap = 0;
+    ptrdiff_t cap = 0;
     for (;;) {
-        size_t avail = cap - b->len;
-        if (!avail) {
-            cap = cap ? cap<<1 : 1<<21;
+        if (cap == b->len) {
+            cap = !cap ? 1<<21 : cap<1<<30 ? cap<<1 : cap+(1<<30);
             if (!VirtualAlloc(b->data, cap, MEM_COMMIT, PAGE_READWRITE)) {
                 return 0;
             }
-            avail = cap - b->len;
         }
 
-        DWORD len = avail>0xffffffff ? 0xffffffff : (DWORD)avail;
+        DWORD len = (DWORD)(cap - b->len);
         ReadFile(stdin, b->data+b->len, len, &len, 0);
         if (!len) {
             return 1;
@@ -290,7 +292,8 @@ int mainCRTStartup(void)
 static void *alloc(Size size, Size count)
 {
     void *p = mmap(
-        0, size*count, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0
+        0, size*count,  // NOTE: assumes 64-bit size
+        PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0
     );
     return p==MAP_FAILED ? 0 : p;
 }
@@ -313,7 +316,10 @@ static Bool mapstdin(Buffer *b)
     if (fstat(0, &st)) {
         return 0;
     }
-    b->data = mmap(0, st.st_size, PROT_READ, MAP_SHARED, 0, 0);
+    b->data = mmap(
+        0, st.st_size,  // NOTE: assumes 64-bit size
+        PROT_READ, MAP_SHARED, 0, 0
+    );
     b->len = st.st_size;
     return b->data==MAP_FAILED ? 0 : 1;
 }
@@ -322,7 +328,8 @@ static Bool readstdin(Buffer *b)
 {
     b->len = 0;
     b->data = mmap(
-        0, (size_t)1<<40, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0
+        0, (size_t)1<<40,  // NOTE: assumes 64-bit size
+        PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0
     );
     if (b->data == MAP_FAILED) {
         return 0;
@@ -330,15 +337,13 @@ static Bool readstdin(Buffer *b)
 
     size_t cap = 0;
     for (;;) {
-        size_t avail = cap - b->len;
-        if (!avail) {
-            cap = cap ? cap<<1 : 1<<21;
+        if (cap == b->len) {
+            cap = !cap ? 1<<21 : cap<1<<30 ? cap<<1 : cap+(1<<30);
             if (mprotect(b->data, cap, PROT_READ|PROT_WRITE)) {
                 return 0;
             }
-            avail = cap - b->len;
         }
-        ssize_t r = read(0, b->data+b->len, avail);
+        ssize_t r = read(0, b->data+b->len, cap-b->len);
         switch (r) {
         case -1: return 0;
         case  0: return 1;
