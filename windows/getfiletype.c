@@ -14,8 +14,8 @@
 #define HASH(x) (int)((x * 0x20010000u)>>29)
 
 static struct {
-    char name[18];
-    int length;
+    char  name[18];
+    short length;
 } types[] = {
     #define E(s) {s "\n", sizeof(s)}
     [HASH(FILE_TYPE_UNKNOWN)] = E("FILE_TYPE_UNKNOWN"),
