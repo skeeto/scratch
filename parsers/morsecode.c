@@ -144,6 +144,25 @@ main(void)
         fails += !pass;
     }
 
+    // Test rejecting bad input "......"
+    ntests++;
+    for (int state = 0, count = 1;; count++) {
+        state = morse_decode(state, '.');
+        if (count<6 && state>=0) {
+            printf(CR("FAIL") ": %.*s, got %d, want < 0\n",
+                   count, "......", state);
+            fails++;
+            break;
+        } else if (count==6 && !state) {
+            printf(CG("PASS") ": ......\n");
+            break;
+        } else if (count==6 && state){
+            printf(CR("FAIL") ": ......, got %d, want 0\n", state);
+            fails++;
+            break;
+        }
+    }
+
     if (!fails) {
         printf("All %d tests pass\n", ntests);
     }
