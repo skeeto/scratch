@@ -48,7 +48,7 @@ read(int fd, void *buf, size_t len)
         "syscall"
         : "=a"(r)
         : "a"(0), "D"(fd), "S"(buf), "d"(len)
-        : "rcx", "r11", "memory", "cc"
+        : "rcx", "r11", "memory"
     );
     return r;
 }
@@ -61,7 +61,7 @@ write(int fd, const void *buf, size_t len)
         "syscall"
         : "=a"(r)
         : "a"(1), "D"(fd), "S"(buf), "d"(len)
-        : "rcx", "r11", "memory", "cc"
+        : "rcx", "r11", "memory"
     );
     return r;
 }
@@ -77,7 +77,7 @@ mmap_anon(size_t len)
         "syscall"
         : "=a"(r)
         : "a"(9), "D"(0L), "S"(len), "d"(3)
-        : "rcx", "r8", "r9", "r10", "r11", "memory", "cc"
+        : "rcx", "r8", "r9", "r10", "r11", "memory"
     );
     return r;
 }
@@ -91,7 +91,7 @@ mremap(void *p, size_t old, size_t new)
         "syscall"
         : "=a"(r)
         : "a"(25), "D"(p), "S"(old), "d"(new)
-        : "rcx", "r10", "r11", "memory", "cc"
+        : "rcx", "r10", "r11", "memory"
     );
     return r;
 }

@@ -46,7 +46,7 @@ write(int fd, const void *buf, unsigned long len)
         "syscall"
         : "=a"(r)
         : "a"(1), "D"(fd), "S"(buf), "d"(len)
-        : "rcx", "r11", "memory", "cc"
+        : "rcx", "r11", "memory"
     );
     return r;
 }
@@ -73,7 +73,7 @@ write(int fd, const void *buf, unsigned long len)
         "svc 0"
         : "=r"(x0)
         : "r"(x8), "r"(x0), "r"(x1), "r"(x2)
-        : "memory", "cc"
+        : "memory"
     );
     return x0;
 }

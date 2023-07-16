@@ -241,7 +241,7 @@ static long syscall1(long n, long a)
         "syscall"
         : "=a"(r)
         : "a"(n), "D"(a)
-        : "rcx", "r11", "memory", "cc"
+        : "rcx", "r11", "memory"
     );
     return r;
 }
@@ -253,7 +253,7 @@ static long syscall3(long n, long a, long b, long c)
         "syscall"
         : "=a"(r)
         : "a"(n), "D"(a), "S"(b), "d"(c)
-        : "rcx", "r11", "memory", "cc"
+        : "rcx", "r11", "memory"
     );
     return r;
 }
@@ -266,7 +266,7 @@ static long syscall4(long n, long a, long b, long c, long d)
         "syscall"
         : "=a"(r)
         : "a"(n), "D"(a), "S"(b), "d"(c), "r"(r10)
-        : "rcx", "r11", "memory", "cc"
+        : "rcx", "r11", "memory"
     );
     return r;
 }
@@ -281,7 +281,7 @@ static long syscall6(long n, long a, long b, long c, long d, long e, long f)
         "syscall"
         : "=a"(r)
         : "a"(n), "D"(a), "S"(b), "d"(c), "r"(r10), "r"(r8), "r"(r9)
-        : "rcx", "r11", "memory", "cc"
+        : "rcx", "r11", "memory"
     );
     return r;
 }
@@ -330,7 +330,7 @@ static int newthread(__attribute((unused)) StackHead *stack)
         "syscall\n"
         "mov   %%rsp, %%rdi\n"      // thread entry point argument
         "ret\n"
-        : : : "rax", "rcx", "rsi", "rdi", "r10", "r11", "memory", "cc"
+        : : : "rax", "rcx", "rsi", "rdi", "r10", "r11", "memory"
     );
 }
 
