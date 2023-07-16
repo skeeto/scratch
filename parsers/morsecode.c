@@ -22,10 +22,12 @@ morse_decode(int state, int c)
         //beware: "\03" is the same as "\3" (octal)!
         "54\0" "3\0\0\0" "2\0\0\0\0\0\0\0" "16\0\0\0\0\0\0\0" "7\0\0\08\090";
     switch (c) {
-    case 0x00: return state<=0 && state>=-63 ? t[-state] : 0;
-    case 0x2e: return state*2 - 1;
-    case 0x2d: return state*2 - 2;
-    default:   return 0;
+    case 0x00: return t[-state];
+    case 0x2e:
+    case 0x2d:
+        //c - 0x2f == -1 when c==0x2e, -2 when c==0x2d
+        return state*2 + c - 0x2f > -63 ? state*2 + c - 0x2f : 0;
+    default: return 0;
     }
 }
 
