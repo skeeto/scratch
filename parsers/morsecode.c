@@ -163,6 +163,25 @@ main(void)
         }
     }
 
+    // Test rejecting bad prefix ".-.-"
+    ntests++;
+    char *prefix=".-.-", *p=prefix;
+    for (int state = 0, count = 0; *p; count++) {
+        state = morse_decode(state, *p);
+        p++;
+        if (*p && state >= 0) {
+            printf(CR("FAIL") ": %.*s, got %d, want < 0\n",
+                   count, prefix, state);
+            fails++;
+            break;
+        } else if (!*p && state == 0) {
+            printf(CG("PASS") ": %s\n", prefix);
+        } else if (!*p && state < 0) {
+            printf(CR("FAIL") ": %s, got %d, want 0\n", prefix, state);
+            fails++;
+        }
+    }
+
     if (!fails) {
         printf("All %d tests pass\n", ntests);
     }
