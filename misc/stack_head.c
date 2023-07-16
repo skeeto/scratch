@@ -37,7 +37,7 @@ static long syscall6(long n, long a, long b, long c, long d, long e, long f)
         "syscall"
         : "=a"(ret)
         : "a"(n), "D"(a), "S"(b), "d"(c), "r"(r10), "r"(r8), "r"(r9)
-        : "rcx", "r11", "memory"
+        : "rcx", "r11", "memory", "cc"
     );
     return ret;
 }
@@ -102,7 +102,7 @@ static long newthread(struct stack_head *stack)
         "syscall\n"
         "mov  %%rsp, %%rdi\n"     // entry point argument
         "ret\n"
-        : : : "rax", "rcx", "rsi", "rdi", "r11", "memory"
+        : : : "rax", "rcx", "rsi", "rdi", "r11", "memory", "cc"
     );
 }
 
