@@ -18,15 +18,19 @@ morse_decode(int state, int c)
         "ET"
         "IANM"
         "SURWDKGO"
-        "HVF\0L\0PJBXCYZQ\0\0"
-        //beware: "\03" is the same as "\3" (octal)!
-        "54\0" "3\0\0\0" "2\0\0\0\0\0\0\0" "16\0\0\0\0\0\0\0" "7\0\0\08\090";
+        //invalid strict prefixes have their MSB set
+        "HV\xc6\0\xcc\x80\xd0JB\xd8\xc3\xd9Z\xd1\0\0"
+        "\xb5\xb4\0\xb3\0\0\0\xb2\0\0\0\0\0\0\0\xb1"
+        "\xb6\0\0\0\0\0\0\0\xb7\0\0\0\xb8\0\xb9\xb0";
+    int v = t[-state];
     switch (c) {
-    case 0x00: return t[-state];
+    case 0x00: return v & 0x7f;
     case 0x2e:
     case 0x2d:
-        //c - 0x2f == -1 when c==0x2e, -2 when c==0x2d
-        return state*2 + c - 0x2f > -63 ? state*2 + c - 0x2f : 0;
+        return
+            v & 0x80 || //invalid strict prefix
+            t[-(state * 2 + c - 0x2f)] == 0x80 //c-0x2f==-1 when c==0x2e
+            ? 0 : state*2 + c - 0x2f;
     default: return 0;
     }
 }
