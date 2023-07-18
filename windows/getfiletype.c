@@ -27,10 +27,10 @@ static struct {
 
 int mainCRTStartup(void)
 {
-    void *stdout = GetStdHandle(STD_OUTPUT_HANDLE);
-    void *stderr = GetStdHandle(STD_ERROR_HANDLE);
-    DWORD type   = GetFileType(stdout);
-    char *name   = types[HASH(type)].name;
-    DWORD length = types[HASH(type)].length;
+    HANDLE stdout = GetStdHandle(STD_OUTPUT_HANDLE);
+    HANDLE stderr = GetStdHandle(STD_ERROR_HANDLE);
+    DWORD type    = GetFileType(stdout);
+    char *name    = types[HASH(type)].name;
+    DWORD length  = types[HASH(type)].length;
     return !WriteFile(stderr, name, length, &length, 0);
 }
