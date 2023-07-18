@@ -44,7 +44,7 @@ static int setlaa(uint8_t *exe, uint32_t len)
     return 1;
 }
 
-char *run(void)
+static char *run(void)
 {
     HANDLE stdin  = GetStdHandle(STD_INPUT_HANDLE);
     HANDLE stdout = GetStdHandle(STD_OUTPUT_HANDLE);
