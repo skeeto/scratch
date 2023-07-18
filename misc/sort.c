@@ -57,7 +57,7 @@ static Size compare(Buffer a, Buffer b)
 
 static void splitmerge(Buffer *dst, Size beg, Size end, Buffer *src)
 {
-    if (end - beg <= 1) {
+    if (end-beg < 2) {
         return;
     }
     Size mid = beg + (end - beg)/2;
@@ -203,7 +203,7 @@ int main(void)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-static void *alloc(ptrdiff_t size, ptrdiff_t count)
+static void *alloc(Size size, Size count)
 {
     return VirtualAlloc(
         0, size*count,  // NOTE: assumes 64-bit size
@@ -255,7 +255,7 @@ static Bool readstdin(Buffer *b)
         return 0;
     }
 
-    ptrdiff_t cap = 0;
+    Size cap = 0;
     for (;;) {
         if (cap == b->len) {
             cap = !cap ? 1<<21 : cap<1<<30 ? cap<<1 : cap+(1<<30);
