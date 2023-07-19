@@ -89,16 +89,16 @@ os_write(int fd, const wchar_t *buf, int len)
     /* Convert to UTF-8 */
     for (i = 0; i < len; i++) {
         wchar_t r = buf[i];
-		if (r < 0x80) {
+        if (r < 0x80) {
             u8[ulen++] = r;
-		} else if (r < 0x800) {
-			u8[ulen++] = 0xc0 | (r >>  6     );
-			u8[ulen++] = 0x80 | (r >>  0 & 63);
-		} else {
-			u8[ulen++] = 0xe0 | (r >> 12     );
-			u8[ulen++] = 0x80 | (r >>  6 & 63);
-			u8[ulen++] = 0x80 | (r >>  0 & 63);
-		}
+        } else if (r < 0x800) {
+            u8[ulen++] = 0xc0 | (r >>  6     );
+            u8[ulen++] = 0x80 | (r >>  0 & 63);
+        } else {
+            u8[ulen++] = 0xe0 | (r >> 12     );
+            u8[ulen++] = 0x80 | (r >>  6 & 63);
+            u8[ulen++] = 0x80 | (r >>  0 & 63);
+        }
     }
     return WriteFile(h, u8, ulen, &tmp, 0) && (int)tmp == ulen;
 }
