@@ -92,7 +92,7 @@ static Node *merge(Node *a, Node *b)
 }
 
 // Stable Queue Mergesort, O(n) worst case space.
-static Node *sort(Node *ns, Arena *scratch)
+static Node *sortbfs(Node *ns, Arena *scratch)
 {
     typedef struct Queue {
         struct Queue *next;
@@ -127,6 +127,38 @@ static Node *sort(Node *ns, Arena *scratch)
         *tail = 0;
     }
     return head->list;
+}
+
+// Stable "Queue" Mergesort, O(log n) worst case space.
+static Node *sortdfs(Node *head)
+{
+    struct {
+        Node *list;
+        Size depth;
+    } stack[64];
+    I32 n = 0;
+
+    while (head) {
+        stack[n].list = head;
+        stack[n++].depth = 0;
+        while (head->next && head->value<=head->next->value) {
+            head = head->next;
+        }
+        Node *last = head;
+        head = head->next;
+        last->next = 0;
+
+        for (; n>1 && stack[n-1].depth==stack[n-2].depth; n--) {
+            stack[n-2].list = merge(stack[n-2].list, stack[n-1].list);
+            stack[n-2].depth++;
+        }
+    }
+
+    for (; n > 1; n--) {
+        stack[n-2].list = merge(stack[n-2].list, stack[n-1].list);
+        stack[n-2].depth++;
+    }
+    return stack[0].list;
 }
 
 typedef struct {
@@ -228,8 +260,13 @@ static I32 testmain(void)
         }
 
         reset(scratch);
-        nodes = sort(nodes, scratch);
-        printi32(stdout, (I32)scratch->off);
+        Size off = scratch->off;
+        #ifdef DFS
+        nodes = sortdfs(nodes);
+        #else
+        nodes = sortbfs(nodes, scratch);
+        #endif
+        printi32(stdout, (I32)(scratch->off - off));
         PUTS(stdout, " scratch bytes used\n");
         flush(stdout);
 
