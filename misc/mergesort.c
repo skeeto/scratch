@@ -72,6 +72,25 @@ typedef struct Node {
     I32 order;  // stability validation
 } Node;
 
+static Node *merge(Node *a, Node *b)
+{
+    Node  *head = 0;
+    Node **tail = &head;
+    while (a && b) {
+        if (b->value < a->value) {
+            *tail = b;
+            tail = &b->next;
+            b = b->next;
+        } else {
+            *tail = a;
+            tail = &a->next;
+            a = a->next;
+        }
+    }
+    *tail = a ? a : b;
+    return head;
+}
+
 // Stable Queue Mergesort, O(n) worst case space.
 static Node *sort(Node *ns, Arena *scratch)
 {
@@ -79,10 +98,10 @@ static Node *sort(Node *ns, Arena *scratch)
         struct Queue *next;
         Node *list;
     } Queue;
+    Queue  *head = 0;
+    Queue **tail = &head;
 
     // Build a queue out of sorted runs
-    Queue *head = 0;
-    Queue **tail = &head;
     while (ns) {
         Queue *q = NEW(scratch, Queue, 1);
         q->list = ns;
@@ -97,42 +116,16 @@ static Node *sort(Node *ns, Arena *scratch)
     }
 
     while (head->next) {
-        Queue *nexthead = 0;
-        Queue **nexttail = &nexthead;
-
-        // Merge pairs of queue elements
-        while (head) {
-            Queue *qa = head;
-            Node *a = qa->list;
-            head = head->next;
-            Node *b = 0;
-            if (head) {
-                b = head->list;
-                head = head->next;
-            }
-
-            qa->next = 0;  // reuse queue element
-            qa->list = 0;
-            *nexttail = qa;
-            nexttail = &qa->next;
-
-            Node **tail = &qa->list;
-            while (a && b) {
-                if (b->value < a->value) {
-                    *tail = b;
-                    tail = &b->next;
-                    b = b->next;
-                } else {
-                    *tail = a;
-                    tail = &a->next;
-                    a = a->next;
-                }
-            }
-            *tail = a ? a : b;
+        tail = &head;
+        for (Queue *q = head; q; q = q->next ? q->next->next : 0) {
+            Node *a = q->list;
+            Node *b = q->next ? q->next->list : 0;
+            q->list = merge(a, b);
+            *tail = q;
+            tail = &q->next;
         }
-        head = nexthead;
+        *tail = 0;
     }
-
     return head->list;
 }
 
