@@ -248,6 +248,8 @@ static I32 testmain(void)
 
 
 #ifdef _WIN32
+// $ cc -nostartfiles -o mergesort.exe mergesort.c
+// $ cl mergesort.c
 
 #define W32(r) __declspec(dllimport) r __stdcall
 W32(void *) GetStdHandle(I32);
@@ -284,6 +286,7 @@ I32 mainCRTStartup(void)
 }
 
 #else
+// $ cc -o mergesort mergesort.c
 #include <stdio.h>
 #include <stdlib.h>
 
