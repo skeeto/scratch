@@ -1,9 +1,16 @@
-// Stable Queue Mergesort
+// Stable Queue Mergesort and Stack Mergesort
 //
-// Makes queue mergesort stable by breaking queue circularity. This
-// prevents the first and last elements from being merged out of order.
-// The temporary work space it itself a linked list and is drawn from a
-// scratch arena.
+// By default it tests/benchmarks queue mergesort. Use -DDFS to enable
+// stack mergesort instead. Queue mergesort temporary work space is
+// itself a linked list and drawn from a scratch arena.
+//
+// Note how the benchmark slows down as it runs. The list starts in tidy
+// memory order but is gradually shuffled through reuse, randomizing
+// traversal. Then cache miss effects kick in and dramatically hurt
+// performance. Without these cache misses, queue and stack performance
+// is equal, but under random traversal, stack mergesort performs much
+// better. LIFO concentrates the most active nodes, reducing cache
+// misses, while FIFO is prone to the worst cache miss effects.
 //
 // Ref: https://gist.github.com/maxgoren/e3c7607abe164ee448e652d7d63bfbb7
 // Ref:  http://www.maxgcoding.com/queue-mergesort-a-comparison-optimal-bottom-up-sort-for-linked-lists/
@@ -130,7 +137,7 @@ static Node *sortbfs(Node *ns, Arena *scratch)
     return head->list;
 }
 
-// Stable "Queue" Mergesort, O(log n) worst case space.
+// Stable Stack Mergesort, O(log n) worst case space.
 static Node *sortdfs(Node *head)
 {
     I32 len = 0;
