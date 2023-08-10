@@ -133,15 +133,13 @@ static Node *sortbfs(Node *ns, Arena *scratch)
 // Stable "Queue" Mergesort, O(log n) worst case space.
 static Node *sortdfs(Node *head)
 {
-    struct {
-        Node *list;
-        Size depth;
-    } stack[64];
-    I32 n = 0;
+    I32 len = 0;
+    Node *list[64];
+    Size depth[64];
 
     while (head) {
-        stack[n].list = head;
-        stack[n++].depth = 0;
+        list[len] = head;
+        depth[len++] = 0;
         while (head->next && head->value<=head->next->value) {
             head = head->next;
         }
@@ -149,16 +147,16 @@ static Node *sortdfs(Node *head)
         head = head->next;
         last->next = 0;
 
-        for (; n>1 && stack[n-1].depth==stack[n-2].depth; n--) {
-            stack[n-2].list = merge(stack[n-2].list, stack[n-1].list);
-            stack[n-2].depth++;
+        for (; len>1 && depth[len-1]==depth[len-2]; len--) {
+            list[len-2] = merge(list[len-2], list[len-1]);
+            depth[len-2]++;
         }
     }
 
-    for (; n > 1; n--) {
-        stack[n-2].list = merge(stack[n-2].list, stack[n-1].list);
+    for (; len > 1; len--) {
+        list[len-2] = merge(list[len-2], list[len-1]);
     }
-    return stack[0].list;
+    return len ? list[0] : 0;
 }
 
 typedef struct {
