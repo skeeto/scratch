@@ -8,6 +8,7 @@
 // Ref: https://gist.github.com/maxgoren/e3c7607abe164ee448e652d7d63bfbb7
 // Ref:  http://www.maxgcoding.com/queue-mergesort-a-comparison-optimal-bottom-up-sort-for-linked-lists/
 // Ref: https://sedgewick.io/wp-content/themes/sedgewick/papers/1993Queue.pdf
+// Ref: https://old.reddit.com/r/C_Programming/comments/15lpjtl/_/jvhujb2/
 // This is free and unencumbered software released into the public domain.
 #include <stddef.h>
 #include <stdint.h>
@@ -156,7 +157,6 @@ static Node *sortdfs(Node *head)
 
     for (; n > 1; n--) {
         stack[n-2].list = merge(stack[n-2].list, stack[n-1].list);
-        stack[n-2].depth++;
     }
     return stack[0].list;
 }
