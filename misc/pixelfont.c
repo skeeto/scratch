@@ -1311,7 +1311,7 @@ static u8 *getglyph(c32 cp)
 
 #define SCALE 2
 #define MAXX  256
-#define MAXY  128
+#define MAXY  120
 typedef _Bool bool;
 
 static bool fullwrite(u8 *, int);
