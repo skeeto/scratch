@@ -1307,17 +1307,30 @@ static u8 *getglyph(c32 cp)
 // in Netpbm PGM (P5) format.
 // $ ./pixelfont >glyphmap.pgm
 // $ ./pixelfont >hellosmile.pgm Hello, ☺!
+// $ ls | xargs ./pixelfont >ls.pgm
 
-#define SCALE    2
-#define MAXCOUNT 256
+#define SCALE 2
+#define MAXX  256
+#define MAXY  128
 typedef _Bool bool;
 
 static bool fullwrite(u8 *, int);
 
 typedef struct {
     int w, h;
-    u8 d[32*8*SCALE][MAXCOUNT*8*SCALE];
+    u8 d[MAXY*8*SCALE][MAXX*8*SCALE];
 } imagebuf;
+
+static void clear(imagebuf *im)
+{
+    im->w = im->h = 0;
+    for (int y = 0; y < 8*SCALE*MAXY; y++) {
+        for (int x = 0; x < 8*SCALE*MAXX; x++) {
+            im->d[y][x] = 0xff;  // fill with white background
+        }
+    }
+
+}
 
 static void draw(imagebuf *im, int x, int y, c32 cp)
 {
@@ -1402,23 +1415,25 @@ static c16 *c16to32(c16 *s, c32 *cp)
 static void renderargs(imagebuf *im, int argc, c16 **argv)
 {
     int x = 0;
-    im->h = 8*SCALE;
-    for (int i = 1; i<argc && x<MAXCOUNT; i++) {
-        if (i > 1) {
-            draw(im, x++, 0, ' ');
-        }
+    int y = 0;
+    int maxx = 0;
+    for (int i = 1; i<argc && y<MAXY; i++, x=0, y++) {
         c32 cp;
         c16 *s = c16to32(argv[i], &cp);
-        for (; cp && x<MAXCOUNT; s = c16to32(s, &cp)) {
-            draw(im, x++, 0, cp);
+        for (; cp && x<MAXX; s = c16to32(s, &cp)) {
+            draw(im, x++, y, cp);
         }
+        maxx = maxx>x ? maxx : x;
     }
-    im->w = x*8*SCALE;
+    im->w = 8*SCALE*maxx;
+    im->h = 8*SCALE*y;
 }
 
 int mainCRTStartup(void)
 {
     static imagebuf im[1];
+    clear(im);
+
     c16 *cmdline = GetCommandLineW();
     int argc;
     c16 **argv = CommandLineToArgvW(cmdline, &argc);
@@ -1490,24 +1505,25 @@ int c8to32(char *s, int len, c32 *c)
 static void renderargs(imagebuf *im, int argc, char **argv)
 {
     int x = 0;
-    im->h = 8*SCALE;
-    for (int i = 1; i<argc && x<MAXCOUNT; i++) {
+    int y = 0;
+    int maxx = 0;
+    for (int i = 1; i<argc && y<MAXY; i++, x=0, y++) {
         char *s = argv[i];
         char *e = s + strlen(s);
-        if (x > 1) {
-            draw(im, x++, 0, ' ');
-        }
-        for (c32 cp; *s && x<MAXCOUNT;) {
+        for (c32 cp; *s && x<MAXX;) {
             s += c8to32(s, (int)(e-s), &cp);
-            draw(im, x++, 0, cp);
+            draw(im, x++, y, cp);
         }
+        maxx = maxx>x ? maxx : x;
     }
-    im->w = 8*SCALE*x;
+    im->w = 8*SCALE*maxx;
+    im->h = 8*SCALE*y;
 }
 
 int main(int argc, char **argv)
 {
     static imagebuf im[1];
+    clear(im);
     switch (argc) {
     case  0:
     case  1: glyphmap(im);
