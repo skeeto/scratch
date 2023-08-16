@@ -1,10 +1,10 @@
-// In-place base-32 unsigned 64-bit radix sort
+// In-place base-128 unsigned 64-bit radix sort
 //
 //   $ cc -DTEST -DQSORT -O -o sortu64 sortu64.c
 //   $ ./sortu64
 //
 // The base can be adjusted at compile time with SORTU64_EXP, though
-// large bases will blow the stack. The benchmark indicates base-32 is
+// large bases will blow the stack. The benchmark indicates base-128 is
 // the fastest, at least for large-valued elements. Faster on partially
 // sorted inputs, and unsurprisingly, in my tests substantially faster
 // than qsort on any kind of input.
@@ -35,11 +35,12 @@ static void sortu64(u64 *nums, size len, i32 shift)
     }
 
     // First pass: count each bin size
-    #define SORTU64_EXP 5
-    i32 mask = (1<<SORTU64_EXP) - 1;
+    #define SORTU64_EXP 7
+    i32 mask  = (1<<SORTU64_EXP) - 1;
+    i32 spare = SORTU64_EXP - (64%SORTU64_EXP + SORTU64_EXP)%SORTU64_EXP;
     size fill[1<<SORTU64_EXP] = {0};
     for (size i = 0; i < len; i++) {
-        i32 bin = (i32)(nums[i]>>(64 - SORTU64_EXP - shift)) & mask;
+        i32 bin = (i32)(nums[i]>>(64 - spare - shift)) & mask;
         fill[bin]++;
     }
 
@@ -56,7 +57,7 @@ static void sortu64(u64 *nums, size len, i32 shift)
     // Second pass: move elements into allotted bins
     for (i32 b = 0; b < 1<<SORTU64_EXP; b++) {
         for (size i = fill[b]; i < ends[b];) {
-            i32 bin = (i32)(nums[i]>>(64 - SORTU64_EXP - shift)) & mask;
+            i32 bin = (i32)(nums[i]>>(64 - spare - shift)) & mask;
             if (bin == b) {
                 i++;
             } else {
@@ -68,7 +69,7 @@ static void sortu64(u64 *nums, size len, i32 shift)
     }
 
     // Recursively sort each bin on the next digit
-    if (shift+SORTU64_EXP < 64) {
+    if (shift < 64-spare) {
         for (i32 b = 0; b < 1<<SORTU64_EXP; b++) {
             size beg = b>0 ? ends[b-1] : 0;
             sortu64(nums+beg, ends[b]-beg, shift+SORTU64_EXP);
