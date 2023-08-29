@@ -1,39 +1,42 @@
-// Arena-backed, generic, dynamic-size array experiment
+// Arena-backed, generic slices (experiment)
 //
-//   $ cc -nostartfiles -fno-builtin -o dynarray dynarray.c
-//   $ ./dynarray
+//   $ cc -nostartfiles -fno-builtin -o slice slice.c
+//   $ ./slice
+
+// The main feature is the type-generic push() macro with supporting
+// grow_() function. It allocates out of a simple arena with non-local
+// goto for out-of-memory errors. On resize, the old buffer is left in
+// place and continues to be a valid copy so long as its arena keeps it
+// alive. New elements are zero-initialized. The push macro resolves to
+// a pointer to the new element. Callers first define a (data, len, cap)
+// struct, and grow_ operates on it by memcpy-based type punning.
+
+//   struct struct {
+//       item *data;
+//       size  len;
+//       size  cap;
+//   } itemslice;
 //
-// The main feature is the type-generic len(), cap(), and push() macros
-// with supporting push_() and grow_() functions. They allocate out of a
-// simple arena with non-local goto for out-of-memory errors. The len()
-// macro resolves to an l-value, so length can be modified at will. A
-// null pointer is an empty dynamic-size array, including modifyable
-// length. On resize, the old array is left in place and continues to be
-// a valid copy so long as its arena keeps it alive. New elements are
-// zero-initialized on resize, i.e. modifying len() to truncate does not
-// zero. The push macro resolves to a pointer to the new element.
+//   itemslice items = {};                 // empty slice
+//   *push(arena, &items) = (item){...};   // append and assign
+//   item *item = push(arena, &items);     // append and retrieve
+//   item->name = ...;                     // "
+//   items.len = 0;                        // truncate the slice
 //
-//   item *items = 0;                     // empty array
-//   *push(arena, items) = (item){...};   // append and assign
-//   item *item = push(arena, items);     // append and retrieve
-//   item->name = ...;                    // "
-//   len(items) = 0;                      // truncate the array
+// The push() result can be passed straight to contructors:
 //
-// The push() result can be passed straight to places expecting a
-// pointer. Though mind the side-effect in the push() macro!
-//
-//   void item_init(item *, ...);         // "constructor" prototype
-//   init_item(push(arena, items), ...);  // like "placement new"
+//   void item_init(item *, ...);          // "constructor" prototype
+//   init_item(push(arena, &items), ...);  // like "placement new"
 //
 // Because of the non-local goto in the arena, there is no need to check
 // for errors. The push() macro simply will not return, and control will
 // go to the out-of-memory "handler" which can reset the arena pointer
 // to free all allocations, e.g. to recover and keep going after OOM.
 //
-// Due to the use of typeof and non-standard use of _Alignof, this
-// program requires GNU C and probably only works with GCC and Clang.
-// Both are essential for the macros. It also includes a bunch of new
-// little tricks I've learned (circa August 2023).
+// Due to the use of typeof, _Alignof, and statement declaration, this
+// program requires GNU C and probably only works with GCC and Clang. It
+// also includes a bunch of new little tricks I've learned (circa August
+// 2023).
 //
 // The demo below is for Windows, but it's trivial to port and only
 // needs write bytes to standard output. Oh, and replace rdrand.
@@ -97,48 +100,49 @@ static byte *alloc(arena *a, size objsize, size align, size count)
     return p;
 }
 
-// Generic dynamic-size arrays
+// Generic slices
 
-// len(), cap() are l-values. push() maybe updates the buffer pointer,
-// then returns the new element pointer. Elements are zero-initialized.
-// On growth, the original array is left behind, unmodified.
-#define len(p)     (*(p ? ((size *)p)-1 : &(size){0}))
-#define cap(p)     (*(p ? ((size *)p)-2 : &(size){0}))
-#define push(a, p) (typeof(p))push_(a, (byte **)&p, sizeof(*(p)), alignof(*(p)))
+// A slice is a (data, len, cap) typed (pointer, size, size). The macro
+// evaluates to a pointer to the newly-pushed element. Arguments are
+// only evaluated once and may safely have side effects.
+#define push(arena, sliceptr) ({ \
+    typeof(sliceptr) s_ = (sliceptr); \
+    if (s_->len == s_->cap) { \
+        grow_((arena), (byte *)s_, sizeof(*s_->data), alignof(*s_->data)); \
+    } \
+    s_->data + s_->len++; \
+})
 
-static byte *grow_(arena *a, byte *p, size objsize, size align)
+// Double the capacity of a (data, len, cap) slice.
+static void grow_(arena *a, byte *header, size objsize, size align)
 {
-    size len = len(p);
-    size cap = cap(p);
-    // Technically iff sizeof(size)==4 and objsize==1, 2*cap could
-    // overflow if the buffer was carefully juggled back and forth
-    // between two huge arenas. An acceptible risk.
-    cap = cap ? 2*cap : 2;
-    size extra = (2*sizeof(size) - 1 + objsize) / objsize;
-    byte *copy;
-    if (align < alignof(size)) {
-        size header = 2 * sizeof(size);
-        copy = header + alloc(a, objsize, alignof(size), extra+cap);
-    } else {
-        size header = objsize * extra;
-        copy = header + alloc(a, objsize, align, extra+cap);
-    }
-    for (size i = 0; i < len*objsize; i++) {
-        copy[i] = p[i];
-    }
-    cap(copy) = cap;
-    len(copy) = len;
-    return copy;
-}
+    struct {
+        byte *data;
+        size  len;
+        size  cap;
+    } copy;
+    byte *copyp = (byte *)&copy;
 
-static byte *push_(arena *a, byte **pp, size objsize, size align)
-{
-    // Ideally this small function will be inlined
-    byte *p = *pp;
-    if (len(p) == cap(p)) {  // slow path?
-        *pp = p = grow_(a, p, objsize, align);
+    for (size i = 0; i < sizeof(copy); i++) {
+        copyp[i] = header[i];
     }
-    return p + len(p)++*objsize;
+    assert(copy.cap >= 0);
+    assert(copy.len >= 0);
+    assert(copy.len <= copy.cap);
+
+    if (!copy.cap) {
+        copy.cap = 1;
+    }
+    byte *data = alloc(a, objsize*2, align, copy.cap);
+    for (size i = 0; i < objsize*copy.len; i++) {
+        data[i] = copy.data[i];
+    }
+
+    copy.data = data;
+    copy.cap *= 2;
+    for (size i = 0; i < sizeof(copy); i++) {
+        header[i] = copyp[i];
+    }
 }
 
 // Test program
@@ -209,6 +213,12 @@ static u64 *newrng(arena *a)
     return rng;
 }
 
+typedef struct {
+    i32 *data;
+    size len;
+    size cap;
+} i32slice;
+
 static u32 run(byte *heap, size heaplen)
 {
     arena *a = newarena(heap, heaplen);
@@ -223,20 +233,19 @@ static u32 run(byte *heap, size heaplen)
     stdout->buf = new(a, byte, stdout->cap);
 
     i32 nbins = 100;
-    i32 **bins = new(a, i32 *, nbins);
+    i32slice *bins = new(a, i32slice, nbins);
     u64 *rng = newrng(a);
 
     for (i32 i = 0; i < 1000; i++) {
         i32 v = rand31(rng) % 1000;
-        *push(a, bins[v%nbins]) = v;
+        *push(a, bins + v%nbins) = v;
     }
 
     for (i32 b = 0; b < nbins; b++) {
-        size len = len(bins[b]);
         print(stdout, b, 2);
         write(stdout, (byte *)": ", 2);
-        for (size i = 0; i < len; i++) {
-            print(stdout, bins[b][i], 3);
+        for (size i = 0; i < bins[b].len; i++) {
+            print(stdout, bins[b].data[i], 3);
             write(stdout, (byte *)" ", 1);
         }
         write(stdout, (byte *)"\n", 1);
