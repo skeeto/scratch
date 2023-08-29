@@ -1,7 +1,4 @@
 // Arena-backed, generic slices (experiment)
-//
-//   $ cc -nostartfiles -fno-builtin -o slice slice.c
-//   $ ./slice
 
 // The main feature is the type-generic push() macro with supporting
 // grow_() function. It allocates out of a simple arena with non-local
@@ -37,9 +34,6 @@
 // program requires GNU C and probably only works with GCC and Clang. It
 // also includes a bunch of new little tricks I've learned (circa August
 // 2023).
-//
-// The demo below is for Windows, but it's trivial to port and only
-// needs write bytes to standard output. Oh, and replace rdrand.
 //
 // This is free and unencumbered software released into the public domain.
 
@@ -255,7 +249,10 @@ static u32 run(byte *heap, size heaplen)
     return stdout->err;
 }
 
-// Win32 stuff
+
+#if _WIN32
+// $ cc -nostartfiles -fno-builtin -o slice slice.c
+// $ ./slice
 
 typedef struct {} *handle;
 
@@ -272,6 +269,7 @@ static b32 fullwrite(i32 fd, byte *buf, size len)
     return WriteFile(out, buf, (u32)len, &dummy, 0);
 }
 
+__attribute((force_align_arg_pointer))
 void mainCRTStartup(void)
 {
     static byte memory[1<<24] __attribute((aligned(64)));
@@ -280,3 +278,37 @@ void mainCRTStartup(void)
     u32 r = run(heap, countof(memory));
     ExitProcess(r);
 }
+
+
+#elif __linux
+// $ cc -nostdlib -fno-builtin -o slice slice.c
+// $ ./slice
+
+static b32 fullwrite(i32 fd, byte *buf, size len)
+{
+    for (size off = 0; off < len;) {
+        size r;
+        asm volatile (
+            "syscall"
+            : "=a"(r)
+            : "a"(1), "D"(fd), "S"(buf+off), "d"(len-off)
+            : "rcx", "r11", "memory"
+        );
+        if (r < 1) {
+            return 0;
+        }
+        off += r;
+    }
+    return 1;
+}
+
+__attribute((force_align_arg_pointer))
+void _start(void)
+{
+    static byte memory[1<<24] __attribute((aligned(64)));
+    byte *heap = memory;
+    asm ("" : "+r"(heap));  // launder the heap pointer
+    u32 r = run(heap, countof(memory));
+    asm volatile ("syscall" : : "a"(60), "D"(r));
+}
+#endif
