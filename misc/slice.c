@@ -78,6 +78,8 @@ static arena *newarena(byte *heap, size len)
 }
 
 __attribute((malloc))
+__attribute((alloc_align(3)))
+__attribute((alloc_size(2, 4)))
 static byte *alloc(arena *a, size objsize, size align, size count)
 {
     size avail = a->cap - a->off;
