@@ -376,15 +376,16 @@ static void u16le(bufout *o, unsigned x)
     put(o, (char)(x >>  8));
 }
 
-float fast_sinf(float x)
+static float fast_sinf(float x)
 {
+    x  = x<0 ? 0.5f-x : x;
     x -= 0.500f + (float)(int)x;
     x *= 16.00f * ((x<0 ? -x : x) - 0.50f);
     x += 0.225f * ((x<0 ? -x : x) - 1.00f) * x;
     return x;
 }
 
-extern float fast_sqrtf(float x)
+static float fast_sqrtf(float x)
 {
     float e = x / 2;
     e = (e + x/e) / 2;
