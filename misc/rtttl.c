@@ -376,6 +376,7 @@ static void u16le(bufout *o, unsigned x)
     put(o, (char)(x >>  8));
 }
 
+// x is in turns (0..1), not radians (0..2*pi)
 static float fast_sinf(float x)
 {
     x  = x<0 ? 0.5f-x : x;
