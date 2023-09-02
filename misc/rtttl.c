@@ -156,8 +156,8 @@ static rtttl_status rtttl_init(rtttl_parser *p, char *buf, int len)
     p->ptr      = buf;
     p->end      = buf + len;
     p->namelen  = 0;
-    p->octave   = 4;
-    p->duration = 6;
+    p->duration = 4;
+    p->octave   = 6;
     p->beat     = 63;
     p->comma    = 0;
 
