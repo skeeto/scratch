@@ -23,17 +23,17 @@ typedef struct {
     int         duration;
     rtttl_pitch pitch;
     int         octave;
-    _Bool dot;
+    _Bool       dot;
 } rtttl_note;
 
 typedef struct {
-    char  *ptr;
-    char  *end;
-    int    namelen;
-    int    duration;
-    int    octave;
-    int    beat;
-    _Bool  comma;
+    char *ptr;
+    char *end;
+    int   namelen;
+    int   duration;
+    int   octave;
+    int   beat;
+    _Bool comma;
 } rtttl_parser;
 
 // Initialize a parser, populating name length and the defaults.
@@ -67,8 +67,8 @@ typedef enum {
 } rtttl_type;
 
 typedef struct {
-    char *beg;
-    char *end;
+    char      *beg;
+    char      *end;
     rtttl_type type;
 } rtttl_token;
 
