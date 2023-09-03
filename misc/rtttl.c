@@ -386,15 +386,6 @@ static float fast_sinf(float x)
     return x;
 }
 
-static float fast_sqrtf(float x)
-{
-    float e = x / 2;
-    e = (e + x/e) / 2;
-    e = (e + x/e) / 2;
-    e = (e + x/e) / 2;
-    return e;
-}
-
 static const float freqs[] = {
     261.625565301f,  // rtttl_C
     277.182630977f,  // rtttl_CS
@@ -426,6 +417,7 @@ int run(void)
         return 1;
     }
 
+    enum { HZ = 44100 };
     u32le(stdout, 0x46464952); // "RIFF"
     u32le(stdout, 0xffffffff); // file length
     u32le(stdout, 0x45564157); // "WAVE"
@@ -433,14 +425,17 @@ int run(void)
     u32le(stdout, 16        ); // struct size
     u16le(stdout, 1         ); // PCM
     u16le(stdout, 1         ); // mono
-    u32le(stdout, 44100     ); // sample rate
-    u32le(stdout, 44100*2   ); // byte rate
+    u32le(stdout, HZ        ); // sample rate
+    u32le(stdout, HZ*2      ); // byte rate
     u16le(stdout, 2         ); // block size
     u16le(stdout, 16        ); // bits per sample
     u32le(stdout, 0x61746164); // "data"
     u32le(stdout, 0xffffffff); // byte length
+    for (int i = 0; i < HZ/5; i++) {
+        u16le(stdout, 0);  // silence at the beginning
+    }
 
-    float samples_per_duration = 4 * 60 * 44100.0f / (float)p.beat;
+    float samples_per_duration = 4 * 60 * HZ / (float)p.beat;
     for (;;) {
         rtttl_note note;
         switch (rtttl_next(&p, &note)) {
@@ -459,13 +454,17 @@ int run(void)
             int scale = 1 << (note.octave - 4);
             float freq = freqs[note.pitch] * (float)scale;
             for (int i = 0; i < nsamples; i++) {
-                float v = (float)i / 44100.0f;
-                float e = (float)(nsamples - i) / (float)nsamples;
-                float s = fast_sinf(freq * v) * fast_sqrtf(e);
-                u16le(stdout, (unsigned)(s * 0x7fff));
+                float v = (float)i / HZ;
+                float attack = v<0.05f ? v/0.05f : 1;
+                float decay = (float)(nsamples - i - 1) / (float)nsamples;
+                float sample = fast_sinf(freq * v) * attack * decay;
+                u16le(stdout, (unsigned)(sample * 0x7ff8));
             }
             break;
         case rtttl_DONE:
+            for (int i = 0; i < HZ/5; i++) {
+                u16le(stdout, 0);  // silence at the end
+            }
             flush(stdout);
             return stdout->err;
         case rtttl_ERROR:
