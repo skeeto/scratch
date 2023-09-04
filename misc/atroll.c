@@ -255,7 +255,7 @@ typedef enum {
     atroll_B_Div,     // operand
     atroll_B_Drop,    // operand
     atroll_B_If,      // cond, child
-    atroll_B_For,     // cond, child, operand
+    atroll_B_For,     // operand, child
     atroll_B_While,   // cond, child
 } atroll_btype;
 
@@ -575,11 +575,11 @@ static i16 atroll_throw(i16 sides, uint64_t *rng)
 static _Bool atroll_apply(atroll_cond cond, i32 x)
 {
     switch (cond.cmp) {
-    case atroll_C_LT: return x <  cond.op; break;
-    case atroll_C_LE: return x <= cond.op; break;
-    case atroll_C_EQ: return x == cond.op; break;
-    case atroll_C_GE: return x >= cond.op; break;
-    case atroll_C_GT: return x >  cond.op; break;
+    case atroll_C_LT: return x <  cond.op;
+    case atroll_C_LE: return x <= cond.op;
+    case atroll_C_EQ: return x == cond.op;
+    case atroll_C_GE: return x >= cond.op;
+    case atroll_C_GT: return x >  cond.op;
     }
     *(volatile int *)0 = 0;
     return 0;
