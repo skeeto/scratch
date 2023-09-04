@@ -1,4 +1,4 @@
-// @Roll dice-rolling language parser/evaluator
+// @Roll dice-rolling language parser and evaluator
 // Based on: https://github.com/StellarWolfEntertainment/Atroll
 //
 // Usage (roll a new character):
@@ -263,10 +263,10 @@ typedef struct atroll_block atroll_block;
 struct atroll_block {
     atroll_block *next;
     atroll_block *child;
-    size     lineno;
+    size          lineno;
     atroll_cond   cond;
     atroll_roll   roll;
-    i32       operand;
+    i32           operand;
     atroll_btype  type;
 };
 
@@ -596,7 +596,7 @@ struct atroll_frame {
     atroll_frame *prev;
     atroll_block *block;
     atroll_cond  *cond;
-    i16       count;
+    i16           count;
 };
 
 static _Bool atroll_accum(i16 *dice, i32 ndice, i32 *dst)
