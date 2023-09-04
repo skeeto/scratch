@@ -108,11 +108,12 @@ static byte *alloc(arena *a, size objsize, size align, size count)
 
 // A slice is a (data, len, cap) typed (pointer, size, size). The macro
 // evaluates to a pointer to the newly-pushed element. Arguments are
-// only evaluated once and may safely have side effects.
+// evaluated exactly once and may safely have side effects.
 #define push(arena, sliceptr) ({ \
+    typeof(arena) a_ = (arena); \
     typeof(sliceptr) s_ = (sliceptr); \
     if (s_->len >= s_->cap) { \
-        grow_((arena), (byte *)s_, sizeof(*s_->data), alignof(*s_->data)); \
+        grow_(a_, (byte *)s_, sizeof(*s_->data), alignof(*s_->data)); \
     } \
     s_->data + s_->len++; \
 })
