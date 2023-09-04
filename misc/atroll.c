@@ -35,8 +35,10 @@
 
 typedef uint8_t       u8;
 typedef int16_t       i16;
+typedef int32_t       b32;
 typedef int32_t       i32;
 typedef int64_t       i64;
+typedef uint64_t      u64;
 typedef unsigned char byte;
 typedef ptrdiff_t     size;
 
@@ -104,7 +106,7 @@ typedef enum {
     atroll_C_GT,
 } atroll_cmp;
 
-static int atroll_isspace(u8 c)
+static b32 atroll_isspace(u8 c)
 {
     switch (c) {
     case '\t': case '\n': case '\r': case ' ':
@@ -113,7 +115,7 @@ static int atroll_isspace(u8 c)
     return 0;
 }
 
-static int atroll_isdigit(u8 c)
+static b32 atroll_isdigit(u8 c)
 {
     return c>='0' && c<='9';
 }
@@ -124,7 +126,7 @@ static u8 *atroll_digits(u8 *beg, u8 *end)
     return beg;
 }
 
-static _Bool atroll_iscond(u8 *beg, u8 *end)
+static b32 atroll_iscond(u8 *beg, u8 *end)
 {
     size len = end - beg;
     if (len>1 && beg[0]=='<' && beg[1]=='=') {
@@ -143,7 +145,7 @@ static _Bool atroll_iscond(u8 *beg, u8 *end)
     return atroll_digits(beg, end) == end;
 }
 
-static _Bool atroll_isroll(u8 *beg, u8 *end)
+static b32 atroll_isroll(u8 *beg, u8 *end)
 {
     u8 *split = atroll_digits(beg, end);
     if (split==beg || split==end || *split!='d') {
@@ -192,7 +194,7 @@ static atroll_token atroll_lex(atroll_parser *p)
 
     static struct {
         u8  name[8];
-        i32 len;
+        i16 len;
     } names[] = {
         #define atroll_E(p) p, sizeof(p)-1
         {atroll_E("Add")},
@@ -208,11 +210,11 @@ static atroll_token atroll_lex(atroll_parser *p)
         {atroll_E("Sub")},
         {atroll_E("While")},
     };
-    int n = sizeof(names) / sizeof(*names);
-    for (int i = 0; i < n; i++) {
+    i32 n = sizeof(names) / sizeof(*names);
+    for (i32 i = 0; i < n; i++) {
         if (r.end-r.beg == names[i].len) {
-            int match = 1;
-            for (int j = 0; match && j<names[i].len; j++) {
+            i32 match = 1;
+            for (i16 j = 0; match && j<names[i].len; j++) {
                 match = names[i].name[j] == r.beg[j];
             }
             if (match) {
@@ -271,7 +273,7 @@ struct atroll_block {
     atroll_btype  type;
 };
 
-static _Bool atroll_parseroll(u8 *beg, u8 *end, atroll_roll *r)
+static b32 atroll_parseroll(u8 *beg, u8 *end, atroll_roll *r)
 {
     u8 *split = beg + 1;
     for (; *split != 'd'; split++) {}
@@ -280,7 +282,7 @@ static _Bool atroll_parseroll(u8 *beg, u8 *end, atroll_roll *r)
     return r->count>=0 && r->sides>=0;
 }
 
-static _Bool atroll_parsecond(u8 *beg, u8 *end, atroll_cond *c)
+static b32 atroll_parsecond(u8 *beg, u8 *end, atroll_cond *c)
 {
     if (end-beg == 1) {
         c->cmp = atroll_C_EQ;
@@ -327,8 +329,8 @@ static atroll_tree atroll_parse(arena *a, u8 *src, size len)
     atroll_block *parent = 0;
 
     for (;;) {
-        _Bool valid;
-        _Bool leaf = 1;
+        b32 valid;
+        b32 leaf = 1;
         atroll_token op;
         atroll_block *b = new(a, atroll_block, 1);
         if (!b) {
@@ -567,13 +569,13 @@ static atroll_tree atroll_parse(arena *a, u8 *src, size len)
     }
 }
 
-static i16 atroll_throw(i16 sides, uint64_t *rng)
+static i16 atroll_throw(i16 sides, u64 *rng)
 {
     *rng = *rng*0x3243f6a8885a308d + 1;
     return (i16)(1 + (i32)(*rng >> 33)%sides);
 }
 
-static _Bool atroll_apply(atroll_cond cond, i32 x)
+static b32 atroll_apply(atroll_cond cond, i32 x)
 {
     switch (cond.cmp) {
     case atroll_C_LT: return x <  cond.op;
@@ -600,7 +602,7 @@ struct atroll_frame {
     i16           count;
 };
 
-static _Bool atroll_accum(i16 *dice, i32 ndice, i32 *dst)
+static b32 atroll_accum(i16 *dice, i32 ndice, i32 *dst)
 {
     i32 sum = 0;
     for (i32 i = 0; i < ndice; i++) {
@@ -616,7 +618,7 @@ static _Bool atroll_accum(i16 *dice, i32 ndice, i32 *dst)
     return 1;
 }
 
-static _Bool atroll_add(i32 a, i32 b, i32 *r)
+static b32 atroll_add(i32 a, i32 b, i32 *r)
 {
     if (a>0 && b>0x7fffffff-a) {
         return 0;
@@ -627,7 +629,7 @@ static _Bool atroll_add(i32 a, i32 b, i32 *r)
     return 1;
 }
 
-static _Bool atroll_mul(i32 a, i32 b, i32 *r)
+static b32 atroll_mul(i32 a, i32 b, i32 *r)
 {
     i64 c = (i64)a*b;
     if (c<(i32)0x80000000 || c>0x7fffffff) {
@@ -637,7 +639,7 @@ static _Bool atroll_mul(i32 a, i32 b, i32 *r)
     return 1;
 }
 
-static atroll_sum atroll_eval(atroll_block *program, uint64_t rng[1], arena a)
+static atroll_sum atroll_eval(atroll_block *program, u64 rng[1], arena a)
 {
     atroll_sum r = {0};
     r.lineno = 1;
@@ -656,7 +658,7 @@ static atroll_sum atroll_eval(atroll_block *program, uint64_t rng[1], arena a)
     while (stack) {
         atroll_block *b = 0;
         if (stack->cond) {
-            _Bool match = 0;
+            b32 match = 0;
             for (i32 i = 0; !match && i<ndice; i++) {
                 match = atroll_apply(*stack->cond, dice[i]);
             }
@@ -681,8 +683,8 @@ static atroll_sum atroll_eval(atroll_block *program, uint64_t rng[1], arena a)
             continue;
         }
 
-        _Bool match;
-        _Bool overflow;
+        b32 match;
+        b32 overflow;
         atroll_frame *frame;
 
         r.lineno = b->lineno;
@@ -817,7 +819,7 @@ static atroll_sum atroll_eval(atroll_block *program, uint64_t rng[1], arena a)
 #include <stdlib.h>
 #include <time.h>
 
-static uint64_t hash64(uint64_t x)
+static u64 hash64(u64 x)
 {
     x += 1111111111111111111; x ^= x >> 32;
     x *= 1111111111111111111; x ^= x >> 32;
@@ -831,9 +833,9 @@ int main(int argc, char **argv)
     arena.cap = 1<<21;
     arena.mem = malloc(arena.cap);
 
-    int srccap = 1<<16;
+    size srccap = 1<<16;
     u8 *src = new(&arena, u8, srccap);
-    int srclen = (int)fread(src, 1, srccap, stdin);
+    size srclen = fread(src, 1, srccap, stdin);
 
     atroll_tree t = atroll_parse(&arena, src, srclen);
     if (t.err) {
@@ -843,7 +845,7 @@ int main(int argc, char **argv)
     }
 
     // Portable seed generator
-    uint64_t rng = hash64(time(0));
+    u64 rng = hash64(time(0));
     for (clock_t beg = clock();; rng ^= hash64(rng + beg)) {
         clock_t end = clock();
         if (end != beg) {
