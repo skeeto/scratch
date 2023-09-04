@@ -813,7 +813,8 @@ static atroll_sum atroll_eval(atroll_block *program, u64 rng[1], arena a)
     return r;
 }
 
-#ifndef FUZZ
+
+#if !defined(FUZZ) && !defined(DLL)
 // Demo command line program
 #include <stdio.h>
 #include <stdlib.h>
@@ -869,7 +870,115 @@ int main(int argc, char **argv)
 }
 
 
-#else
+#elif defined(DLL)
+// Minimalist, tiny Windows DLL with exactly zero dependencies
+// w64devkit:
+//   $ cc -shared -DDLL -O2 -fno-builtin -nostdlib -s -Wl,--entry=0
+//        -Wl,--out-implib=atroll.lib -o atroll.dll atroll.c
+// MSVC:
+//   $ cl /LD /DDLL /O2 /GS- atroll.c /link /nodefaultlib /noentry
+//
+// The interface is two simple functions, no structs, trivial to FFI.
+// Error strings are designed to be prefixed with a file name, as in
+// printf("%s:%s\n", filename, err).
+//
+//__declspec(dllimport) char *atroll_compile(void *, int, void *, int, int);
+//__declspec(dllimport) char *atroll_run(void *, int *);
+
+typedef struct {
+    u64           rng;
+    arena         arena;
+    atroll_block *program;
+} ctx;
+
+static char *copy(char *dst, char *src, size len)
+{
+    for (size i = 0; i < len; i++) {
+        dst[i] = src[i];
+    }
+    return dst + len;
+}
+
+static char *printline(char *s, size lineno)
+{
+    char buf[32];
+    char *end = buf + sizeof(lineno);
+    char *beg = end;
+    do {
+        *--beg = '0' + (char)(lineno%10);
+    } while (lineno /= 10);
+    return copy(s, beg, end-beg);
+}
+
+// Provide a pointer-aligned heap (mem+cap), @Roll program (src+len),
+// and PRNG seed. Returns null on success, otherwise an null-terminated
+// error string explaining the error. Allocates everything out of the
+// provided heap.
+__declspec(dllexport)
+char *atroll_compile(void *mem, int cap, void *src, int len, int seed)
+{
+    if (cap < (size)sizeof(ctx)) {
+        return "out of memory";
+    }
+    ctx *ctx       = mem;
+    ctx->rng       = 0x100000000 | (unsigned)seed;
+    ctx->arena.mem = mem;
+    ctx->arena.cap = cap;
+    ctx->arena.off = sizeof(*ctx);
+    ctx->program   = 0;
+
+    atroll_tree t = atroll_parse(&ctx->arena, src, len);
+    if (t.err) {
+        size errlen = 0;
+        for (; t.err[errlen]; errlen++) {};
+        char *err = new(&ctx->arena, char, errlen+t.datalen+32);
+        if (!err) {
+            return t.err;
+        }
+        char *p = err;
+        p = printline(p, t.lineno);
+        p = copy(p, ":", 1);
+        p = copy(p, t.err, errlen);
+        p = copy(p, ": ", 2);
+        p = copy(p, (char *)t.data, t.datalen);
+        *p = 0;
+        return err;
+    }
+    ctx->program = t.head;
+    return 0;
+}
+
+// Provide the same heap pointer used in a successful compilation.
+// Returns null on success, otherwise a null-terminated error string
+// explaining the error. Calls invalidate previous error strings.
+__declspec(dllexport)
+char *atroll_run(void *mem, int *result)
+{
+    ctx *ctx = mem;
+    atroll_sum r = atroll_eval(ctx->program, &ctx->rng, ctx->arena);
+    if (r.err) {
+        size errlen = 0;
+        for (; r.err[errlen]; errlen++) {};
+        // Using a scratch arena means the error string lifetime ends on
+        // the next call to atroll_run.
+        arena scratch = ctx->arena;
+        char *err = new(&scratch, char, errlen+32);
+        if (!err) {
+            return r.err;
+        }
+        char *p = err;
+        p = printline(p, r.lineno);
+        p = copy(p, ":", 1);
+        p = copy(p, r.err, errlen);
+        *p = 0;
+        return err;
+    }
+    *result = r.result;
+    return 0;
+}
+
+
+#elif defined(FUZZ)
 // Fuzz tester (afl)
 // $ afl-clang-fast -DFUZZ -g3 -fsanitize=address,undefined atroll.c
 // $ mkdir i
