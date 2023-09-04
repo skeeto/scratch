@@ -27,7 +27,7 @@
 //   // Evaluate a tree from atroll_parse using the RNG. Uses arena as
 //   // scratch space for evaluation. The evaluator is a tree-walker.
 //   // The tree is unmodified and can be used concurrently.
-//   atroll_sum atroll_eval(atroll_block *, uint64_t rng[1], arena);
+//   atroll_sum atroll_eval(atroll_stmt *, uint64_t rng[1], arena);
 //
 // This is free and unencumbered software released into the public domain.
 #include <stdint.h>
@@ -262,15 +262,15 @@ typedef enum {
     atroll_B_While,   // cond, child
 } atroll_btype;
 
-typedef struct atroll_block atroll_block;
-struct atroll_block {
-    atroll_block *next;
-    atroll_block *child;
-    size          lineno;
-    atroll_cond   cond;
-    atroll_roll   roll;
-    i32           operand;
-    atroll_btype  type;
+typedef struct atroll_stmt atroll_stmt;
+struct atroll_stmt {
+    atroll_stmt *next;
+    atroll_stmt *child;
+    size         lineno;
+    atroll_cond  cond;
+    atroll_roll  roll;
+    i32          operand;
+    atroll_btype type;
 };
 
 static b32 atroll_parseroll(u8 *beg, u8 *end, atroll_roll *r)
@@ -309,12 +309,12 @@ static b32 atroll_parsecond(u8 *beg, u8 *end, atroll_cond *c)
 }
 
 typedef struct {
-    atroll_block  *head;
-    atroll_block **tail;
-    char          *err;
-    u8            *data;
-    size           datalen;
-    size           lineno;
+    atroll_stmt  *head;
+    atroll_stmt **tail;
+    char         *err;
+    u8           *data;
+    size          datalen;
+    size          lineno;
 } atroll_tree;
 
 static atroll_tree atroll_parse(arena *a, u8 *src, size len)
@@ -326,21 +326,21 @@ static atroll_tree atroll_parse(arena *a, u8 *src, size len)
     p.beg = src;
     p.end = src + len;
     p.lineno = 1;
-    atroll_block *parent = 0;
+    atroll_stmt *parent = 0;
 
     for (;;) {
         b32 valid;
         b32 leaf = 1;
         atroll_token op;
-        atroll_block *b = new(a, atroll_block, 1);
-        if (!b) {
+        atroll_stmt *s = new(a, atroll_stmt, 1);
+        if (!s) {
             r.lineno = p.lineno;
             r.err = "out of memory";
             return r;
         }
 
         atroll_token t = atroll_lex(&p);
-        b->lineno = p.lineno;
+        s->lineno = p.lineno;
         switch (t.type) {
         case atroll_T_EOF:
             if (parent) {
@@ -380,8 +380,8 @@ static atroll_tree atroll_parse(arena *a, u8 *src, size len)
                 return r;
             }
 
-            b->operand = atroll_atoi(op.beg, op.end, 0, 1000000);
-            if (b->operand < 0) {
+            s->operand = atroll_atoi(op.beg, op.end, 0, 1000000);
+            if (s->operand < 0) {
                 r.lineno = p.lineno;
                 r.err = "operand too large";
                 r.data = op.beg;
@@ -390,38 +390,38 @@ static atroll_tree atroll_parse(arena *a, u8 *src, size len)
             }
             switch (t.type) {
             case atroll_T_Add:
-                b->type = atroll_B_Add;
+                s->type = atroll_B_Add;
                 break;
             case atroll_T_Sub:
-                b->operand = -b->operand;
-                b->type = atroll_B_Add;
+                s->operand = -s->operand;
+                s->type = atroll_B_Add;
                 break;
             case atroll_T_Mul:
-                b->type = atroll_B_Mul;
+                s->type = atroll_B_Mul;
                 break;
             case atroll_T_Div:
-                if (!b->operand) {
+                if (!s->operand) {
                     r.lineno = p.lineno;
                     r.err = "cannot divide by zero";
                     r.data = op.beg;
                     r.datalen = op.end - op.beg;
                     return r;
                 }
-                b->type = atroll_B_Div;
+                s->type = atroll_B_Div;
                 break;
             default: *(volatile int *)0 = 0;
             }
             break;
 
         case atroll_T_Drop:
-            b->type = atroll_B_Drop;
+            s->type = atroll_B_Drop;
             op = atroll_lex(&p);
             switch (op.type) {
             case atroll_T_Highest:
-                b->operand = +1;
+                s->operand = +1;
                 break;
             case atroll_T_Lowest:
-                b->operand = -1;
+                s->operand = -1;
                 break;
             default:
                 r.lineno = p.lineno;
@@ -433,12 +433,12 @@ static atroll_tree atroll_parse(arena *a, u8 *src, size len)
             break;
 
         case atroll_T_For:
-            b->type = atroll_B_For;
+            s->type = atroll_B_For;
             op = atroll_lex(&p);
             switch (op.type) {
             case atroll_T_INT:
-                b->operand = atroll_atoi(op.beg, op.end, 2, 100);
-                valid = b->operand >= 0;
+                s->operand = atroll_atoi(op.beg, op.end, 2, 100);
+                valid = s->operand >= 0;
                 break;
             default:
                 valid = 0;
@@ -454,12 +454,12 @@ static atroll_tree atroll_parse(arena *a, u8 *src, size len)
             break;
 
         case atroll_T_If:
-            b->type = atroll_B_If;
+            s->type = atroll_B_If;
             op = atroll_lex(&p);
             switch (op.type) {
             case atroll_T_COND:
             case atroll_T_INT:
-                valid = atroll_parsecond(op.beg, op.end, &b->cond);
+                valid = atroll_parsecond(op.beg, op.end, &s->cond);
                 break;
             default:
                 valid = 0;
@@ -475,12 +475,12 @@ static atroll_tree atroll_parse(arena *a, u8 *src, size len)
             break;
 
         case atroll_T_Reroll:
-            b->type = atroll_B_Reroll;
+            s->type = atroll_B_Reroll;
             op = atroll_lex(&p);
             switch (op.type) {
             case atroll_T_INT:
             case atroll_T_COND:
-                valid = atroll_parsecond(op.beg, op.end, &b->cond);
+                valid = atroll_parsecond(op.beg, op.end, &s->cond);
                 break;
             default:
                 valid = 0;
@@ -496,12 +496,12 @@ static atroll_tree atroll_parse(arena *a, u8 *src, size len)
             op = atroll_lex(&p);
             switch (op.type) {
             case atroll_T_DICE:
-                valid = atroll_parseroll(op.beg, op.end, &b->roll);
+                valid = atroll_parseroll(op.beg, op.end, &s->roll);
                 break;
             case atroll_T_INT:
-                b->roll.count = 1;
-                b->roll.sides = (i16)atroll_atoi(op.beg, op.end, 1, 100);
-                valid = b->roll.sides >= 0;
+                s->roll.count = 1;
+                s->roll.sides = (i16)atroll_atoi(op.beg, op.end, 1, 100);
+                valid = s->roll.sides >= 0;
                 break;
             default:
                 valid = 0;
@@ -516,16 +516,16 @@ static atroll_tree atroll_parse(arena *a, u8 *src, size len)
             break;
 
         case atroll_T_Roll:
-            b->type = atroll_B_Roll;
+            s->type = atroll_B_Roll;
             op = atroll_lex(&p);
             switch (op.type) {
             case atroll_T_DICE:
-                valid = atroll_parseroll(op.beg, op.end, &b->roll);
+                valid = atroll_parseroll(op.beg, op.end, &s->roll);
                 break;
             case atroll_T_INT:
-                b->roll.count = 1;
-                b->roll.sides = (i16)atroll_atoi(op.beg, op.end, 1, 100);
-                valid = b->roll.sides >= 0;
+                s->roll.count = 1;
+                s->roll.sides = (i16)atroll_atoi(op.beg, op.end, 1, 100);
+                valid = s->roll.sides >= 0;
                 break;
             default:
                 valid = 0;
@@ -540,11 +540,11 @@ static atroll_tree atroll_parse(arena *a, u8 *src, size len)
             break;
 
         case atroll_T_While:
-            b->type = atroll_B_While;
+            s->type = atroll_B_While;
             op = atroll_lex(&p);
             switch (op.type) {
             case atroll_T_COND:
-                valid = atroll_parsecond(op.beg, op.end, &b->cond);
+                valid = atroll_parsecond(op.beg, op.end, &s->cond);
                 break;
             default:
                 valid = 0;
@@ -560,12 +560,12 @@ static atroll_tree atroll_parse(arena *a, u8 *src, size len)
             break;
         }
         if (parent) {
-            parent->child = b;
+            parent->child = s;
         } else {
-            *r.tail = b;
-            r.tail = &b->next;
+            *r.tail = s;
+            r.tail = &s->next;
         }
-        parent = leaf ? 0 : b;
+        parent = leaf ? 0 : s;
     }
 }
 
@@ -597,7 +597,7 @@ typedef struct {
 typedef struct atroll_frame atroll_frame;
 struct atroll_frame {
     atroll_frame *prev;
-    atroll_block *block;
+    atroll_stmt  *stmt;
     atroll_cond  *cond;
     i16           count;
 };
@@ -639,7 +639,7 @@ static b32 atroll_mul(i32 a, i32 b, i32 *r)
     return 1;
 }
 
-static atroll_sum atroll_eval(atroll_block *program, u64 rng[1], arena a)
+static atroll_sum atroll_eval(atroll_stmt *program, u64 rng[1], arena a)
 {
     atroll_sum r = {0};
     r.lineno = 1;
@@ -653,27 +653,27 @@ static atroll_sum atroll_eval(atroll_block *program, u64 rng[1], arena a)
     atroll_frame *stack = new(&a, atroll_frame, 1);
     if (!stack) goto oom;
     stack->count = 1;
-    stack->block = program;
+    stack->stmt = program;
 
     while (stack) {
-        atroll_block *b = 0;
+        atroll_stmt *s = 0;
         if (stack->cond) {
             b32 match = 0;
             for (i32 i = 0; !match && i<ndice; i++) {
                 match = atroll_apply(*stack->cond, dice[i]);
             }
             if (match) {
-                b = stack->block;
+                s = stack->stmt;
             } else {
                 stack->cond = 0;
                 continue;
             }
-        } else if (stack->count && stack->block) {
+        } else if (stack->count && stack->stmt) {
             stack->count--;
-            b = stack->block;
-        } else if (stack->block) {
+            s = stack->stmt;
+        } else if (stack->stmt) {
             stack->count = 1;
-            stack->block = stack->block->next;
+            stack->stmt = stack->stmt->next;
             continue;
         } else {
             atroll_frame *dead = stack;
@@ -687,29 +687,29 @@ static atroll_sum atroll_eval(atroll_block *program, u64 rng[1], arena a)
         b32 overflow;
         atroll_frame *frame;
 
-        r.lineno = b->lineno;
-        switch (b->type) {
+        r.lineno = s->lineno;
+        switch (s->type) {
         case atroll_B_Roll:
-            if (b->roll.count > max-ndice) {
+            if (s->roll.count > max-ndice) {
                 r.err = "exceeded dice limit (out of memory)";
                 return r;
             }
-            for (i16 i = 0; i < b->roll.count; i++) {
-                dice[ndice++] = atroll_throw(b->roll.sides, rng);
+            for (i16 i = 0; i < s->roll.count; i++) {
+                dice[ndice++] = atroll_throw(s->roll.sides, rng);
             }
             break;
 
         case atroll_B_Reroll:
             for (i32 i = 0; i < ndice; i++) {
-                if (atroll_apply(b->cond, dice[i])) {
-                    dice[i] = atroll_throw(b->roll.sides, rng);
+                if (atroll_apply(s->cond, dice[i])) {
+                    dice[i] = atroll_throw(s->roll.sides, rng);
                 }
             }
             break;
 
         case atroll_B_Add:
             overflow = !atroll_accum(dice, ndice, &r.result) ||
-                       !atroll_add(r.result, b->operand, &r.result);
+                       !atroll_add(r.result, s->operand, &r.result);
             if (overflow) {
                 r.err = "Add overflow";
                 return r;
@@ -719,7 +719,7 @@ static atroll_sum atroll_eval(atroll_block *program, u64 rng[1], arena a)
 
         case atroll_B_Mul:
             overflow = !atroll_accum(dice, ndice, &r.result) ||
-                       !atroll_mul(r.result, b->operand, &r.result);
+                       !atroll_mul(r.result, s->operand, &r.result);
             if (overflow) {
                 r.err = "Mul overflow";
                 return r;
@@ -733,7 +733,7 @@ static atroll_sum atroll_eval(atroll_block *program, u64 rng[1], arena a)
                 return r;
             }
             ndice = 0;
-            r.result /= b->operand;
+            r.result /= s->operand;
             break;
 
         case atroll_B_Drop:
@@ -742,7 +742,7 @@ static atroll_sum atroll_eval(atroll_block *program, u64 rng[1], arena a)
                 return r;
             }
             i32 target = 0;
-            if (b->operand < 0) {
+            if (s->operand < 0) {
                 for (i32 i = 1; i < ndice; i++) {
                     target = dice[i]<dice[target] ? i : target;
                 }
@@ -757,7 +757,7 @@ static atroll_sum atroll_eval(atroll_block *program, u64 rng[1], arena a)
         case atroll_B_If:
             match = 0;
             for (i32 i = 0; !match && i<ndice; i++) {
-                match = atroll_apply(b->cond, dice[i]);
+                match = atroll_apply(s->cond, dice[i]);
             }
             if (match) {
                 frame = free;
@@ -767,8 +767,8 @@ static atroll_sum atroll_eval(atroll_block *program, u64 rng[1], arena a)
                     frame = new(&a, atroll_frame, 1);
                     if (!frame) goto oom;
                 }
-                frame->cond = &b->cond;
-                frame->block = b->child;
+                frame->cond = &s->cond;
+                frame->stmt = s->child;
                 frame->prev = stack;
                 stack = frame;
             }
@@ -782,8 +782,8 @@ static atroll_sum atroll_eval(atroll_block *program, u64 rng[1], arena a)
                 frame = new(&a, atroll_frame, 1);
                 if (!frame) goto oom;
             }
-            frame->count = (i16)b->operand;
-            frame->block = b->child;
+            frame->count = (i16)s->operand;
+            frame->stmt = s->child;
             frame->prev = stack;
             stack = frame;
             break;
@@ -796,8 +796,8 @@ static atroll_sum atroll_eval(atroll_block *program, u64 rng[1], arena a)
                 frame = new(&a, atroll_frame, 1);
                 if (!frame) goto oom;
             }
-            frame->cond = &b->cond;
-            frame->block = b->child;
+            frame->cond = &s->cond;
+            frame->stmt = s->child;
             frame->prev = stack;
             stack = frame;
             break;
@@ -886,9 +886,9 @@ int main(int argc, char **argv)
 //__declspec(dllimport) char *atroll_run(void *, int *);
 
 typedef struct {
-    u64           rng;
-    arena         arena;
-    atroll_block *program;
+    u64          rng;
+    arena        arena;
+    atroll_stmt *program;
 } ctx;
 
 static char *copy(char *dst, char *src, size len)
