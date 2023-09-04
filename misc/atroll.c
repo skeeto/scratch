@@ -36,6 +36,7 @@
 typedef uint8_t       u8;
 typedef int16_t       i16;
 typedef int32_t       i32;
+typedef int64_t       i64;
 typedef unsigned char byte;
 typedef ptrdiff_t     size;
 
@@ -608,10 +609,31 @@ static _Bool atroll_accum(i16 *dice, i32 ndice, i32 *dst)
         }
         sum += dice[i];
     }
-    if (sum > 0x7fffffff-*dst) {
+    if (*dst > 0x7fffffff-sum) {
         return 0;
     }
     *dst += sum;
+    return 1;
+}
+
+static _Bool atroll_add(i32 a, i32 b, i32 *r)
+{
+    if (a>0 && b>0x7fffffff-a) {
+        return 0;
+    } else if (a<0 && b<(i32)0x80000000-a) {
+        return 0;
+    }
+    *r = a + b;
+    return 1;
+}
+
+static _Bool atroll_mul(i32 a, i32 b, i32 *r)
+{
+    i64 c = (i64)a*b;
+    if (c<(i32)0x80000000 || c>0x7fffffff) {
+        return 0;
+    }
+    *r = a * b;
     return 1;
 }
 
@@ -684,23 +706,23 @@ static atroll_sum atroll_eval(atroll_block *program, uint64_t rng[1], arena a)
             break;
 
         case atroll_B_Add:
-            overflow = !atroll_accum(dice, ndice, &r.result);
-            if (overflow || b->operand>0x7fffffff-r.result) {
+            overflow = !atroll_accum(dice, ndice, &r.result) ||
+                       !atroll_add(r.result, b->operand, &r.result);
+            if (overflow) {
                 r.err = "Add overflow";
                 return r;
             }
             ndice = 0;
-            r.result += b->operand;
             break;
 
         case atroll_B_Mul:
-            overflow = !atroll_accum(dice, ndice, &r.result);
-            if (overflow || (r.result && b->operand>0x7fffffff/r.result)) {
+            overflow = !atroll_accum(dice, ndice, &r.result) ||
+                       !atroll_mul(r.result, b->operand, &r.result);
+            if (overflow) {
                 r.err = "Mul overflow";
                 return r;
             }
             ndice = 0;
-            r.result *= b->operand;
             break;
 
         case atroll_B_Div:
