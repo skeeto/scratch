@@ -822,7 +822,7 @@ int main(int argc, char **argv)
 
     // Portable seed generator
     uint64_t rng = hash64(time(0));
-    for (clock_t beg = clock();; rng += beg) {
+    for (clock_t beg = clock();; rng ^= hash64(rng + beg)) {
         clock_t end = clock();
         if (end != beg) {
             rng ^= hash64(end);
