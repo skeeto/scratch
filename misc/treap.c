@@ -77,16 +77,17 @@ typedef struct {
     size len;
 } s8;
 
-static size s8cmp(s8 a, s8 b)
+static b32 s8equal(s8 a, s8 b)
 {
-    size len = a.len<b.len ? a.len : b.len;
-    for (size i = 0; i < len; i++) {
-        size d = a.buf[i] - b.buf[i];
-        if (d) {
-            return d;
+    if (a.len != b.len) {
+        return 0;
+    }
+    for (size i = 0; i < a.len; i++) {
+        if (a.buf[i] != b.buf[i]) {
+            return 0;
         }
     }
-    return a.len - b.len;
+    return 1;
 }
 
 static s8 s8span(u8 *beg, u8 *end)
@@ -133,7 +134,7 @@ static var *lookup(env *e, s8 key, arena *a)
 {
     var **v = &e->vars;
     for (uptr hash = s8hash(key); *v; hash *= 31) {
-        if (!s8cmp((*v)->key, key)) {
+        if (s8equal((*v)->key, key)) {
             return *v;
         }
         v = (*v)->next + (hash >> (8*sizeof(hash) - 2));
@@ -270,7 +271,7 @@ static u32 run(arena heap)
             s8 key  = s8i32(tmp, i);
             s8 want = s8i32(tmp, hash32(i));
             s8 got  = lookup(globals, key, 0)->value;
-            assert(!s8cmp(want, got));
+            assert(s8equal(want, got));
         }
     }
 
