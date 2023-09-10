@@ -121,7 +121,6 @@ static uptr s8hash(s8 s)
 typedef struct var var;
 struct var {
     var *next[4];
-    uptr hash;
     s8   key;
     s8   value;
 };
@@ -132,18 +131,16 @@ typedef struct {
 
 static var *lookup(env *e, s8 key, arena *a)
 {
-    uptr khash = s8hash(key);
     var **v = &e->vars;
-    for (uptr h = khash; *v; h *= 31) {
-        if (khash==(*v)->hash && !s8cmp((*v)->key, key)) {
+    for (uptr hash = s8hash(key); *v; hash *= 31) {
+        if (!s8cmp((*v)->key, key)) {
             return *v;
         }
-        v = (*v)->next + (h >> (8*sizeof(h) - 2));
+        v = (*v)->next + (hash >> (8*sizeof(hash) - 2));
     }
 
     if (a) {
         *v = new(a, var);
-        (*v)->hash = khash;
         (*v)->key = key;
     }
     return *v;
