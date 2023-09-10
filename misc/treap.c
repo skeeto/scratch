@@ -120,7 +120,7 @@ static uptr s8hash(s8 s)
 
 typedef struct var var;
 struct var {
-    var *next[2];
+    var *next[4];
     uptr hash;
     s8   key;
     s8   value;
@@ -134,15 +134,11 @@ static var *lookup(env *e, s8 key, arena *a)
 {
     uptr khash = s8hash(key);
     var **v = &e->vars;
-    while (*v) {
-        uptr rhash = (*v)->hash;
-        switch ((khash>rhash) - (khash<rhash)) {
-        case  0: if (!s8cmp((*v)->key, key)) {
-                     return *v;
-                 }  // fallthrough
-        case -1: v = (*v)->next+0; break;
-        case +1: v = (*v)->next+1; break;
+    for (uptr h = khash; *v; h *= 31) {
+        if (khash==(*v)->hash && !s8cmp((*v)->key, key)) {
+            return *v;
         }
+        v = (*v)->next + (h >> (8*sizeof(h) - 2));
     }
 
     if (a) {
@@ -222,7 +218,7 @@ static void s8write(bufout *o, s8 s)
 
 static void printgraph(bufout *o, var *v)
 {
-    for (int i = 0; i < 2; i++) {
+    for (size i = 0; i < countof(v->next); i++) {
         if (v && v->next[i]) {
             s8write(o, S("    "));
             s8write(o, v->key);
