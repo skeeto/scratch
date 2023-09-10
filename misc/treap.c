@@ -118,40 +118,6 @@ static uptr s8hash(s8 s)
     return (h ^ h>>32) & (uptr)-1;
 }
 
-// A treap node is any object whose first three fields have this shape.
-typedef struct treap treap;
-struct treap {
-    treap *next[2];
-    uptr   hash;
-    s8     key;
-};
-
-// "Low level" treap return-existing or insert-new. If no arena is
-// given, returns null if the key is not in the treap.
-#define upsert(r, k, a, t) \
-    ((t *)upsert_((treap **)r, k, a, sizeof(t), alignof(t)))
-static treap *upsert_(treap **r, s8 key, arena *a, size objsize, size align)
-{
-    uptr khash = s8hash(key);
-    while (*r) {
-        uptr rhash = (*r)->hash;
-        switch ((khash>rhash) - (khash<rhash)) {
-        case  0: if (!s8cmp((*r)->key, key)) {
-                     return *r;
-                 }  // fallthrough
-        case -1: r = (*r)->next+0; break;
-        case +1: r = (*r)->next+1; break;
-        }
-    }
-
-    if (a) {
-        *r = (treap *)alloc(a, objsize, align, 1, 0);
-        (*r)->hash = khash;
-        (*r)->key = key;
-    }
-    return *r;
-}
-
 typedef struct var var;
 struct var {
     var *next[2];
@@ -166,7 +132,25 @@ typedef struct {
 
 static var *lookup(env *e, s8 key, arena *a)
 {
-    return upsert(&e->vars, key, a, var);
+    uptr khash = s8hash(key);
+    var **v = &e->vars;
+    while (*v) {
+        uptr rhash = (*v)->hash;
+        switch ((khash>rhash) - (khash<rhash)) {
+        case  0: if (!s8cmp((*v)->key, key)) {
+                     return *v;
+                 }  // fallthrough
+        case -1: v = (*v)->next+0; break;
+        case +1: v = (*v)->next+1; break;
+        }
+    }
+
+    if (a) {
+        *v = new(a, var);
+        (*v)->hash = khash;
+        (*v)->key = key;
+    }
+    return *v;
 }
 
 static s8 s8i32(arena *a, i32 x)
