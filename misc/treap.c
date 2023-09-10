@@ -227,6 +227,19 @@ static void printgraph(bufout *o, var *v)
     }
 }
 
+static i32 height(var *v)
+{
+    if (!v) {
+        return 0;
+    }
+    i32 max = 0;
+    for (size i = 0; i < countof(v->next); i++) {
+        i32 h = height(v->next[i]);
+        max = h>max ? h : max;
+    }
+    return 1 + max;
+}
+
 static u32 run(arena heap)
 {
     arena perm[1] = {heap};
@@ -262,6 +275,9 @@ static u32 run(arena heap)
     }
 
     bufout *stdout = newbufout(perm, 1<<12, 1);
+    s8write(stdout, S("// height = "));
+    s8write(stdout, s8i32(perm, height(globals->vars)));
+    s8write(stdout, S("\n"));
     s8write(stdout, S("digraph {\n"));
     printgraph(stdout, globals->vars);
     s8write(stdout, S("}\n"));
