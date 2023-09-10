@@ -109,14 +109,14 @@ static s8 s8clone(arena *a, s8 s)
     return c;
 }
 
-static uptr s8hash(s8 s)
+static u32 s8hash(s8 s)
 {
     u64 h = 0x100;
     for (size i = 0; i < s.len; i++) {
         h ^= s.buf[i];
         h *= 1111111111111111111u;
     }
-    return (h ^ h>>32) & (uptr)-1;
+    return (h ^ h>>32) & (u32)-1;
 }
 
 typedef struct var var;
@@ -133,11 +133,11 @@ typedef struct {
 static var *lookup(env *e, s8 key, arena *a)
 {
     var **v = &e->vars;
-    for (uptr hash = s8hash(key); *v; hash *= 31) {
+    for (u32 hash = s8hash(key); *v; hash *= 0x915f77f5u) {
         if (s8equal((*v)->key, key)) {
             return *v;
         }
-        v = (*v)->next + (hash >> (8*sizeof(hash) - 2));
+        v = (*v)->next + (hash >> 30);
     }
 
     if (a) {
