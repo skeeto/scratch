@@ -245,13 +245,8 @@ static u32 run(arena heap)
 {
     arena perm[1] = {heap};
     if (outofmemory(perm)) {
-        u8 buf[32];
-        bufout stderr[1] = {};
-        stderr->buf = buf;
-        stderr->cap = countof(buf);
-        stderr->fd  = 2;
-        s8write(stderr, S("out of memory\n"));
-        flush(stderr);
+        s8 msg = S("out of memory\n");
+        os_write(2, msg.buf, (i32)msg.len);
         return 1;
     }
     arena scratch = newscratch(perm, 3);
