@@ -51,7 +51,7 @@ static byte *alloc(arena *a, size objsize, size align, size count)
     return p;
 }
 
-void copy(byte *restrict dst, byte *restrict src, size len)
+static void copy(byte *restrict dst, byte *restrict src, size len)
 {
     for (size i = 0; i < len; i++) {
         dst[i] = src[i];
@@ -168,7 +168,7 @@ static void u8push(wordhist *wh, arena *a, u8 b)
     wh->word.buf[wh->word.len++] = b;
 }
 
-static void countword(wordhist *wh, arena *a)
+static void finishword(wordhist *wh, arena *a)
 {
     if (!wh->word.len) {
         return;
@@ -182,17 +182,17 @@ static void countword(wordhist *wh, arena *a)
     wh->word.len = 0;
 }
 
-static void wordhist_count(wordhist *wh, arena *a, byte *buf, size len)
+static void countwords(wordhist *wh, arena *a, byte *buf, size len)
 {
     if (!len) {
-        countword(wh, a);
+        finishword(wh, a);
     }
     for (size i = 0; i < len; i++) {
         u8 b = buf[i];
         if (u8isword(b)) {
             u8push(wh, a, b);
         } else {
-            countword(wh, a);
+            finishword(wh, a);
         }
     }
 }
@@ -307,7 +307,7 @@ static u32 wordhist_main(arena a)
 
     for (i32 len = -1; len;) {
         len = osread(0, buf, cap);
-        wordhist_count(wh, &a, buf, len);
+        countwords(wh, &a, buf, len);
     }
 
     bufout stdout[1] = {0};
