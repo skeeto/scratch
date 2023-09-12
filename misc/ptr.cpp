@@ -16,25 +16,25 @@ struct ptr {
     T *operator->()
     {
         assert(rel);
-        return (T *)((char *)this + rel);
+        return (T *)((uintptr_t)this + rel);
     }
 
     T &operator*()
     {
         assert(rel);
-        return *(T *)((char *)this + rel);
+        return *(T *)((uintptr_t)this + rel);
     }
 
     operator T*()
     {
-        return rel ? (T *)((char *)this + rel) : 0;
+        return rel ? (T *)((uintptr_t)this + rel) : 0;
     }
 
     void operator=(T *p)
     {
         rel = 0;
         if (p) {
-            auto delta = (char *)p - (char *)this;
+            intptr_t delta = (uintptr_t)p - (uintptr_t)this;
             assert((I)delta == delta);
             rel = (I)delta;
         }
