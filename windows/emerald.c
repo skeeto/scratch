@@ -6,6 +6,7 @@
 // Uses GCC extensions: typeof, expr _Alignof, statement expr, inline asm,
 // func attributes, and some built-ins. Requires GCC or Clang.
 //
+// "The Official Guide to Learning OpenGL, Version 1.1" (1997)
 // http://blog.andreaskahler.com/2009/06/creating-icosphere-mesh-in-code.html
 // This is free and unencumbered software released into the public domain.
 #define WIN32_LEAN_AND_MEAN
@@ -292,22 +293,23 @@ void WinMainCRTStartup(void)
     wglMakeCurrent(hdc, old);
     ShowWindow(hwnd, SW_NORMAL);
 
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_NORMALIZE);
     glEnable(GL_LIGHTING);
     glShadeModel(GL_FLAT);
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_NORMAL_ARRAY);
 
     glEnable(GL_LIGHT0);
-    static const float gray[]     = { 0.6f,  0.6f,  0.6f,  1.0f};
+    static const float gray[]     = { 0.8f,  0.8f,  0.8f,  1.0f};
     static const float green[]    = { 0.3f,  0.5f,  0.0f,  1.0f};
     static const float position[] = {+0.2f, +0.3f, -8.0f, +0.2f};
     glLightfv(GL_LIGHT0, GL_AMBIENT,  green);
     glLightfv(GL_LIGHT0, GL_DIFFUSE,  green);
     glLightfv(GL_LIGHT0, GL_POSITION, position);
     glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, gray);
-    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 1.0f);
+    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 1.5f);
 
     arena perm = {heap};
     timer *timer = newtimer(&perm);
@@ -340,20 +342,37 @@ void WinMainCRTStartup(void)
 
         int granularity = (int)(now / 20 * 6) % 6;
         platonic *sphere = newicosphere(granularity, &frame);
+
         point *verts = new(&frame, point, sphere->faces.len*3);
         point *norms = new(&frame, point, sphere->faces.len*3);
         for (int i = 0; i < sphere->faces.len; i++) {
             point p1 = sphere->verts.data[sphere->faces.data[i].v1];
             point p2 = sphere->verts.data[sphere->faces.data[i].v2];
             point p3 = sphere->verts.data[sphere->faces.data[i].v3];
-            verts[i*3+0] = p1;
+            verts[i*3+0] = p3;
             verts[i*3+1] = p2;
-            verts[i*3+2] = p3;
-            norms[i*3+2] = norm(cross(diff(p1, p2), diff(p1, p3)));
+            verts[i*3+2] = p1;
+            norms[i*3+2] = cross(diff(p1, p2), diff(p1, p3));
         }
         glVertexPointer(3, GL_FLOAT, 0, verts);
         glNormalPointer(GL_FLOAT, 0, norms);
         glDrawArrays(GL_TRIANGLES, 0, sphere->faces.len*3);
+
+        #if 0  // wireframe outline
+        glDisable(GL_LIGHTING);
+        glLineWidth(2);
+        glBegin(GL_LINES);
+        glColor3f(1.0f, 1.0f, 1.0f);
+        for (int i = 0; i < sphere->faces.len; i++) {
+            point p1 = sphere->verts.data[sphere->faces.data[i].v1];
+            point p2 = sphere->verts.data[sphere->faces.data[i].v2];
+            point p3 = sphere->verts.data[sphere->faces.data[i].v3];
+            glVertex3fv(&p1.x);  glVertex3fv(&p3.x);
+            glVertex3fv(&p2.x);  glVertex3fv(&p3.x);
+        }
+        glEnd();
+        glEnable(GL_LIGHTING);
+        #endif
 
         SwapBuffers(hdc);
         Sleep(1);
