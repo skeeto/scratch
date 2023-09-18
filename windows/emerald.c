@@ -261,10 +261,9 @@ void WinMainCRTStartup(void)
     void *heap = VirtualAlloc(0, 1<<24, type, PAGE_READWRITE);
     arena init = {heap};
 
-    WNDCLASS *wc = new(&init, WNDCLASS);
-    wc->style = CS_OWNDC;
+    WNDCLASSA *wc = new(&init, WNDCLASSA);
     wc->lpfnWndProc = proc;
-    wc->lpszClassName = "icosphere";
+    wc->lpszClassName = "gl";
     wc->hCursor = LoadCursor(0, IDC_ARROW);
     RegisterClass(wc);
 
@@ -275,22 +274,16 @@ void WinMainCRTStartup(void)
     int y = (h - size) / 2;
     DWORD style = WS_OVERLAPPED | WS_MINIMIZEBOX | WS_SYSMENU;
     HWND hwnd = CreateWindow(
-        "icosphere", "Emerald", style, x, y, size, size, 0, 0, 0, 0
+        "gl", "Emerald", style, x, y, size, size, 0, 0, 0, 0
     );
     HDC hdc = GetDC(hwnd);
 
     PIXELFORMATDESCRIPTOR *pfd = new(&init, PIXELFORMATDESCRIPTOR);
-    pfd->nSize = sizeof(pfd);
+    pfd->nSize = sizeof(*pfd);
     pfd->nVersion = 1;
     pfd->dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
-    pfd->iPixelType = PFD_TYPE_RGBA;
-    pfd->cColorBits = 32;
-    pfd->cDepthBits = 24;
-    pfd->cStencilBits = 8;
-    pfd->iLayerType = PFD_MAIN_PLANE;
     SetPixelFormat(hdc, ChoosePixelFormat(hdc, pfd), pfd);
-    HGLRC old = wglCreateContext(hdc);
-    wglMakeCurrent(hdc, old);
+    wglMakeCurrent(hdc, wglCreateContext(hdc));
     ShowWindow(hwnd, SW_NORMAL);
 
     glEnable(GL_DEPTH_TEST);
