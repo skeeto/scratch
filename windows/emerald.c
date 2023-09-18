@@ -1,10 +1,9 @@
 // Icosphere mesh generator and "emerald" renderer (Windows)
 //
-// $ cc -Os -ffast-math -fno-builtin -s -mwindows -nostartfiles
+// $ cc -O2 -ffast-math -fno-builtin -s -mwindows -nostartfiles
 //      -o emerald.exe emerald.c -lopengl32
-//
-// Uses GCC extensions: typeof, expr _Alignof, statement expr, inline asm,
-// func attributes, and some built-ins. Requires GCC or Clang.
+// $ cl /O2 /fp:fast /Zc:preprocessor /GS- emerald.c /link /subsystem:windows
+//      kernel32.lib user32.lib gdi32.lib opengl32.lib
 //
 // "The Official Guide to Learning OpenGL, Version 1.1" (1997)
 // http://blog.andreaskahler.com/2009/06/creating-icosphere-mesh-in-code.html
@@ -17,15 +16,12 @@
 #define sizeof(x)  (ptrdiff_t)sizeof(x)
 #define countof(a) (sizeof(a) / sizeof(*(a)))
 
-static void copy(void *restrict dst, void *restrict src, ptrdiff_t len)
+static float xsqrtf(float x)
 {
-    if (len) __builtin_memcpy(dst, src, len);
-}
-
-static float sqrtf(float x)
-{
-    asm ("sqrtss %1, %0" : "=x"(x) : "x"(x));
-    return x;
+    float e = 1;
+    e = (e + x/e) / 2;  e = (e + x/e) / 2;
+    e = (e + x/e) / 2;  e = (e + x/e) / 2;
+    return e;
 }
 
 #define new(...)           new_(__VA_ARGS__, new3, new2)(__VA_ARGS__)
@@ -37,38 +33,18 @@ typedef struct {
     char *p;
 } arena;
 
+#if __GNUC__
 __attribute((malloc, alloc_size(2, 4), alloc_align(3)))
+#endif
 static void *alloc(arena *a, ptrdiff_t size, ptrdiff_t align, ptrdiff_t count)
 {
     a->p += -(uintptr_t)a->p & (align - 1);
-    void *r = a->p;
-    a->p += size * count;
-    return __builtin_memset(r, 0, size*count);
-}
-
-#define push(d, heap) ({ \
-    typeof(d)    d_ = (d); \
-    typeof(heap) h_ = (heap); \
-    if (d_->len == d_->cap) { \
-        push_(d_, sizeof(*d_->data), _Alignof(*d_->data), h_); \
-    } \
-    d_->data + d_->len++; \
-})
-
-static void push_(void *header, int size, int align, arena *heap)
-{
-    struct {
-        void *data;
-        int   len;
-        int   cap;
-    } slice;
-    copy(&slice, header, sizeof(slice));
-    slice.cap += !slice.cap << 3;
-    void *data = alloc(heap, 2*size, align, slice.cap);
-    copy(data, slice.data, size*slice.len);
-    slice.data = data;
-    slice.cap *= 2;
-    copy(header, &slice, sizeof(slice));
+    char *r = a->p;
+    char *e = a->p += size * count;
+    for (char *p = r; p < e; p++) {
+        *p = 0;
+    }
+    return r;
 }
 
 typedef struct map map;
@@ -110,7 +86,7 @@ static point scale(point p, float s)
 
 static point norm(point p)
 {
-    float length = sqrtf(p.x*p.x + p.y*p.y + p.z*p.z);
+    float length = xsqrtf(p.x*p.x + p.y*p.y + p.z*p.z);
     return scale(p, 1/length);
 }
 
@@ -146,40 +122,28 @@ typedef struct {
 } triangle;
 
 typedef struct {
-    point *data;
-    int    len;
-    int    cap;
-} vertices;
-
-typedef struct {
-    triangle *data;
-    int       len;
-    int       cap;
-} triangles;
-
-typedef struct {
     map      *map;
-    vertices  verts;
-    triangles faces;
-} platonic;
+    point    *verts;
+    triangle *faces;
+    int       nverts;
+    int       nfaces;
+} mesh;
 
-static int midpoint(platonic *mesh, int p1, int p2, arena *heap)
+static int midpoint(mesh *mesh, int p1, int p2, arena *heap)
 {
     int *i = upsert(&mesh->map, p1, p2, heap);
     if (!*i) {
-        point point1 = mesh->verts.data[p1];
-        point point2 = mesh->verts.data[p2];
+        point point1 = mesh->verts[p1];
+        point point2 = mesh->verts[p2];
         point middle = scale(add(point1, point2), 0.5f);
-        *i = mesh->verts.len;
-        *push(&mesh->verts, heap) = norm(middle);
+        *i = mesh->nverts;
+        mesh->verts[mesh->nverts++] = norm(middle);
     }
     return *i;
 }
 
-static platonic *newicosphere(int granularity, arena *heap)
+static mesh *newicosphere(int granularity, arena *heap)
 {
-    platonic *mesh = new(heap, platonic);
-
     #define R 1.618034f  // golden ratio
     #define N 1.902113f  // vector magnitude
     static const point verts[] = {
@@ -187,37 +151,81 @@ static platonic *newicosphere(int granularity, arena *heap)
         { 0/N,-1/N, R/N}, {0/N, 1/N, R/N}, { 0/N,-1/N,-R/N}, { 0/N, 1/N,-R/N},
         { R/N, 0/N,-1/N}, {R/N, 0/N, 1/N}, {-R/N, 0/N,-1/N}, {-R/N, 0/N, 1/N},
     };
-    int nverts = countof(verts);
-    mesh->verts = (vertices){(point *)verts, nverts, nverts};
-
     static const triangle faces[] = {
         { 0, 11,  5}, { 0,  5,  1}, { 0,  1,  7}, { 0,  7, 10}, { 0, 10, 11},
         { 1,  5,  9}, { 5, 11,  4}, {11, 10,  2}, {10,  7,  6}, { 7,  1,  8},
         { 3,  9,  4}, { 3,  4,  2}, { 3,  2,  6}, { 3,  6,  8}, { 3,  8,  9},
         { 4,  9,  5}, { 2,  4, 11}, { 6,  2, 10}, { 8,  6,  7}, { 9,  8,  1},
     };
-    int nfaces = countof(faces);
-    mesh->faces = (triangles){(triangle *)faces, nfaces, nfaces};
 
-    for (int i = 0; i < granularity; i++) {
-        triangles new = {0};
-        for (int j = 0; j < mesh->faces.len; j++) {
-            triangle tri = mesh->faces.data[j];
-            int a = midpoint(mesh, tri.v1, tri.v2, heap);
-            int b = midpoint(mesh, tri.v2, tri.v3, heap);
-            int c = midpoint(mesh, tri.v3, tri.v1, heap);
-            *push(&new, heap) = (triangle){tri.v1, a, c};
-            *push(&new, heap) = (triangle){tri.v2, b, a};
-            *push(&new, heap) = (triangle){tri.v3, c, b};
-            *push(&new, heap) = (triangle){a, b, c};
-        }
-        mesh->faces = new;
+    mesh *m   = new(heap, mesh);
+    m->nfaces = 20 * (1 << (2 * granularity));  // 20 * 4**granularity
+    m->faces  = new(heap, triangle, m->nfaces);
+    m->verts  = new(heap, point, m->nfaces-8);
+    for (int i = 0; i < countof(verts); i++) {
+        m->verts[i] = verts[i];
     }
-    return mesh;
+    m->nverts = countof(verts);
+    arena scratch = *heap;  // discard futher allocations on return
+
+    typedef struct {
+        int      i;
+        triangle parent;
+        triangle middle;
+    } icostack;
+    icostack *stack = new(&scratch, icostack, granularity+1);
+
+    int len = 0;
+    for (int i = 0; i < countof(faces); i++) {
+        int top = 0;
+        stack[0].i = 0;
+        stack[0].parent = faces[i];
+        while (top >= 0) {
+            switch (stack[top].i++) {
+            case 0:
+                if (top == granularity) {
+                    m->faces[len++] = stack[top--].parent;
+                    break;
+                }
+                triangle p = stack[top].parent;
+                stack[top].middle.v1 = midpoint(m, p.v1, p.v2, &scratch);
+                stack[top].middle.v2 = midpoint(m, p.v2, p.v3, &scratch);
+                stack[top].middle.v3 = midpoint(m, p.v3, p.v1, &scratch);
+                stack[++top].i = 0;
+                stack[top].parent = stack[top-1].middle;
+                break;
+
+            case 1:
+                stack[++top].i = 0;
+                stack[top].parent.v1 = stack[top-1].parent.v1;
+                stack[top].parent.v2 = stack[top-1].middle.v1;
+                stack[top].parent.v3 = stack[top-1].middle.v3;
+                break;
+
+            case 2:
+                stack[++top].i = 0;
+                stack[top].parent.v1 = stack[top-1].parent.v2;
+                stack[top].parent.v2 = stack[top-1].middle.v2;
+                stack[top].parent.v3 = stack[top-1].middle.v1;
+                break;
+
+            case 3:
+                stack[++top].i = 0;
+                stack[top].parent.v1 = stack[top-1].parent.v3;
+                stack[top].parent.v2 = stack[top-1].middle.v3;
+                stack[top].parent.v3 = stack[top-1].middle.v2;
+                break;
+
+            case 4:
+                top--;
+                break;
+            }
+        }
+    }
+    return m;
 }
 
-__attribute((stdcall))
-static LRESULT proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
+static LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
     switch (msg) {
     case WM_NCHITTEST:;
@@ -253,7 +261,9 @@ static double getseconds(timer *t)
     return (double)(count.QuadPart - t->base) / t->freq;
 }
 
+#if __i386__
 __attribute((force_align_arg_pointer))
+#endif
 void WinMainCRTStartup(void)
 {
     DWORD type = MEM_RESERVE | MEM_COMMIT;
@@ -371,30 +381,30 @@ void WinMainCRTStartup(void)
         glScalef(0.8f, 0.8f, 0.8f);
 
         int granularity = (int)(now / 20 * 6) % 6;
-        platonic *sphere = newicosphere(granularity, &frame);
+        mesh *sphere = newicosphere(granularity, &frame);
 
-        point *attribs = new(&frame, point, sphere->faces.len*6);
-        for (int i = 0; i < sphere->faces.len; i++) {
-            point p1 = sphere->verts.data[sphere->faces.data[i].v1];
-            point p2 = sphere->verts.data[sphere->faces.data[i].v2];
-            point p3 = sphere->verts.data[sphere->faces.data[i].v3];
+        point *attribs = new(&frame, point, sphere->nfaces*6);
+        for (int i = 0; i < sphere->nfaces; i++) {
+            point p1 = sphere->verts[sphere->faces[i].v1];
+            point p2 = sphere->verts[sphere->faces[i].v2];
+            point p3 = sphere->verts[sphere->faces[i].v3];
             attribs[i*6+1] = p3;
             attribs[i*6+3] = p2;
             attribs[i*6+4] = cross(diff(p1, p2), diff(p1, p3));
             attribs[i*6+5] = p1;
         }
         glInterleavedArrays(GL_N3F_V3F, 0, attribs);
-        glDrawArrays(GL_TRIANGLES, 0, sphere->faces.len*3);
+        glDrawArrays(GL_TRIANGLES, 0, sphere->nfaces*3);
 
         #if 0  // wireframe outline
         glDisable(GL_LIGHTING);
         glLineWidth(2);
         glBegin(GL_LINES);
         glColor3f(1.0f, 1.0f, 1.0f);
-        for (int i = 0; i < sphere->faces.len; i++) {
-            point p1 = sphere->verts.data[sphere->faces.data[i].v1];
-            point p2 = sphere->verts.data[sphere->faces.data[i].v2];
-            point p3 = sphere->verts.data[sphere->faces.data[i].v3];
+        for (int i = 0; i < sphere->nfaces; i++) {
+            point p1 = sphere->verts[sphere->faces[i].v1];
+            point p2 = sphere->verts[sphere->faces[i].v2];
+            point p3 = sphere->verts[sphere->faces[i].v3];
             glVertex3fv(&p1.x);  glVertex3fv(&p3.x);
             glVertex3fv(&p2.x);  glVertex3fv(&p3.x);
         }
