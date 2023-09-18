@@ -336,19 +336,17 @@ void WinMainCRTStartup(void)
         int granularity = (int)(now / 20 * 6) % 6;
         platonic *sphere = newicosphere(granularity, &frame);
 
-        point *verts = new(&frame, point, sphere->faces.len*3);
-        point *norms = new(&frame, point, sphere->faces.len*3);
+        point *attribs = new(&frame, point, sphere->faces.len*6);
         for (int i = 0; i < sphere->faces.len; i++) {
             point p1 = sphere->verts.data[sphere->faces.data[i].v1];
             point p2 = sphere->verts.data[sphere->faces.data[i].v2];
             point p3 = sphere->verts.data[sphere->faces.data[i].v3];
-            verts[i*3+0] = p3;
-            verts[i*3+1] = p2;
-            verts[i*3+2] = p1;
-            norms[i*3+2] = cross(diff(p1, p2), diff(p1, p3));
+            attribs[i*6+1] = p3;
+            attribs[i*6+3] = p2;
+            attribs[i*6+4] = cross(diff(p1, p2), diff(p1, p3));
+            attribs[i*6+5] = p1;
         }
-        glVertexPointer(3, GL_FLOAT, 0, verts);
-        glNormalPointer(GL_FLOAT, 0, norms);
+        glInterleavedArrays(GL_N3F_V3F, 0, attribs);
         glDrawArrays(GL_TRIANGLES, 0, sphere->faces.len*3);
 
         #if 0  // wireframe outline
