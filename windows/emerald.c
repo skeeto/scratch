@@ -224,7 +224,6 @@ static LRESULT proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         LRESULT hit = DefWindowProc(hwnd, msg, wparam, lparam);
         return hit==HTCLIENT ? HTCAPTION : hit;
     case WM_CLOSE:
-    case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
     }
@@ -284,6 +283,44 @@ void WinMainCRTStartup(void)
     pfd->dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
     SetPixelFormat(hdc, ChoosePixelFormat(hdc, pfd), pfd);
     wglMakeCurrent(hdc, wglCreateContext(hdc));
+
+    // Enable 8x antialiasing if possible
+    typedef int (__stdcall *cpf)(HDC, const int *, float *, int, int *, int *);
+    cpf wglChoosePixelFormat;
+    wglChoosePixelFormat = (cpf)wglGetProcAddress("wglChoosePixelFormatARB");
+    if (wglChoosePixelFormat) {
+        enum {
+            WGL_DRAW_TO_WINDOW_ARB    = 0x2001,
+            WGL_ACCELERATION_ARB      = 0x2003,
+            WGL_SUPPORT_OPENGL_ARB    = 0x2010,
+            WGL_DOUBLE_BUFFER_ARB     = 0x2011,
+            WGL_FULL_ACCELERATION_ARB = 0x2027,
+            WGL_SAMPLE_BUFFERS_ARB    = 0x2041,
+            WGL_SAMPLES_ARB           = 0x2042,
+        };
+        static const int attribs[] = {
+            WGL_DRAW_TO_WINDOW_ARB, GL_TRUE,
+            WGL_SUPPORT_OPENGL_ARB, GL_TRUE,
+            WGL_DOUBLE_BUFFER_ARB,  GL_TRUE,
+            WGL_ACCELERATION_ARB,   WGL_FULL_ACCELERATION_ARB,
+            WGL_SAMPLE_BUFFERS_ARB, GL_TRUE,
+            WGL_SAMPLES_ARB,        8,
+            0
+        };
+        int idx, nidx;
+        wglChoosePixelFormat(hdc, attribs, 0, 1, &idx, &nidx);
+        if (nidx) {
+            wglMakeCurrent(0, 0);
+            DestroyWindow(hwnd);
+            hwnd = CreateWindow(
+                "gl", "Emerald", style, x, y, size, size, 0, 0, 0, 0
+            );
+            hdc = GetDC(hwnd);
+            SetPixelFormat(hdc, idx, pfd);
+            HGLRC ctx = wglCreateContext(hdc);
+            wglMakeCurrent(hdc, ctx);
+        }
+    }
     ShowWindow(hwnd, SW_NORMAL);
 
     glEnable(GL_DEPTH_TEST);
