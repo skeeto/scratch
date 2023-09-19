@@ -229,13 +229,13 @@ static LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
     switch (msg) {
     case WM_NCHITTEST:;
-        LRESULT hit = DefWindowProc(hwnd, msg, wparam, lparam);
+        LRESULT hit = DefWindowProcA(hwnd, msg, wparam, lparam);
         return hit==HTCLIENT ? HTCAPTION : hit;
     case WM_CLOSE:
         PostQuitMessage(0);
         return 0;
     }
-    return DefWindowProc(hwnd, msg, wparam, lparam);
+    return DefWindowProcA(hwnd, msg, wparam, lparam);
 }
 
 typedef struct {
@@ -273,7 +273,7 @@ void WinMainCRTStartup(void)
     WNDCLASSA *wc = new(&init, WNDCLASSA);
     wc->lpfnWndProc = proc;
     wc->lpszClassName = "gl";
-    wc->hCursor = LoadCursor(0, IDC_ARROW);
+    wc->hCursor = LoadCursorA(0, IDC_ARROW);
     RegisterClass(wc);
 
     int w = GetSystemMetrics(SM_CXSCREEN);
@@ -282,8 +282,8 @@ void WinMainCRTStartup(void)
     int x = (w - size) / 2;
     int y = (h - size) / 2;
     DWORD style = WS_OVERLAPPED | WS_MINIMIZEBOX | WS_SYSMENU;
-    HWND hwnd = CreateWindow(
-        "gl", "Emerald", style, x, y, size, size, 0, 0, 0, 0
+    HWND hwnd = CreateWindowExA(
+        0, "gl", "Emerald", style, x, y, size, size, 0, 0, 0, 0
     );
     HDC hdc = GetDC(hwnd);
 
@@ -322,8 +322,8 @@ void WinMainCRTStartup(void)
         if (nidx) {
             wglMakeCurrent(0, 0);
             DestroyWindow(hwnd);
-            hwnd = CreateWindow(
-                "gl", "Emerald", style, x, y, size, size, 0, 0, 0, 0
+            hwnd = CreateWindowExA(
+                0, "gl", "Emerald", style, x, y, size, size, 0, 0, 0, 0
             );
             hdc = GetDC(hwnd);
             SetPixelFormat(hdc, idx, pfd);
@@ -338,8 +338,6 @@ void WinMainCRTStartup(void)
     glEnable(GL_NORMALIZE);
     glEnable(GL_LIGHTING);
     glShadeModel(GL_FLAT);
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glEnableClientState(GL_NORMAL_ARRAY);
 
     glEnable(GL_LIGHT0);
     static const float gray[]     = { 0.8f,  0.8f,  0.8f,  1.0f};
@@ -355,12 +353,12 @@ void WinMainCRTStartup(void)
     timer *timer = newtimer(&perm);
 
     for (;;) {
-        for (MSG msg; PeekMessage(&msg, 0, 0, 0, TRUE);) {
+        for (MSG msg; PeekMessageA(&msg, 0, 0, 0, TRUE);) {
             if (msg.message == WM_QUIT) {
                 ExitProcess(0);
             }
             TranslateMessage(&msg);
-            DispatchMessage(&msg);
+            DispatchMessageA(&msg);
         }
 
         arena frame = perm;
