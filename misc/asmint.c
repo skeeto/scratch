@@ -59,7 +59,7 @@ typedef struct {
 #if __GNUC__
 __attribute((malloc, alloc_size(2, 4)))
 #endif
-static void *alloc(arena *a, size objsize, size align, size count)
+static byte *alloc(arena *a, size objsize, size align, size count)
 {
     size avail = a->cap - a->off;
     size padding = -(uintptr_t)a->mem & (align - 1);
@@ -83,7 +83,7 @@ static arena newscratch(arena *a)
     return scratch;
 }
 
-#define S(s) (s8){(byte *)s, lengthof(s)}
+#define S(s) (s8){(u8 *)s, lengthof(s)}
 typedef struct {
     u8  *buf;
     size len;
@@ -1050,8 +1050,8 @@ int main(void)
 #define W32(r)  __declspec(dllimport) r __stdcall
 W32(byte *) VirtualAlloc(byte *, size, u32, u32);
 W32(iptr)   GetStdHandle(u32);
-W32(b32)    WriteFile(iptr, byte *, u32, u32 *, void *);
-W32(b32)    ReadFile(iptr, byte *, u32, u32 *, void *);
+W32(b32)    WriteFile(iptr, u8 *, u32, u32 *, void *);
+W32(b32)    ReadFile(iptr, u8 *, u32, u32 *, void *);
 W32(b32)    GetFileSizeEx(iptr, u64 *);
 W32(void)   ExitProcess(u32);
 
