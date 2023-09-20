@@ -51,9 +51,8 @@ typedef ptrdiff_t     size;
 static void os_oom(void);
 
 typedef struct {
-    byte *mem;
-    size  off;
-    size  cap;
+    byte *beg;
+    byte *end;
 } arena;
 
 #if __GNUC__
@@ -61,14 +60,14 @@ __attribute((malloc, alloc_size(2, 4)))
 #endif
 static byte *alloc(arena *a, size objsize, size align, size count)
 {
-    size avail = a->cap - a->off;
-    size padding = -(uintptr_t)a->mem & (align - 1);
+    size avail = a->end - a->beg;
+    size padding = -(uintptr_t)a->beg & (align - 1);
     if (count > (avail - padding)/objsize) {
         os_oom();
     }
     size total = objsize * count;
-    byte *p = a->mem + padding;
-    a->mem += padding + total;
+    byte *p = a->beg + padding;
+    a->beg += padding + total;
     for (size i = 0; i < total; i++) {
         p[i] = 0;
     }
@@ -78,8 +77,9 @@ static byte *alloc(arena *a, size objsize, size align, size count)
 static arena newscratch(arena *a)
 {
     arena scratch = {0};
-    scratch.cap = (a->cap - a->off) / 2;
-    scratch.mem = new(a, byte, scratch.cap);
+    size cap = (a->end - a->beg) / 2;
+    scratch.beg = new(a, byte, cap);
+    scratch.end = scratch.beg + cap;
     return scratch;
 }
 
@@ -1032,8 +1032,8 @@ int main(void)
             continue;
         }
         arena heap = {0};
-        heap.cap = cap;
-        heap.mem = mem;
+        heap.beg = mem;
+        heap.end = mem + cap;
         ast program = parse(src, &heap, newscratch(&heap));
         if (program.ok) {
             assemble(program.head, &heap);
@@ -1088,9 +1088,10 @@ __attribute((force_align_arg_pointer))
 #endif
 void mainCRTStartup(void)
 {
+    size cap = 1<<24;
     arena heap = {0};
-    heap.cap = 1<<24;
-    heap.mem = VirtualAlloc(0, heap.cap, 0x3000, 4);
+    heap.beg = VirtualAlloc(0, cap, 0x3000, 4);
+    heap.end = heap.beg + cap;
 
     status r = run(heap);
     u32 dummy;
@@ -1139,9 +1140,10 @@ static void os_oom(void)
 
 int main(void)
 {
+    size cap = 1<<24;
     arena heap = {0};
-    heap.cap = 1<<24;
-    heap.mem = malloc(heap.cap);
+    heap.beg = malloc(cap);
+    heap.end = heap.beg + cap;
 
     status r = run(heap);
     if (r.err.len) {
