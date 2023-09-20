@@ -755,7 +755,7 @@ static void printi32(output *o, i32 v)
         *--beg = '0' - (u8)(t%10);
     } while (t /= 10);
     if (v < 0) {
-        *--beg = '0';
+        *--beg = '-';
     }
     print(o, s8span(beg, end));
 }
