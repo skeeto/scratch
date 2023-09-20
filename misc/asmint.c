@@ -37,6 +37,9 @@ typedef struct {
     size  cap;
 } arena;
 
+#if __GNUC__
+__attribute((malloc, alloc_size(2, 4)))
+#endif
 static void *alloc(arena *a, size objsize, size align, size count)
 {
     size avail = a->cap - a->off;
@@ -975,7 +978,52 @@ static status run(arena heap)
 }
 
 
-#if _WIN32
+#if FUZZ
+// $ afl-gcc-fast -DFUZZ -g3 -fsanitize=undefined asmint.c
+// $ afl-fuzz -i Assembler-Interpreter/programs -o results ./a.out
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+__AFL_FUZZ_INIT();
+
+static uptr oom[5];
+void os_oom(void)
+{
+    __builtin_longjmp(oom, 1);
+}
+
+static s8 os_loadstdin(arena *a)
+{
+    __builtin_trap();
+}
+
+int main(void)
+{
+    __AFL_INIT();
+    s8    src = {0};
+    size  cap = 1<<21;
+    byte *mem = malloc(cap);
+    u8   *buf = __AFL_FUZZ_TESTCASE_BUF;
+    while (__AFL_LOOP(10000)) {
+        src.len = __AFL_FUZZ_TESTCASE_LEN;
+        src.buf = realloc(src.buf, src.len);
+        memcpy(src.buf, buf, src.len);
+        if (__builtin_setjmp(oom)) {
+            continue;
+        }
+        arena heap = {0};
+        heap.cap = cap;
+        heap.mem = mem;
+        ast program = parse(src, &heap, newscratch(&heap));
+        if (program.ok) {
+            assemble(program.head, &heap);
+        }
+    }
+}
+
+
+#elif _WIN32
 // w64devkit $ cc -nostartfiles -o asmint asmint
 // MSVC      $ cl asmint.c /link /subsystem:console kernel32.lib
 // Usage     $ ./asmint <program.asm
