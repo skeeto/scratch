@@ -828,17 +828,27 @@ static result execute(word *image, arena scratch)
             break;
 
         case op_divri:
-            if (!w->operand.imm) {
+            switch (w->operand.imm) {
+            case  0:
                 return r;  // divide by zero
+            case -1:
+                regs[w->reg[0]-'a'] = -(u32)regs[w->reg[0]-'a'];
+                break;
+            default:
+                regs[w->reg[0]-'a'] /= w->operand.imm;
             }
-            regs[w->reg[0]-'a'] /= (u32)w->operand.imm;
             break;
 
         case op_divrr:
-            if (!regs[w->reg[1]-'a']) {
+            switch (regs[w->reg[1]-'a']) {
+            case  0:
                 return r;  // divide by zero
+            case -1:
+                regs[w->reg[0]-'a'] = -(u32)regs[w->reg[0]-'a'];
+                break;
+            default:
+                regs[w->reg[0]-'a'] /= regs[w->reg[1]-'a'];
             }
-            regs[w->reg[0]-'a'] /= (u32)regs[w->reg[1]-'a'];
             break;
 
         case op_cmpii:
