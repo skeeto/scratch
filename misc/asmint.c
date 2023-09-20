@@ -10,20 +10,17 @@
 // Example program (random number generator):
 //         mov  s, 12345
 //         mov  c, 20
-// _loop:
-//         mov  h, c
+// _loop:  mov  h, c
 //         call rand16
 //         cmp  r, 0
 //         jg   _print
 //         mul  r, -1
-// _print:
-//         msg  r
+// _print: msg  r
 //         dec  c
 //         cmp  c, 0
 //         jg   _loop
 //         end
-// rand16:
-//         mul  s, 1615571549
+// rand16: mul  s, 1615571549
 //         inc  s
 //         mov  r, s
 //         div  r, 65536
@@ -191,6 +188,9 @@ static b32 identifier(u8 c)
 
 static s8 trim(s8 s)
 {
+    if (!s.len) {
+        return s;
+    }
     u8 *p = s.buf;
     u8 *e = p + s.len;
     for (; p<e && whitespace(*p); p++) {}
@@ -349,7 +349,7 @@ typedef struct msg msg;
 struct msg {
     msg *next;
     s8   string;
-    i32  reg;
+    u8   reg;
 };
 
 typedef enum {
@@ -557,7 +557,7 @@ static insnresult parseinsn(mnemonic m, s8 src, arena *a)
     case tok_newline:
         r.insn = n;
         r.src = t.src;
-        // fallthrough
+        return r;
     default:
         return r;
     }
@@ -592,6 +592,7 @@ typedef struct {
     b32   ok;
 } ast;
 
+// Note: returns pointers into the source buffer.
 static ast parse(s8 src, arena *perm, arena scratch)
 {
     ast r = {0};
@@ -621,12 +622,13 @@ static ast parse(s8 src, arena *perm, arena scratch)
             break;
 
         case tok_eof:
+            // Populate labels with addresses
             for (insn *n = r.head; n; n = n->next) {
                 if (n->label.buf) {
                     size *value = upsert(&table, n->label, 0);
                     if (!value) {
                         r.lineno = n->lineno;
-                        return r;
+                        return r;  // label not found
                     }
                     n->addr = *value;
                 }
@@ -652,12 +654,7 @@ static ast parse(s8 src, arena *perm, arena scratch)
                 if (t.type != tok_colon) {
                     return r;
                 }
-                t = lex(t.src);
-                if (t.type != tok_newline) {
-                    return r;
-                }
                 *upsert(&table, label, &scratch) = addr;
-                r.lineno++;
             }
             break;
         }
@@ -683,7 +680,7 @@ static word *assemble(insn *head, arena *perm)
     size i = 0;
     word *image = new(perm, word, len+1);
     for (insn *n = head; n; n = n->next, i++) {
-        image[i].op = n->op;
+        image[i].op = (u8)n->op;
         switch (n->op) {
         case op_abort:
         case op_cmpii:
@@ -795,7 +792,7 @@ static result execute(word *image, arena scratch)
 {
     result r = {0};
 
-    r.out.cap = 1 << 16;
+    r.out.cap = 1<<16;  // arbitrary capacity (TODO: os_write() to flush?)
     r.out.buf = new(&scratch, u8, r.out.cap);
 
     size len = 0;
