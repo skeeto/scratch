@@ -7,6 +7,28 @@
 // call run() with some working memory, write the returned buffers to
 // stdout/stderr, and exit with the given status.
 //
+// Example program (random number generator):
+//         mov  s, 12345
+//         mov  c, 20
+// _loop:
+//         mov  h, c
+//         call rand16
+//         cmp  r, 0
+//         jg   _print
+//         mul  r, -1
+// _print:
+//         msg  r
+//         dec  c
+//         cmp  c, 0
+//         jg   _loop
+//         end
+// rand16:
+//         mul  s, 1615571549
+//         inc  s
+//         mov  r, s
+//         div  r, 65536
+//         ret
+//
 // Ref: https://github.com/youssefeldesouky/Assembler-Interpreter
 // This is free and unencumbered software released into the public domain.
 
