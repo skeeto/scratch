@@ -1,9 +1,9 @@
 // Icosphere mesh generator and "emerald" renderer (Windows)
 //
 // $ cc -O2 -ffast-math -fno-builtin -s -mwindows -nostartfiles
-//      -o emerald.exe emerald.c -lopengl32
+//      -o emerald.exe emerald.c -lglu32 -lopengl32
 // $ cl /O2 /fp:fast /Zc:preprocessor /GS- emerald.c /link /subsystem:windows
-//      kernel32.lib user32.lib gdi32.lib opengl32.lib
+//      kernel32.lib user32.lib gdi32.lib opengl32.lib glu32.lib
 //
 // "The Official Guide to Learning OpenGL, Version 1.1" (1997)
 // http://blog.andreaskahler.com/2009/06/creating-icosphere-mesh-in-code.html
@@ -11,6 +11,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <GL/gl.h>
+#include <GL/glu.h>
 #include <stdint.h>
 
 #define sizeof(x)  (ptrdiff_t)sizeof(x)
@@ -228,12 +229,23 @@ static mesh *newicosphere(int granularity, arena *heap)
 static LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
     switch (msg) {
-    case WM_NCHITTEST:;
-        LRESULT hit = DefWindowProcA(hwnd, msg, wparam, lparam);
-        return hit==HTCLIENT ? HTCAPTION : hit;
     case WM_CLOSE:
         PostQuitMessage(0);
         return 0;
+    case WM_KEYDOWN:
+        switch (wparam) {
+        case 0x1b:
+        case 'Q':
+            PostQuitMessage(0);
+            return 0;
+        }
+        break;
+    case WM_NCHITTEST:;
+        LRESULT hit = DefWindowProcA(hwnd, msg, wparam, lparam);
+        return hit==HTCLIENT ? HTCAPTION : hit;
+    case WM_SETCURSOR:
+        SetCursor(0);
+        return 1;
     }
     return DefWindowProcA(hwnd, msg, wparam, lparam);
 }
@@ -273,17 +285,13 @@ void WinMainCRTStartup(void)
     WNDCLASSA *wc = new(&init, WNDCLASSA);
     wc->lpfnWndProc = proc;
     wc->lpszClassName = "gl";
-    wc->hCursor = LoadCursorA(0, IDC_ARROW);
     RegisterClass(wc);
 
     int w = GetSystemMetrics(SM_CXSCREEN);
     int h = GetSystemMetrics(SM_CYSCREEN);
-    int size = (w<h ? w : h) * 9 / 10;
-    int x = (w - size) / 2;
-    int y = (h - size) / 2;
-    DWORD style = WS_OVERLAPPED | WS_MINIMIZEBOX | WS_SYSMENU;
+    DWORD style = WS_POPUP;
     HWND hwnd = CreateWindowExA(
-        0, "gl", "Emerald", style, x, y, size, size, 0, 0, 0, 0
+        0, "gl", "Emerald", style, 0, 0, w, h, 0, 0, 0, 0
     );
     HDC hdc = GetDC(hwnd);
 
@@ -323,7 +331,7 @@ void WinMainCRTStartup(void)
             wglMakeCurrent(0, 0);
             DestroyWindow(hwnd);
             hwnd = CreateWindowExA(
-                0, "gl", "Emerald", style, x, y, size, size, 0, 0, 0, 0
+                0, "gl", "Emerald", style, 0, 0, w, h, 0, 0, 0, 0
             );
             hdc = GetDC(hwnd);
             SetPixelFormat(hdc, idx, pfd);
@@ -339,15 +347,31 @@ void WinMainCRTStartup(void)
     glEnable(GL_LIGHTING);
     glShadeModel(GL_FLAT);
 
-    glEnable(GL_LIGHT0);
-    static const float gray[]     = { 0.8f,  0.8f,  0.8f,  1.0f};
-    static const float green[]    = { 0.3f,  0.5f,  0.0f,  1.0f};
-    static const float position[] = {+0.2f, +0.3f, -8.0f, +0.2f};
-    glLightfv(GL_LIGHT0, GL_AMBIENT,  green);
-    glLightfv(GL_LIGHT0, GL_DIFFUSE,  green);
-    glLightfv(GL_LIGHT0, GL_POSITION, position);
+    glMatrixMode(GL_PROJECTION);
+    gluPerspective(60, (double)w/h, 1, 20);
+    glViewport(0, 0, w, h);
+    glMatrixMode(GL_MODELVIEW);
+
+    static const float gray[] = {0.8f, 0.8f, 0.8f, 1.0f};
     glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, gray);
-    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 1.5f);
+    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 20.0f);
+
+    {
+        glEnable(GL_LIGHT0);
+        static const float green[]    = { 0.3f,  0.5f,  0.0f,  1.0f};
+        static const float position[] = {+3.0f, +3.0f, +2.0f, +1.0f};
+        glLightfv(GL_LIGHT0, GL_AMBIENT,  green);
+        glLightfv(GL_LIGHT0, GL_DIFFUSE,  green);
+        glLightfv(GL_LIGHT0, GL_POSITION, position);
+    }
+
+    {
+        static const float green[]    = { 0.2f,  0.3f,  0.0f,  1.0f};
+        static const float position[] = {+0.0f, -3.0f, +0.0f, +0.0f};
+        glEnable(GL_LIGHT1);
+        glLightfv(GL_LIGHT1, GL_DIFFUSE,  green);
+        glLightfv(GL_LIGHT1, GL_POSITION, position);
+    }
 
     arena perm = {heap};
     timer *timer = newtimer(&perm);
@@ -365,10 +389,9 @@ void WinMainCRTStartup(void)
         double now = getseconds(timer);
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glMatrixMode(GL_PROJECTION);
+
         glLoadIdentity();
-        glMatrixMode(GL_MODELVIEW);
-        glLoadIdentity();
+        glTranslatef(0.0f, 0.0f, -2.2f);
 
         float xrot = (float)(now *  7);
         float yrot = (float)(now * 23);
@@ -376,7 +399,6 @@ void WinMainCRTStartup(void)
         glRotatef(xrot, 1.0f, 0.0f, 0.0f);
         glRotatef(yrot, 0.0f, 1.0f, 0.0f);
         glRotatef(zrot, 0.0f, 0.0f, 1.0f);
-        glScalef(0.8f, 0.8f, 0.8f);
 
         int granularity = (int)(now / 20 * 6) % 6;
         mesh *sphere = newicosphere(granularity, &frame);
@@ -386,10 +408,10 @@ void WinMainCRTStartup(void)
             point p1 = sphere->verts[sphere->faces[i].v1];
             point p2 = sphere->verts[sphere->faces[i].v2];
             point p3 = sphere->verts[sphere->faces[i].v3];
-            attribs[i*6+1] = p3;
+            attribs[i*6+1] = p1;
             attribs[i*6+3] = p2;
             attribs[i*6+4] = cross(diff(p1, p2), diff(p1, p3));
-            attribs[i*6+5] = p1;
+            attribs[i*6+5] = p3;
         }
         glInterleavedArrays(GL_N3F_V3F, 0, attribs);
         glDrawArrays(GL_TRIANGLES, 0, sphere->nfaces*3);
