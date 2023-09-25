@@ -69,7 +69,7 @@ static uint64 hash64(str s)
     return h ^ h>>32;
 }
 
-static size itoa(byte *buf, int v)
+static size tostr(byte *buf, int v)
 {
     size len = (v<0) + 1;
     for (int t = v; t /= 10; len++) {}
@@ -131,7 +131,7 @@ static void *worker(void *arg)
         byte buf[32];
         str key = {0};
         key.buf = buf;
-        key.len = itoa(buf, i);
+        key.len = tostr(buf, i);
         key = copyinto(key, &ctx.arena);
         *upsert(ctx.root, key, &ctx.arena) = i;
     }
@@ -173,7 +173,7 @@ int main(void)
         byte buf[32];
         str key = {0};
         key.buf = buf;
-        key.len = itoa(buf, i);
+        key.len = tostr(buf, i);
         assert(*upsert(&nums, key, 0) == i);
     }
 
