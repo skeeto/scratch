@@ -285,7 +285,7 @@ void WinMainCRTStartup(void)
     WNDCLASSA *wc = new(&init, WNDCLASSA);
     wc->lpfnWndProc = proc;
     wc->lpszClassName = "gl";
-    RegisterClass(wc);
+    RegisterClassA(wc);
 
     int w = GetSystemMetrics(SM_CXSCREEN);
     int h = GetSystemMetrics(SM_CYSCREEN);
