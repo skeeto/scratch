@@ -22,7 +22,6 @@ package hashtrie
 
 import (
 	"hash/fnv"
-	"math/bits"
 	"strconv"
 	"testing"
 )
@@ -52,7 +51,7 @@ func (m *Map[K, V]) Upsert(key K) *V {
 			return &(*n).value
 		}
 		n = &(*n).child[h>>62]
-		h = bits.RotateLeft64(h, 2)
+		h <<= 2
 	}
 	*n = &node[K, V]{key: key}
 	return &(*n).value
