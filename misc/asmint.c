@@ -61,7 +61,7 @@ __attribute((malloc, alloc_size(2, 4)))
 static byte *alloc(arena *a, size objsize, size align, size count)
 {
     size avail = a->end - a->beg;
-    size padding = -(uintptr_t)a->beg & (align - 1);
+    size padding = -(uptr)a->beg & (align - 1);
     if (count > (avail - padding)/objsize) {
         os_oom();
     }
