@@ -49,7 +49,7 @@ typedef   signed int     p32;
 typedef unsigned int     u32;
 typedef __INT64_TYPE__   i64;
 typedef __UINT64_TYPE__  u64;
-typedef unsigned char    byte;
+typedef char             byte;
 typedef __PTRDIFF_TYPE__ size;
 typedef __UINTPTR_TYPE__ uptr;
 typedef __INTPTR_TYPE__  iptr;
