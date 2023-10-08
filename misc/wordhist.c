@@ -130,7 +130,7 @@ static seen *upsert(seen **s, s8 word, arena *a)
         if (s8equal((*s)->word, word)) {
             return *s;
         }
-        s = (*s)->child + (h >> 30);
+        s = &(*s)->child[h>>30];
     }
     *s = new(a, seen, 1);
     (*s)->word = s8clone(a, word);
