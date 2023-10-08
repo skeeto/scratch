@@ -1,32 +1,39 @@
-// Word count histogram (hash-trie experiment, see treap.c)
+// Word count histogram (hash-trie experiment)
 // Windows: $ cc -nostartfiles -fno-builtin -o wordhist wordhist.c
 //          $ cl /GS- wordhist.c /link /subsystem:console kernel32.lib
 // Unix:    $ cc -o wordhist wordhist.c
 // Usage:   $ ./wordhist <corpus.txt
+// Ref: https://nullprogram.com/blog/2023/09/30/
 // This is free and unencumbered software released into the public domain.
 #include <stddef.h>
 #include <stdint.h>
 
-typedef uint8_t      u8;
-typedef   signed int b32;
-typedef   signed int i32;
-typedef unsigned int u32;
-typedef uint64_t     u64;
-typedef uintptr_t    uptr;
-typedef char         byte;
-typedef ptrdiff_t    size;
-typedef size_t       usize;
+typedef uint8_t   u8;
+typedef int32_t   b32;
+typedef int32_t   i32;
+typedef uint32_t  u32;
+typedef uint64_t  u64;
+typedef uintptr_t uptr;
+typedef char      byte;
+typedef ptrdiff_t size;
+typedef size_t    usize;
 
 #define sizeof(x)    (size)sizeof(x)
 #define alignof(x)   (size)_Alignof(x)
 #define countof(a)   (sizeof(a)/sizeof(*(a)))
 #define lengthof(s)  (countof(s) - 1)
+#define new(a, t, n) (t *)alloc(a, sizeof(t), alignof(t), n)
 
 static void osfail(void);
 static i32  osread(i32, u8 *, i32);
 static b32  oswrite(i32, u8 *, i32);
 
-#define new(a, t, n) (t *)alloc(a, sizeof(t), alignof(t), n)
+static void oom(void)
+{
+    static const u8 msg[] = "out of memory\n";
+    oswrite(2, (u8 *)msg, lengthof(msg));
+    osfail();
+}
 
 typedef struct {
     byte *beg;
@@ -38,9 +45,7 @@ static byte *alloc(arena *a, size objsize, size align, size count)
     size avail = a->end - a->beg;
     size padding = -(uptr)a->beg & (align - 1);
     if (count > (avail - padding)/objsize) {
-        static const u8 msg[] = "out of memory\n";
-        oswrite(2, (u8 *)msg, lengthof(msg));
-        osfail();
+        oom();
     }
     size total = count * objsize;
     byte *p = a->beg + padding;
