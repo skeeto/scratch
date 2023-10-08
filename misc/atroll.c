@@ -33,14 +33,14 @@
 #include <stdint.h>
 #include <stddef.h>
 
-typedef uint8_t       u8;
-typedef int16_t       i16;
-typedef int32_t       b32;
-typedef int32_t       i32;
-typedef int64_t       i64;
-typedef uint64_t      u64;
-typedef unsigned char byte;
-typedef ptrdiff_t     size;
+typedef uint8_t   u8;
+typedef int16_t   i16;
+typedef int32_t   b32;
+typedef int32_t   i32;
+typedef int64_t   i64;
+typedef uint64_t  u64;
+typedef char      byte;
+typedef ptrdiff_t size;
 
 #define new(a, t, n) (t *)alloc(a, sizeof(t), _Alignof(t), n)
 

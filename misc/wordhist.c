@@ -7,15 +7,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef uint8_t       u8;
-typedef   signed int  b32;
-typedef   signed int  i32;
-typedef unsigned int  u32;
-typedef uint64_t      u64;
-typedef uintptr_t     uptr;
-typedef unsigned char byte;
-typedef ptrdiff_t     size;
-typedef size_t        usize;
+typedef uint8_t      u8;
+typedef   signed int b32;
+typedef   signed int i32;
+typedef unsigned int u32;
+typedef uint64_t     u64;
+typedef uintptr_t    uptr;
+typedef char         byte;
+typedef ptrdiff_t    size;
+typedef size_t       usize;
 
 #define sizeof(x)    (size)sizeof(x)
 #define alignof(x)   (size)_Alignof(x)
@@ -51,7 +51,7 @@ static byte *alloc(arena *a, size objsize, size align, size count)
     return p;
 }
 
-static void copy(byte *restrict dst, byte *restrict src, size len)
+static void copy(u8 *restrict dst, u8 *restrict src, size len)
 {
     for (size i = 0; i < len; i++) {
         dst[i] = src[i];
@@ -182,7 +182,7 @@ static void finishword(wordhist *wh, arena *a)
     wh->word.len = 0;
 }
 
-static void countwords(wordhist *wh, arena *a, byte *buf, size len)
+static void countwords(wordhist *wh, arena *a, u8 *buf, size len)
 {
     if (!len) {
         finishword(wh, a);
@@ -254,10 +254,10 @@ static seen *sort(seen *head, arena scratch)
 }
 
 typedef struct {
-    byte *buf;
-    i32   len;
-    i32   cap;
-    b32   err;
+    u8 *buf;
+    i32 len;
+    i32 cap;
+    b32 err;
 } bufout;
 
 static void flush(bufout *b)
@@ -330,8 +330,8 @@ typedef struct {int dummy;} *handle;
 #define W32(r) __declspec(dllimport) r __stdcall
 W32(byte *) VirtualAlloc(byte *, usize, u32, u32);
 W32(handle) GetStdHandle(u32);
-W32(b32)    ReadFile(handle, byte *, u32, u32 *, void *);
-W32(b32)    WriteFile(handle, byte *, u32, u32 *, void *);
+W32(b32)    ReadFile(handle, u8 *, u32, u32 *, void *);
+W32(b32)    WriteFile(handle, u8 *, u32, u32 *, void *);
 W32(void)   ExitProcess(u32);
 
 static void osfail(void)
