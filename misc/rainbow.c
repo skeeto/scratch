@@ -88,7 +88,7 @@ struct map {
 };
 
 // Insert key/value into the map and return the entry. May be called
-// concurrenty from multiple threads.
+// concurrently from multiple threads.
 static map *upsert(map **m, u64 key, u64 val, arena *a)
 {
     for (u64 h = permute64(key);; h <<= 2) {
