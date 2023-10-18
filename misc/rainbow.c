@@ -206,6 +206,7 @@ typedef struct {
 #define W32 __attribute((dllimport, stdcall))
 W32 i32   CreateThread(void *, size, thrdfunc, void *, i32, i32 *);
 W32 void  ExitProcess(i32) __attribute((noreturn));
+W32 b32   GetPhysicallyInstalledSystemMemory(u64 *);
 W32 i32   GetStdHandle(i32);
 W32 void  GetSystemInfo(sysinfo *);
 W32 byte *VirtualAlloc(byte *, size, i32, i32);
@@ -235,17 +236,20 @@ static i32 threadentry(void *arg)
 __attribute((force_align_arg_pointer))
 void mainCRTStartup(void)
 {
-    enum { THREADMEM=1<<30 };
     sysinfo si = {0};
     GetSystemInfo(&si);
     i32 nthreads = si.nproc;
+
+    u64 memkb;
+    GetPhysicallyInstalledSystemMemory(&memkb);
+    size physmem = (size)memkb << 10;
 
     u64 seed;
     asm volatile ("rdrand %0" : "=r"(seed));
 
     map *seen = 0;
     for (i32 i = 0; i < nthreads; i++) {
-        arena perm = newarena(THREADMEM);
+        arena perm = newarena(physmem/nthreads);
         threadinfo *t = new(&perm, threadinfo);
         t->seen = &seen;
         t->seed = seed;
