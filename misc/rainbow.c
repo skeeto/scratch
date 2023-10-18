@@ -1,8 +1,10 @@
 // Find 64-bit hash collisions using a rainbow table
-//   $ cc -nostartfiles -fno-builtin -O3 -o rainbow.exe rainbow.c
-//   $ ./rainbow
+//
 // Prints string collision pairs, one per line, until running out of
 // memory or manually stopped.
+//
+// Porting: Implement fullwrite() and an entry point that calls worker()
+// on one thread per CPU core.
 //
 // This is free and unencumbered software released into the public domain.
 
@@ -18,8 +20,7 @@ typedef __PTRDIFF_TYPE__ size;
 typedef __UINTPTR_TYPE__ uptr;
 typedef char             byte;
 
-// Platform interface. Porting note: Implement this function, and from
-// the process entry point call worker() on one thread per CPU core.
+// [platform, thread-safe] Write some bytes to standard output.
 static b32 fullwrite(u8 *, i32 len);
 
 // Target hash function in which to find collisions.
@@ -182,7 +183,19 @@ static void worker(map **seen, u64 seed, i32 tid, arena perm)
 }
 
 
+
+// Platform
+
+typedef struct {
+    map **seen;
+    u64   seed;
+    i32   tid;
+    arena perm;
+} threadinfo;
+
 #ifdef _WIN32
+// $ cc -nostartfiles -fno-builtin -O3 -o rainbow.exe rainbow.c
+
 typedef i32 (*thrdfunc)(void *) __attribute((stdcall));
 typedef struct {
     i32 a, b;
@@ -210,13 +223,6 @@ static b32 fullwrite(u8 *buf, i32 len)
 {
     return !WriteFile(GetStdHandle(-11), buf, len, &len, 0);
 }
-
-typedef struct {
-    map **seen;
-    u64   seed;
-    i32   tid;
-    arena perm;
-} threadinfo;
 
 __attribute((stdcall, force_align_arg_pointer))
 static i32 threadentry(void *arg)
@@ -249,6 +255,64 @@ void mainCRTStartup(void)
             threadentry(t);
         }
         CreateThread(0, 0, threadentry, t, 0, 0);
+    }
+}
+
+#else  // POSIX
+// $ cc -pthread -O3 -o rainbow rainbow.c
+
+#include <pthread.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+static void *threadentry(void *arg)
+{
+    threadinfo *info = arg;
+    worker(info->seen, info->seed, info->tid, info->perm);
+    _Exit(0);
+}
+
+static arena newarena(size cap)
+{
+    arena perm = {0};
+    perm.beg = malloc(cap);
+    perm.end = perm.beg + cap;
+    return perm;
+}
+
+static b32 fullwrite(u8 *s, i32 len)
+{
+    // NOTE: Technically short writes may cause interleaving, but in
+    // practice there will be be no short writes.
+    for (i32 off = 0; off < len;) {
+        i32 r = (i32)write(1, s+off, len-off);
+        if (r < 1) {
+            return 0;
+        }
+        off += r;
+    }
+    return 1;
+}
+
+int main(void)
+{
+    map *seen = 0;
+    u64  seed = permute64((uptr)main);
+    i32  nthreads = sysconf(_SC_NPROCESSORS_ONLN);
+    size physmem = (size)sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGESIZE);
+
+    for (i32 i = 0; i < nthreads; i++) {
+        arena perm = newarena(physmem/nthreads);
+        threadinfo *info = new(&perm, threadinfo);
+        info->seen = &seen;
+        info->seed = seed;
+        info->tid  = i;
+        info->perm = perm;
+        if (i == nthreads-1) {
+            threadentry(info);
+        }
+        pthread_t thr;
+        pthread_create(&thr, 0, threadentry, info);
     }
 }
 #endif
