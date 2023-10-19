@@ -16,6 +16,7 @@ typedef __UINT8_TYPE__   u8;
 typedef __INT32_TYPE__   b32;
 typedef __INT32_TYPE__   i32;
 typedef __UINT64_TYPE__  u64;
+typedef __INT64_TYPE__   i64;
 typedef __PTRDIFF_TYPE__ size;
 typedef __UINTPTR_TYPE__ uptr;
 typedef char             byte;
@@ -118,22 +119,17 @@ static map *upsert(map **m, u64 key, u64 val, arena *a)
 
 static b32 terminal(u64 h)
 {
-    u64 mask = ((u64)1<<22) - 1;
+    u64 mask = ((u64)1<<23) - 1;
     return !(mask & h);
 }
 
-static map *makechain(u64 beg, arena *a)
+static i64 chainlen(u64 beg)
 {
-    map *chain = 0;
-    u64 end = beg;
-    for (u64 len = 0;; len++) {
-        u64 prev = end;
-        end = next(end);
-        upsert(&chain, end, prev, a);
-        if (terminal(end)) {
-            return chain;
-        }
+    i64 len = 0;
+    for (u64 end = beg; !terminal(end); end = next(end)) {
+        len++;
     }
+    return len;
 }
 
 typedef struct {
@@ -141,21 +137,23 @@ typedef struct {
     u64 hash2;
 } collision;
 
-static collision recover(u64 beg1, u64 beg2, arena scratch)
+static collision recover(u64 beg1, u64 beg2, i64 len2)
 {
-    map *chain = makechain(beg1, &scratch);
-    u64 end = beg2;
-    for (;;) {
-        u64 prev = end;
-        end = next(end);
-        map *collide = upsert(&chain, end, 0, 0);
-        if (collide) {
-            collision r = {0};
-            r.hash1 = collide->val;
-            r.hash2 = prev;
-            return r;
+    i64 len1 = chainlen(beg1);
+
+    // Skip the beginning of the longer chain. With chains of the same
+    // length, the merge point will be at the same position.
+    i64 len = len1<len2 ? len1 : len2;
+    for (; len1 > len; len1--) beg1 = next(beg1);
+    for (; len2 > len; len2--) beg2 = next(beg2);
+
+    for (u64 end1=beg1, end2=beg2;;) {
+        collision c = {0};
+        end1 = next(c.hash1 = end1);
+        end2 = next(c.hash2 = end2);
+        if (end1 == end2) {
+            return c;
         }
-        assert(!terminal(end));
     }
 }
 
@@ -166,18 +164,19 @@ static void worker(map **seen, u64 seed, i32 tid, arena perm)
     u64 counter = (u64)tid << 48;
     u64 beg = permute64(counter++ ^ seed);
     u64 end = beg;
-    for (;;) {
+    for (i64 len = 0;; len++) {
         end = next(end);
         if (terminal(end)) {
             map *entry = upsert(seen, end, beg, &perm);
             if (entry->val != beg) {
-                collision c = recover(entry->val, beg, perm);
+                collision c = recover(entry->val, beg, len);
                 u8 s[13+1+13+1];
                 stringize(s+ 0, c.hash1); s[13] = ' ';
                 stringize(s+14, c.hash2); s[27] = '\n';
                 fullwrite(s, countof(s));
             }
             end = beg = permute64(counter++ ^ seed);
+            len = 0;
         }
     }
 }
