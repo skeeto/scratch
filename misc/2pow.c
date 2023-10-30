@@ -1,16 +1,17 @@
 // Compute 2^1000000 with decimal output
 // Porting note: Implement fullwrite(), call run() with 64MiB of memory.
 // This is free and unencumbered software released into the public domain.
-#include <stdint.h>
+#include <stddef.h>
 
 #define countof(a)  (i32)(sizeof(a) / sizeof((*a)))
 
-typedef uint8_t  u8;
-typedef int32_t  b32;
-typedef int32_t  i32;
-typedef int64_t  i64;
-typedef char     byte;
-typedef intptr_t uptr;
+typedef unsigned char u8;
+typedef int           b32;
+typedef int           i32;
+typedef long long     i64;
+typedef char          byte;
+typedef ptrdiff_t     size;
+typedef size_t        usize;
 
 static b32 fullwrite(u8 *, i32);  // platform API
 
@@ -63,12 +64,12 @@ static num multiply(num dst, num a, num b)
             mc = (i32)(mr / BASE);
             i32 ar = dst.digits[i+j] + (i32)(mr%BASE) + ac;
             ac = ar / BASE;
-            dst.digits[i+j] = (i32)(ar % BASE);
+            dst.digits[i+j] = ar % BASE;
         }
         for (ac += mc; ac; i++) {
             i32 ar = dst.digits[i+j] + ac;
             ac = ar / BASE;
-            dst.digits[i+j] = (i32)(ar % BASE);
+            dst.digits[i+j] = ar % BASE;
         }
     }
 
@@ -164,9 +165,9 @@ static b32 run(byte *heap)
 // $ cl /O2 2pow.c /link /subsystem:console kernel32.lib
 #define W32(r) __declspec(dllimport) r __stdcall
 W32(void)   ExitProcess(i32);
-W32(i32)    GetStdHandle(i32);
-W32(void *) VirtualAlloc(void *, size_t, i32, i32);
-W32(b32)    WriteFile(uptr, u8 *, i32, i32 *, void *);
+W32(void *) GetStdHandle(i32);
+W32(void *) VirtualAlloc(void *, usize, i32, i32);
+W32(b32)    WriteFile(void *, u8 *, i32, i32 *, void *);
 
 static b32 fullwrite(u8 *buf, i32 len)
 {
@@ -186,8 +187,8 @@ void mainCRTStartup(void)
 
 #else  // !_WIN32
 // $ cc -O3 -o 2pow 2pow.c
-#include <stdlib.h>
-#include <unistd.h>
+void *malloc(usize);
+size  write(i32, void *, usize);
 
 static b32 fullwrite(u8 *buf, i32 len)
 {
