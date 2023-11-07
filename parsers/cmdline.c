@@ -233,6 +233,10 @@ cmdline_from_argv8(unsigned short *cmd, int len, char **argv)
         }
 
         if (quoted) {
+            for (; state && slash; slash--) {
+                *p++ = 0x5c;
+                if (p == e) return 0;
+            }
             *p++ = 0x22;
             if (p == e) return 0;
         }
@@ -344,6 +348,26 @@ main(void)
         }
         if (!match) {
             printf("FAIL: [%d] WTF-8 to ill-formed UTF-16\n", i);
+            fails++;
+        }
+    }
+
+    // Test trailing backslashes in a quoted argument
+    {
+        char *argv[] = {"test.exe", "C:\\Program Files\\", 0};
+        char  want[] = "test.exe \"C:\\Program Files\\\\\"";
+        int wantlen = sizeof(want)/sizeof(*want) - 1;
+
+        unsigned short got[64];
+        int gotlen = sizeof(cmd)/sizeof(*cmd);
+        gotlen = cmdline_from_argv8(got, gotlen, argv);
+
+        int match = gotlen == wantlen;
+        for (int i = 0; match && i < gotlen; i++) {
+            match = want[i] == got[i];
+        }
+        if (!match) {
+            printf("FAIL: cmdline_from_argv8: wrong trailing backslashes\n");
             fails++;
         }
     }
