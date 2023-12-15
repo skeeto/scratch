@@ -47,7 +47,7 @@ static s8 encode(s8 s, i32 x)
     u8 *b = e;
     *--b = '\n';
     do {
-        *--b = x%10 + '0';
+        *--b = (u8)(x%10) + '0';
     } while (x /= 10);
 
     s8 r = {0};
