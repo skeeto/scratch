@@ -8,24 +8,22 @@
 
 #define NEXT ((ptrdiff_t *)(uintptr_t)-1)
 
-// To initialize a new table, call with null key and len. A heap can
-// have only one table, and all alloctions will come from this heap. The
-// heap must have room for at least 3 pointers and be pointer-aligned.
+// Initialization: Call with null key and len. A heap can have only one
+// table, and all alloctions will come from this heap. The heap must be
+// pointer-aligned and have room for at least 3 pointers.
 //
-// Upsert: Pass both a key and the len. Returns a pointer to the value,
-// which you can populate with your own pointer. A copy of the key is
-// stored in the table, and len is updated on allocation. Returns null
-// on allocation failure.
+// Upsert: Pass both a key and the len. Returns a pointer to the value
+// which you can populate. Stores a copy of the key in the table, and
+// len is updated on allocation. Returns null on allocation failure.
 //
-// Lookup: pass null for len. Returns null if no such entry exists.
+// Lookup: Pass null for len. Returns null if no such entry exists.
 //
-// Delete: lookup and set the value to a gravestone of your choice.
+// Iterate (insertion order): First pass a null key and NEXT for the len
+// pointer. Returns a pointer to the first key. Use this key with NEXT
+// to get the next key. Returns null for the final key. You *must* use
+// the returned key pointer during iteration, not a copy of the key.
 //
-// Iterate (insertion order): First pass a null key and NEXT for the
-// len pointer. Returns a pointer to the first key. Use this key with
-// NEXT to get the next key. Returns null for the last key. When
-// iterating, you *must* use the returned key pointer, not another copy
-// of the key.
+// Delete: Lookup and set the value to a gravestone of your choice.
 char **hashmap(char *key, void *heap, ptrdiff_t *len)
 {
     typedef struct node node;
