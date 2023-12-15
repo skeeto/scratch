@@ -98,4 +98,31 @@ int main(void)
 
     free(heap);  // destroy the hashmap
 }
+
+#elif defined(BENCH)
+#include <stdlib.h>
+
+int main(void)
+{
+    ptrdiff_t len = 1<<28;
+    void *heap = malloc(len);
+    hashmap(0, heap, 0);
+
+    char key[8] = {0};
+    for (int i = 0; i < 1000000; i++) {
+        char *end = key + 7;
+        int t = i;
+        do *--end = (char)(t%10) + '0';
+        while (t /= 10);
+        *hashmap(end, heap, &len) = (char *)(intptr_t)i;
+    }
+
+    int i = 0;
+    for (char **k = hashmap(0, heap, heap); k; k = hashmap(*k, heap, heap)) {
+        char *value = *hashmap(*k, heap, 0);
+        if ((intptr_t)value != i++) {
+            *(volatile int *)0 = 0;
+        }
+    }
+}
 #endif
