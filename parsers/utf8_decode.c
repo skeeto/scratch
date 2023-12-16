@@ -145,7 +145,7 @@ utf8_decode(int state, long *cp, int byte)
          -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
          -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
     };
-    static unsigned char masks[2][8] = {
+    static const unsigned char masks[2][8] = {
         {0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f, 0x3f},
         {0x7f, 0x1f, 0x0f, 0x0f, 0x0f, 0x07, 0x07, 0x07}
     };
