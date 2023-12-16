@@ -8,7 +8,7 @@
 
 // Initialization: Call with null key and heaplen. A heap can have only
 // one hashmap, and all alloctions will come from this heap. The heap
-// must be pointer-aligned and have space for at least 3 pointers.
+// must be pointer-aligned and have space for at least two pointers.
 //
 // Upsert: Pass both a key and heaplen. Returns a pointer to the value
 // which you can populate. Stores a copy of the key in the map, and
@@ -17,30 +17,31 @@
 // Lookup: Pass null for heaplen, which inhibits allocation. Returns
 // null if no such entry exists.
 //
-// Iterate (insertion order): Pass a null key and heaplen==heap to
-// retrieve the first key pointer. Use this key with heaplen==heap to
-// retrieve the next key. Returns null for the final key. You _must_ use
-// the returned key pointer during iteration, not a copy of the key.
-// Iteration has no internal state and can occur concurrently.
+// Iterate (insertion order): Pass a null key and heaplen==heap to get
+// the first key pointer. Use this key with heaplen==heap to retrieve
+// the next key. Returns null from the final key. You _must_ use the
+// returned key during iteration, not a copy. Iteration has no internal
+// state and can occur concurrently. The return value is a key/value
+// tuple and the value is at the second index.
 //
 // Delete: Lookup and set the value to a gravestone of your choice.
 char **hashmap(char *key, void *heap, ptrdiff_t *heaplen)
 {
+    enum { ARY=2 };  // 1=slowest+small, 2=faster+larger, 3=fastest+large
     typedef struct node node;
     struct node {
-        node *child[4];
+        node *child[1<<ARY];
         node *next;
         char *key;
         char *value;
-    } **n = heap;
+    };
     struct {
-        node  *root;
         node  *head;
         node **tail;
     } *map = heap;
 
     if (!key && !heaplen) {  // init
-        map->root = map->head = 0;
+        map->head = 0;
         map->tail = &map->head;
         return 0;
     } else if (!key && heaplen==heap) {  // first key
@@ -50,16 +51,18 @@ char **hashmap(char *key, void *heap, ptrdiff_t *heaplen)
         return next ? &next->key : 0;
     }
 
-    uint64_t h = 0x100;
+    uint64_t hash = 0x100;
     ptrdiff_t keylen = 0;
-    for (; key[keylen++]; h *= 1111111111111111111u) {
-        h ^= key[keylen] & 255;
+    for (; key[keylen++]; hash *= 1111111111111111111u) {
+        hash ^= key[keylen] & 255;
     }
-    for (; *n; h <<= 2) {
+
+    node **n = &map->head;
+    for (; *n; hash <<= ARY) {
         if (!strcmp(key, (*n)->key)) {
             return &(*n)->value;
         }
-        n = &(*n)->child[h>>62];
+        n = &(*n)->child[hash>>(64 - ARY)];
     }
     if (!heaplen) return 0;  // lookup failed
 
@@ -92,8 +95,8 @@ int main(void)
     puts(*hashmap("foo", heap, 0));
     puts(*hashmap("hello", heap, 0));
 
-    for (char **k = hashmap(0, heap, heap); k; k = hashmap(*k, heap, heap)) {
-        printf("k:%s\tv:%s\n", *k, *hashmap(*k, heap, 0));
+    for (char **e = 0; (e = hashmap(e?*e:0, heap, heap));) {
+        printf("k:%s\tv:%s\n", e[0], e[1]);
     }
 
     free(heap);  // destroy the hashmap
@@ -118,9 +121,8 @@ int main(void)
     }
 
     int i = 0;
-    for (char **k = hashmap(0, heap, heap); k; k = hashmap(*k, heap, heap)) {
-        char *value = *hashmap(*k, heap, 0);
-        if ((intptr_t)value != i++) {
+    for (char **e = 0; (e = hashmap(e?*e:0, heap, heap));) {
+        if ((intptr_t)e[1] != i++) {
             *(volatile int *)0 = 0;
         }
     }
