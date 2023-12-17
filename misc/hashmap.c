@@ -6,9 +6,9 @@
 #include <stdint.h>
 #include <string.h>
 
-// Initialization: Call with null key and heaplen. A heap can have only
-// one hashmap, and all alloctions will come from this heap. The heap
-// must be pointer-aligned and have space for at least two pointers.
+// Initialization: Call with null key. A heap can have only one map at a
+// time, and all alloctions will come from this heap. The heap must be
+// pointer-aligned and have space for at least two pointers.
 //
 // Upsert: Pass both a key and heaplen. Returns a pointer to the value
 // which you can populate. Stores a copy of the key in the map, and
@@ -40,7 +40,8 @@ char **hashmap(char *key, void *heap, ptrdiff_t *heaplen)
         node **tail;
     } *map = heap;
 
-    if (!key && !heaplen) {  // init
+    if (!key && heaplen!=heap) {  // init
+        *heaplen &= -sizeof(void *);  // align high end
         map->head = 0;
         map->tail = &map->head;
         return 0;
@@ -88,7 +89,7 @@ int main(void)
 {
     ptrdiff_t len = 1<<16;
     void *heap = malloc(len);
-    hashmap(0, heap, 0);
+    hashmap(0, heap, &len);
 
     *hashmap("hello", heap, &len) = "world";
     *hashmap("foo", heap, &len) = "bar";
@@ -109,7 +110,7 @@ int main(void)
 {
     ptrdiff_t len = 1<<28;
     void *heap = malloc(len);
-    hashmap(0, heap, 0);
+    hashmap(0, heap, &len);
 
     char key[8] = {0};
     for (int i = 0; i < 1000000; i++) {
