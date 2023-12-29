@@ -284,4 +284,31 @@ void mainCRTStartup(void)
     i32 err = !WriteFile(stdout, b.buf, b.len, &b.len, 0);
     ExitProcess(err);
 }
+
+#elif defined(__linux) && defined(__amd64)
+// $ cc -static -nostdlib -O2 -fno-builtin numprefix.c
+extern char heap[];
+asm ("        .comm heap, 1<<31, 8\n"
+     "        .globl _start\n"
+     "_start: call start\n");
+
+void *memset(void *d, int c, unsigned long len)
+{
+    for (unsigned long i = 0; i < len; i++) {
+        ((char *)d)[i] = (char)c;
+    }
+    return d;
+}
+
+void start(void)
+{
+    u8buf b = entrypoint(heap, (size)1<<31);
+    asm volatile (
+        "syscall"
+        : "=a"(b.len)
+        : "a"(1), "D"(1), "S"(b.buf), "d"(b.len)
+        : "rcx", "r11", "memory"
+    );
+    asm volatile ("syscall" : : "a"(60), "D"(b.len<1));
+}
 #endif
