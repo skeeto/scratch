@@ -253,7 +253,7 @@ static u8buf entrypoint(void *heap, size cap)
 #if defined(__i386) || defined(__amd64)
 static i64 rdtscp(void)
 {
-    u32 hi, lo;
+    uptr hi, lo;
     asm volatile ("rdtscp" : "=d"(hi), "=a"(lo) : : "cx", "memory");
     return (i64)hi<<32 | lo;
 }
