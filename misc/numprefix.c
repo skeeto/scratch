@@ -8,7 +8,7 @@
 // integer set. The other is a base-10 trie. Neither aborts early (i.e.
 // when the maximum has been reached) since the purpose is to benchmark
 // the different approaches in general. In my runs, the trie is faster
-// up to ~500k elements, and smaller up to ~1M (64-bit) or ~2M (32-bit)
+// up to ~300k elements, and smaller up to ~1M (64-bit) or ~2M (32-bit)
 // elements.
 //
 // Porting: Implement rdtscp()+memset(), pass 2GB heap to entrypoint(),
@@ -80,6 +80,7 @@ static solution solve_table(i32 *a, i32 *b, size len, arena scratch)
                 i32 len = 1;
                 for (; n /= 10; len++) {}
                 r.best = len>r.best ? len : r.best;
+                break;
             }
         }
     }
