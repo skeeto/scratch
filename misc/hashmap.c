@@ -54,7 +54,7 @@ char **hashmap(char *key, void *heap, ptrdiff_t *heaplen)
 
     uint64_t hash = 0x100;
     ptrdiff_t keylen = 0;
-    for (; key[keylen++]; hash *= 1111111111111111111u) {
+    for (; key[keylen++]; hash *= 0x100000001b3) {
         hash ^= key[keylen] & 255;
     }
 
