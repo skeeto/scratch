@@ -9,6 +9,9 @@
 // contest does not specify either. This seems to match the natural Java
 // implementation, as the results match Java entries bit-for-bit.
 //
+// No validation, so it's garbage-in/garbage-out, though no undefined
+// behavior even for invalid input.
+//
 // Porting note: Call tabulate() in parallel with one a thread per core,
 // with input chunked on line boundaries, one table per thread. Then
 // call finalize() with all tables and a ~2MiB arena, then write out the
@@ -228,10 +231,9 @@ static void merge(table *dst, table *src)
 }
 
 // Tabulate the information from input into the table. The table must be
-// zero-initialized.
+// zero-initialized on first use.
 static void tabulate(s8 input, table *t)
 {
-    assert(!t->len);
     u8 *beg = input.data;
     u8 *end = input.data + input.len;
     while (beg < end) {
@@ -249,13 +251,13 @@ static void tabulate(s8 input, table *t)
         do {
             digits[len] = *p;
             len += *p >= '0';
-        } while (*++p != '\n');
+        } while (p+1<end && *++p!='\n' && len<countof(digits));
         beg = p + 1;
 
         assert(len>=3 && len<=4);
-        i32 temp = (digits[len-3] - '0')*100 +
-                   (digits[len-2] - '0')*10 +
-                   (digits[len-1] - '0')*1;
+        i32 temp = ((i32)digits[len-3] - '0')*100 +
+                   ((i32)digits[len-2] - '0')*10 +
+                   ((i32)digits[len-1] - '0')*1;
         temp *= sign;
 
         i32 i = lookup(t, name);
@@ -289,9 +291,9 @@ static s8 finalize(table *ts, i32 len, arena *perm)
 W32(uptr)   CreateFileMappingA(uptr, uptr, i32, i32, i32, uptr);
 W32(uptr)   CreateThread(uptr, size, void *, void *, i32, i32 *);
 W32(void)   ExitProcess(i32);
-W32(i32)    GetEnvironmentVariableA(u8 *, u8 *, i32);
 W32(b32)    GetFileSizeEx(uptr, i64 *);
 W32(uptr)   GetStdHandle(i32);
+W32(void)   GetSystemInfo(i32 *);
 W32(void *) MapViewOfFile(uptr, i32, i32, i32, size);
 W32(void *) VirtualAlloc(uptr, size, i32, i32);
 W32(i32)    WaitForSingleObject(uptr, i32);
@@ -331,20 +333,9 @@ static i32 __stdcall worker(job *j)
 
 static i32 proccount(void)
 {
-    u8 buf[4];
-    u8 var[] = "NUMBER_OF_PROCESSORS";
-    i32 len = GetEnvironmentVariableA(var, buf, countof(buf));
-    len = min(len, countof(buf)-1);
-    i32 nthreads = 0;
-    for (i32 i = 0; i < len; i++) {
-        u8 c = buf[i] - '0';
-        if (c > '9') {
-            nthreads = 0;
-            break;
-        }
-        nthreads = nthreads*10 + c;
-    }
-    return nthreads ? nthreads : 8;
+    i32 data[12];
+    GetSystemInfo(data);
+    return data[8];  // dwNumberOfProcessors (x64)
 }
 
 void mainCRTStartup(void)
@@ -363,24 +354,28 @@ void mainCRTStartup(void)
 
     i32 nthreads = proccount();
     size chunksize = input.len / nthreads;
-    table *ts = new(&perm, table, nthreads);
+    table *ts = new(&perm, table, nthreads);  // NOTE: assumes zeroed arena
     job *jobs = new(&perm, job, nthreads);
     uptr *handles = new(&perm, uptr, nthreads);
     for (i32 i = 0; i < nthreads; i++) {
+        jobs[i].result = ts + i;
         if (i < nthreads-1) {
+            // TODO: move chunking routine into platform-agnostic code
             size split = chunksize;
-            for (; input.data[split-1] != '\n'; split--) {}
+            for (; split && input.data[split-1] != '\n'; split--) {}
             cut cuts = s8cut(input, split);
             jobs[i].input = cuts.head;
             input = cuts.tail;
+            // NOTE: No thread uses even ~1KiB of stack; 4KiB is plenty.
+            // TODO: check CreateThread error
+            handles[i] = CreateThread(0, 1<<12, worker, jobs+i, 0, 0);
         } else {
             jobs[i].input = input;
+            worker(jobs+i);
         }
-        jobs[i].result = ts + i;
-        handles[i] = CreateThread(0, 1<<12, worker, jobs+i, 0, 0);
     }
 
-    for (i32 i = 0; i < nthreads; i++) {
+    for (i32 i = 0; i < nthreads-1; i++) {
         WaitForSingleObject(handles[i], -1);
     }
 
