@@ -102,6 +102,13 @@ static cut s8cut(s8 s, size i)
     return r;
 }
 
+static cut s8linecut(s8 s, size chunksize)
+{
+    size i = chunksize;
+    for (; i && s.data[i-1] != '\n'; i--) {}
+    return s8cut(s, i);
+}
+
 typedef struct {
     struct {
         s8  name;
@@ -280,11 +287,16 @@ static s8 finalize(table *ts, i32 len, arena *perm)
     return s8span(beg, end);
 }
 
+typedef struct {
+    s8     input;
+    table *result;
+} job;
+
 
 #if _WIN32
-// $ gcc -O2 -nostartfiles -o 1brc 1brc.c
+// $ gcc -O2 -nostartfiles -o 1brc.exe 1brc.c
 // $ clang-cl /O2 1brc.c /link /subsystem:console kernel32.lib libvcruntime.lib
-// $ ./1brc <measurements2.txt
+// $ ./1brc <measurements.txt
 // NOTE: Assumes unix newlines despite the platform.
 
 #define W32(r) __declspec(dllimport) r __stdcall
@@ -319,11 +331,6 @@ static arena newarena(size cap)
     a.end = a.beg + cap;
     return a;
 }
-
-typedef struct {
-    s8     input;
-    table *result;
-} job;
 
 static i32 __stdcall worker(job *j)
 {
@@ -360,15 +367,12 @@ void mainCRTStartup(void)
     for (i32 i = 0; i < nthreads; i++) {
         jobs[i].result = ts + i;
         if (i < nthreads-1) {
-            // TODO: move chunking routine into platform-agnostic code
-            size split = chunksize;
-            for (; split && input.data[split-1] != '\n'; split--) {}
-            cut cuts = s8cut(input, split);
+            cut cuts = s8linecut(input, chunksize);
             jobs[i].input = cuts.head;
             input = cuts.tail;
             // NOTE: No thread uses even ~1KiB of stack; 4KiB is plenty.
-            // TODO: check CreateThread error
             handles[i] = CreateThread(0, 1<<12, worker, jobs+i, 0, 0);
+            err |= !handles[i];
         } else {
             jobs[i].input = input;
             worker(jobs+i);
@@ -385,5 +389,78 @@ void mainCRTStartup(void)
     i32 dummy;
     err |= !WriteFile(stdout, output.data, (i32)output.len, &dummy, 0);
     ExitProcess(err);
+}
+
+#else  // POSIX
+// $ cc -O2 -pthread -o 1brc 1brc.c
+// $ ./1brc <measurements.txt
+#include <pthread.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+static arena newarena(size cap)
+{
+    arena a = {0};
+    a.beg = mmap(0, cap, PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+    a.end = a.beg + cap;
+    return a;
+}
+
+static void *worker(void *arg)
+{
+    job *j = arg;
+    tabulate(j->input, j->result);
+    return 0;
+}
+
+int main(void)
+{
+    i32 err = 0;
+    s8 input = {0};
+
+    struct stat sb = {0};
+    err |= !!fstat(0, &sb);
+    input.len = sb.st_size;
+
+    input.data = mmap(0, input.len, PROT_READ, MAP_PRIVATE, 0, 0);
+    err |= input.data == MAP_FAILED;
+    input.len &= -!err;
+
+    arena perm = newarena(1<<24);
+
+    i32 nthreads = sysconf(_SC_NPROCESSORS_ONLN);
+    size chunksize = input.len / nthreads;
+    table *ts = new(&perm, table, nthreads);
+    job *jobs = new(&perm, job, nthreads);
+    pthread_t *threads = new(&perm, pthread_t, nthreads);
+    for (i32 i = 0; i < nthreads; i++) {
+        jobs[i].result = ts + i;
+        if (i < nthreads-1) {
+            cut cuts = s8linecut(input, chunksize);
+            jobs[i].input = cuts.head;
+            input = cuts.tail;
+            if (pthread_create(threads+i, 0, worker, jobs+i)) {
+                return 1;
+            }
+        } else {
+            jobs[i].input = input;
+            worker(jobs+i);
+        }
+    }
+
+    for (i32 i = 0; i < nthreads-1; i++) {
+        pthread_join(threads[i], 0);
+    }
+
+    s8 output = finalize(ts, nthreads, &perm);
+    for (size off = 0; off < output.len;) {
+        size r = write(1, output.data+off, output.len-off);
+        if (r < 1) {
+            return 1;
+        }
+        off += r;
+    }
+    return 0;
 }
 #endif
