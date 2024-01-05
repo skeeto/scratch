@@ -54,3 +54,16 @@ void *memmove(void *dst, void *src, size_t len)
     );
     return r;
 }
+
+__attribute((section(".text.memcmp, \"x0\" #")))
+int memcmp(void *s1, void *s2, size_t len)
+{
+    int a, b;
+    asm volatile (
+        "test %%eax, %%eax; repz cmpsb"
+        : "+D"(s1), "+S"(s2), "+c"(len), "=@cca"(a), "=@ccb"(b)
+        :
+        : "memory"
+    );
+    return b - a;
+}
