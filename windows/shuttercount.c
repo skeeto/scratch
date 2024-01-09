@@ -126,7 +126,7 @@ static c16 *shuttercount(i32 fd, void *mem, i32 cap)
     scratch.beg = mem;
     scratch.end = scratch.beg + cap;
 
-    i32reader *b = newu8buf(fd, &scratch);
+    i32reader *b = newi32reader(fd, &scratch);
     for (i32 state = 0;;) {
         i32result next = i32read(b);
         if (!next.ok) {
