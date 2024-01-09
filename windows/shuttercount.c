@@ -48,7 +48,7 @@ typedef struct {
     i32 fd;
 } i32reader;
 
-static i32reader *newu8buf(i32 fd, arena *perm)
+static i32reader *newi32reader(i32 fd, arena *perm)
 {
     i32reader *b = new(perm, i32reader, 1);
     b->cap = 1<<16;
