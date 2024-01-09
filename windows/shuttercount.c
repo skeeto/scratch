@@ -134,7 +134,7 @@ static c16 *shuttercount(i32 fd, void *mem, i32 cap)
         }
         state = parse(state, next.value);
         if (state >= 0) {
-            c16 *r = new(&scratch, c16, 64);
+            c16 *r = new(&scratch, c16, 64) + 64;
             r = encode(r, state);
             r = prepend(r, (u8 *)"Shutter Count: ");
             return r;
