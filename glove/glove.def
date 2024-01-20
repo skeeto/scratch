@@ -1,0 +1,6 @@
+LIBRARY glove.dll
+EXPORTS
+glove_examine
+glove_make_db
+glove_load_db
+glove_get_embedding
