@@ -38,7 +38,7 @@ For the library on POSIX:
 
 Library on Windows (w64devkit):
 
-    $ cc -shared -O2 -o glove.dll glove.c
+    $ cc -shared -nostdlib -O2 -o glove.dll glove.c glove.def -lmemory
 
 Library on Windows (MSVC):
 

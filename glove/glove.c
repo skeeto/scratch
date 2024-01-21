@@ -76,12 +76,12 @@ static f32 s8tof32(s8 s)
     f32 scale = 1.0f;
     f32 div   = 1.0f;
 
-    if (beg<end) {
+    if (beg < end) {
         switch (*beg) {
         case '+': beg++;
                   break;
         case '-': beg++;
-                  sign =-1.0f;
+                  sign = -1.0f;
         }
     }
 
@@ -113,7 +113,7 @@ static cut s8cut(s8 s, u8 c)
 
 static i32 msi_scale(i32 len)
 {
-    i32 exp = 0;
+    i32 exp = 1;
     while ((double)len/(1<<exp) > 0.8) {
         exp++;
     }
@@ -129,24 +129,27 @@ typedef struct {
 
 void glove_examine(glove_specs *s, void *data, size len)
 {
-    // TODO: validate "wordlen   < 2^31"
-    // TODO: validate "num_words < 2^31"
-    // TODO: validate "num_dims  < 2^31"
-
-    glove_specs r = {0};
+    enum {
+        LIMIT = 1000000000
+    };
     size wordlen = 0;
+    glove_specs r = {0};
+    *s = r;
 
     cut line = {0};
     line.tail.data = data;
     line.tail.len = len;
     while ((line = s8cut(line.tail, '\n')).head.len) {
         cut token = s8cut(line.head, ' ');
+        if (wordlen >= LIMIT-token.head.len) return;
         wordlen += token.head.len;
         if (!r.num_words++) {
             while ((token = s8cut(token.tail, ' ')).head.len) {
                 r.num_dims++;
+                if (r.num_dims >= LIMIT) return;
             }
         }
+        if (r.num_words >= LIMIT) return;
     }
     r.msi_exp = msi_scale(r.num_words);
     i32 num_slots = 1 << r.msi_exp;
