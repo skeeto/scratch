@@ -16,7 +16,6 @@ typedef   signed int       i32;
 typedef unsigned int       u32;
 typedef   signed long long i64;
 typedef unsigned long long u64;
-typedef __uint128_t        u128;
 typedef unsigned short     char16_t;
 typedef          char16_t  c16;
 typedef   signed int       char32_t;
@@ -447,41 +446,57 @@ static i64 getfilesize(s16 path, arena scratch)
     return (i64)fd->size[0]<<32 | fd->size[1];
 }
 
+typedef struct {
+    u64 v[2];
+} fileid;
+
+static b32 nullid(fileid id)
+{
+    return !id.v[0];
+}
+
 // Get the system-unique file ID for the named file. Zero on error. This
 // is slow and calls should be avoided.
-static u128 getfileid(node *dir, s16 name, arena scratch)
+static fileid getfileid(node *dir, s16 name, arena scratch)
 {
     s16 path = topath(dir, name, &scratch);
-    u128 r = 0;
+    fileid r = {0};
     iptr h = CreateFileW(path.data, 0x80000000, 7, 0, 3, 0x80, 0);
     if (h == -1) {
         return r;
     }
     FileInfo info;
     if (GetFileInformationByHandle(h, &info) && info.nlinks>1) {
-        r = (u128)info.serial<<64 | (u64)info.index[0]<<32 | info.index[1];
-        r |= (u128)1 << 127;  // force non-zero
+        r.v[0] = (u64)1<<33 | info.serial;
+        r.v[1] = (u64)info.index[0]<<32 | info.index[1];
     }
     CloseHandle(h);
     return r;
 }
 
-static u64 hashid(u128 id)
+static u64 hashid(fileid id)
 {
-    id *= 1111111111111111111u;
-    return (u64)id ^ (u64)(id>>64);
+    u64 h = 0;
+    h ^= id.v[0]; h *= 1111111111111111111u;
+    h ^= id.v[1]; h *= 1111111111111111111u;
+    return h;
+}
+
+static u64 idequals(fileid a, fileid b)
+{
+    return a.v[0]==b.v[0] && a.v[1]==b.v[1];
 }
 
 typedef struct idset idset;
 struct idset {
     idset *child[2];  // prioritize memory
-    u128   id;
+    fileid id;
 };
 
-static b32 insertid(idset **m, u128 id, arena *perm)
+static b32 insertid(idset **m, fileid id, arena *perm)
 {
     for (u64 h = hashid(id); *m; h <<= 1) {
-        if ((*m)->id == id) {
+        if (idequals((*m)->id, id)) {
             return 0;
         }
         m = &(*m)->child[h>>63];
@@ -552,17 +567,17 @@ static b32 ishardlink(linkdb *db, u64 key, node *dir, s16 name, arena *perm)
         // First time this tentative hard link has been seen. Retrieve
         // the ID and then insert it in the exact hashset as though it
         // had been there the entire time.
-        u128 id = getfileid((*infos)->dir, (*infos)->name, *perm);
+        fileid id = getfileid((*infos)->dir, (*infos)->name, *perm);
         (*infos)->dir = 0;  // mark as inserted
-        if (id) {
+        if (!nullid(id)) {
             b32 r = insertid(ids, id, perm);
             assert(r);  // trips if hashinfo() is broken
         }
     }
 
     // Slow ID retrieval for exact hashset lookup
-    u128 id = getfileid(dir, name, *perm);
-    if (!id || insertid(ids, id, perm)) {
+    fileid id = getfileid(dir, name, *perm);
+    if (nullid(id) || insertid(ids, id, perm)) {
         return 0;
     }
     return 1;
