@@ -82,7 +82,10 @@ static byte *alloc(arena *a, size objsize, size align, size count)
 
 static void c16copy(c16 *dst, c16 *src, size len)
 {
-    __builtin_memcpy(dst, src, 2*len);
+    assert(dst);
+    assert(src);
+    assert(len >= 0);
+    __builtin_memcpy(dst, src, sizeof(c16)*len);
 }
 
 static b32 highsurrogate(c16 c)
@@ -308,7 +311,7 @@ static void printunits(bufout *b, i64 x)
         return;
     }
 
-    int units = 0;
+    i32 units = 0;
     x *= 10;  // fixed point, 1 decimal place
     x = (x + 512)>>10;
     for (; x>10000 && units<4; units++) {
@@ -644,6 +647,10 @@ static filesize gettotal(s16 path, config *conf, arena scratch, bufout *err)
     while (q->head) {
         node *dir = pop(q);
 
+        // NOTE: The OOM handler could be moved into this function,
+        // allowing it to close this Find handle on OOM, then return
+        // with an error. However, OOM is a quick exit anyway, so it
+        // doesn't practically matter.
         iptr h = 0;
         {
             arena temp = scratch;
@@ -660,6 +667,12 @@ static filesize gettotal(s16 path, config *conf, arena scratch, bufout *err)
         }
 
         do {
+            // NOTE: Everything could be accomplished with ASCII 8.3 DOS
+            // names (altname), saving memory when storing components in
+            // the queue. For error messages, use GetLongPathNameW at
+            // the last moment to expand it to a friendly name, so the
+            // DOS names remain invisible to users. But maybe this would
+            // slow Find{First,Next}FileW? Something to investigate.
             s16 name = s16import(fd->name);
             if (s16equals(s("."), name) || s16equals(s(".."), name)) {
                 continue;
