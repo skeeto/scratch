@@ -595,9 +595,11 @@ static void erropen(bufout *err, s16 path)
 }
 
 typedef struct {
-    b32 quiet;
-    b32 count_links;
-    b32 print_memstat;
+    bufout *out;
+    bufout *err;
+    b32     quiet;
+    b32     count_links;
+    b32     print_memstat;
 } config;
 
 typedef struct {
@@ -606,17 +608,17 @@ typedef struct {
     b32  err;
 } filesize;
 
-static filesize gettotal(s16 path, config *conf, arena scratch, bufout *err)
+static filesize gettotal(s16 path, config *conf, arena scratch)
 {
     filesize r = {0};
     r.memory = scratch.end - scratch.beg;
 
     path = trimpath(path);
     if (invalid(path)) {
-        prints16(err, s("du: invalid path: "));
-        prints16(err, path);
-        prints16(err, s("\n"));
-        flush(err);
+        prints16(conf->err, s("du: invalid path: "));
+        prints16(conf->err, path);
+        prints16(conf->err, s("\n"));
+        flush(conf->err);
         r.total = -1;
         r.err = 1;
         return r;
@@ -626,7 +628,7 @@ static filesize gettotal(s16 path, config *conf, arena scratch, bufout *err)
     r.total = getfilesize(path, scratch);
     switch (r.total) {
     default:  return r;
-    case ERR: erropen(err, path);
+    case ERR: erropen(conf->err, path);
               r.total = -1;
               r.err = 1;
               return r;
@@ -659,7 +661,7 @@ static filesize gettotal(s16 path, config *conf, arena scratch, bufout *err)
             if (h == -1) {
                 path.len -= 3;  // chop the glob
                 if (!conf->quiet) {
-                    erropen(err, normalize(path, &temp));
+                    erropen(conf->err, normalize(path, &temp));
                 }
                 r.err |= 1;
                 continue;
@@ -758,16 +760,32 @@ static void usage(bufout *b)
     flush(b);
 }
 
+static b32 dopath(s16 path, config *conf, arena scratch)
+{
+    filesize f = gettotal(path, conf, scratch);
+    if (f.total < 0) return 0;
+    printunits(conf->out, f.total);
+    prints16(conf->out, s("\t"));
+    if (conf->print_memstat) {
+        printunits(conf->out, f.memory);
+        prints16(conf->out, s("\t"));
+    }
+    prints16(conf->out, path);
+    prints16(conf->out, s("\n"));
+    return !f.err;
+}
+
 static i32 run(arena scratch)
 {
 
-    bufout *stdout = newbufout(&scratch, 1, 1<<12);
-    bufout *stderr = newbufout(&scratch, 2, 1<<8);
+    config *conf = new(&scratch, config, 1);
+    conf->out = newbufout(&scratch, 1, 1<<12);
+    conf->err = newbufout(&scratch, 2, 1<<8);
 
     uptr oom[5] = {0};
     if (__builtin_setjmp(oom)) {
-        prints16(stderr, s("out of memory\n"));
-        flush(stderr);
+        prints16(conf->err, s("out of memory\n"));
+        flush(conf->err);
         return 1;
     }
     scratch.oom = oom;
@@ -777,12 +795,11 @@ static i32 run(arena scratch)
     c16 **argv = CommandLineToArgvW(cmd, &argc);
 
     // TODO: command line switches -a -c -dN -H -L
-    config *conf = new(&scratch, config, 1);
     wgo g = {0};
     for (i32 opt; (opt = wgetopt(&g, argc, argv, (u8 *)"hlqv")) != -1;) {
         switch (opt) {
-        case 'h': usage(stdout);
-                  return stdout->err;
+        case 'h': usage(conf->out);
+                  return conf->out->err;
         case 'l': conf->count_links = 1;
                   break;
         case 'q': conf->quiet = 1;
@@ -790,29 +807,22 @@ static i32 run(arena scratch)
         case 'v': conf->print_memstat = 1;
                   break;
         case ':':
-        case '?': usage(stderr);
+        case '?': usage(conf->err);
                   return 1;
         }
     }
 
     b32 err = 0;
+    if (g.optind == argc) {
+        err |= !dopath(s("."), conf, scratch);
+    }
     for (i32 i = g.optind; i < argc; i++) {
         s16 path = s16import(argv[i]);
-        filesize f = gettotal(path, conf, scratch, stderr);
-        err |= f.err;
-        if (f.total < 0) continue;
-        printunits(stdout, f.total);
-        prints16(stdout, s("\t"));
-        if (conf->print_memstat) {
-            printunits(stdout, f.memory);
-            prints16(stdout, s("\t"));
-        }
-        prints16(stdout, path);
-        prints16(stdout, s("\n"));
+        err |= !dopath(path, conf, scratch);
     }
 
-    flush(stdout);
-    err |= stdout->err;
+    flush(conf->out);
+    err |= conf->out->err;
     return err;
 }
 
