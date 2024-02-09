@@ -7,8 +7,9 @@
 
 #define assert(c)     while (!(c)) __builtin_unreachable()
 #define countof(a)    (size)(sizeof(a) / sizeof(*(a)))
-#define new(a, t, n)  (t *)alloc(a, sizeof(t), __alignof(t), n)
 #define s(s)          (s16){u##s, countof(s)-1}
+#define new(a, t, n)  (t *)alloc(a, sizeof(t), __alignof(t), n)
+#define recover(a)    if (__builtin_setjmp((a)->oom = (uptr[5]){0}))
 
 typedef unsigned char      u8;
 typedef   signed int       b32;
@@ -613,6 +614,20 @@ static filesize gettotal(s16 path, config *conf, arena scratch)
     filesize r = {0};
     r.memory = scratch.end - scratch.beg;
 
+    iptr findhandle = -1;
+    recover (&scratch) {
+        if (findhandle != -1) {
+            FindClose(findhandle);
+        }
+        prints16(conf->err, s("du: out of memory: partial results for "));
+        prints16(conf->err, path);
+        prints16(conf->err, s("\n"));
+        flush(conf->err);
+        r.memory -= scratch.end - scratch.beg;
+        r.err = 1;
+        return r;
+    }
+
     path = trimpath(path);
     if (invalid(path)) {
         prints16(conf->err, s("du: invalid path: "));
@@ -649,16 +664,11 @@ static filesize gettotal(s16 path, config *conf, arena scratch)
     while (q->head) {
         node *dir = pop(q);
 
-        // NOTE: The OOM handler could be moved into this function,
-        // allowing it to close this Find handle on OOM, then return
-        // with an error. However, OOM is a quick exit anyway, so it
-        // doesn't practically matter.
-        iptr h = 0;
         {
             arena temp = scratch;
             s16 path = topath(dir, s("*"), &temp);
-            h = FindFirstFileW(path.data, fd);
-            if (h == -1) {
+            findhandle = FindFirstFileW(path.data, fd);
+            if (findhandle == -1) {
                 path.len -= 3;  // chop the glob
                 if (!conf->quiet) {
                     erropen(conf->err, normalize(path, &temp));
@@ -687,9 +697,10 @@ static filesize gettotal(s16 path, config *conf, arena scratch)
                     r.total += (i64)fd->size[0]<<32 | fd->size[1];
                 }
             }
-        } while (FindNextFileW(h, fd));
+        } while (FindNextFileW(findhandle, fd));
 
-        FindClose(h);
+        FindClose(findhandle);
+        findhandle = -1;
     }
 
     r.memory -= scratch.end - scratch.beg;
@@ -777,18 +788,9 @@ static b32 dopath(s16 path, config *conf, arena scratch)
 
 static i32 run(arena scratch)
 {
-
     config *conf = new(&scratch, config, 1);
     conf->out = newbufout(&scratch, 1, 1<<12);
     conf->err = newbufout(&scratch, 2, 1<<8);
-
-    uptr oom[5] = {0};
-    if (__builtin_setjmp(oom)) {
-        prints16(conf->err, s("out of memory\n"));
-        flush(conf->err);
-        return 1;
-    }
-    scratch.oom = oom;
 
     c16 *cmd = GetCommandLineW();
     i32 argc;
