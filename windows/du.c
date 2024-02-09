@@ -647,7 +647,7 @@ static filesize gettotal(s16 path, config *conf, arena scratch)
               r.total = -1;
               r.err = 1;
               return r;
-    case DIR: break;
+    case DIR: r.total = 0;
     }
 
     FindDataW *fd = new(&scratch, FindDataW, 1);
