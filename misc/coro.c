@@ -58,6 +58,7 @@ static void *yield(coro *c, void *arg)
 #define new(a, t, n)  (t *)alloc(a, sizeof(t), _Alignof(t), n)
 
 typedef unsigned char      u8;
+typedef   signed int       b32;
 typedef   signed int       i32;
 typedef   signed long long i64;
 typedef unsigned long long u64;
@@ -91,7 +92,7 @@ static void *alloc(arena *a, size objsize, size align, size count)
 static coro *newcoro(arena *perm, void corofunc(void *))
 {
     coro *c = new(perm, coro, 1);
-    size cap = 1<<14;  // small coro stacks
+    size cap = 1<<10;  // tiny coro stacks
     c->rsp = (char *)alloc(perm, 16, 16, cap/16) + cap - 40;
     c->rip = (void *)corofunc;
     return c;
@@ -207,6 +208,79 @@ static void rangetest(arena scratch)
     }
 }
 
+static void printnum(iptr h, i64 x, i32 i, i32 width)
+{
+    u8  buf[32];
+    u8 *end = buf + countof(buf);
+    u8 *beg = end;
+    i32 cols = 80 / width;
+    if (i%cols == cols-1) {
+        *--beg = '\n';
+    }
+    do {
+        *--beg = (u8)(x%10) + '0';
+    } while (x /= 10);
+    while (end-beg < width) {
+        *--beg = ' ';
+    }
+    WriteFile(h, beg, (i32)(end-beg), &(i32){0}, 0);
+}
+
+// Initializes a coroutine prime number filter.
+typedef struct {
+    i64   prime;
+    coro *next;  // next filter
+    coro *prev;  // calling coroutine
+} filterctx;
+
+typedef struct {
+    i64   candidate;
+    coro *prev;  // calling coroutine
+} query;
+
+// Predicate filter for one prime number. Yield once with a filterctx to
+// configure it, then yield with query objects.
+static void filter(void *arg)
+{
+    filterctx ctx = *(filterctx *)arg;
+    for (b32 result = 0;;) {
+        query *q = yield(ctx.prev, &result);
+        if (q->candidate % ctx.prime == 0) {
+            result = 0;
+        } else if (!ctx.next) {
+            result = 1;
+        } else {
+            query next = {0};
+            next.candidate = q->candidate;
+            next.prev = ctx.next;
+            result = *(b32 *)yield(ctx.next, &next);
+        }
+    }
+}
+
+// Sieve of Eratosthenes using coroutines.
+static void primes(arena scratch, i32 limit)
+{
+    i32 count = 0;
+    iptr stdout = GetStdHandle(-11);
+
+    // Initialize filter with 2
+    query q = {0};
+    q.prev = newcoro(&scratch, filter);
+    yield(q.prev, &(filterctx){2, 0, q.prev});
+    printnum(stdout, 2, count++, 6);
+
+    for (q.candidate = 3; count < limit; q.candidate++) {
+        b32 r = *(b32 *)yield(q.prev, &q);
+        if (r) {
+            coro *c = newcoro(&scratch, filter);
+            yield(c, &(filterctx){q.candidate, q.prev, c});
+            q.prev = c;
+            printnum(stdout, q.candidate, count++, 6);
+        }
+    }
+}
+
 void mainCRTStartup(void)
 {
     size cap = 1<<24;
@@ -219,6 +293,7 @@ void mainCRTStartup(void)
     #else
     simpleprint(scratch);
     rangetest(scratch);
+    primes(scratch, 13*50);
     #endif
     ExitProcess(0);
 }
