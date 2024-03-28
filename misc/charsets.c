@@ -137,31 +137,18 @@ static token next(s8 s)
     return r;
 }
 
-typedef struct list list;
-struct list {
-    list *next;
-    s8    value;
-};
-
 typedef struct map map;
 struct map {
     map   *next;
     map   *child[4];
     s8     key;
-    list  *head;
-    list **tail;
     isize  count;
 };
 
-static map *insert(map **m, s8 key, s8 word, arena *perm)
+static map *insert(map **m, s8 key, arena *perm)
 {
-    list *n = new(perm, list, 1);
-    n->value = word;
-
     for (u32 h = hash(key); *m; h <<= 2) {
         if (equals((*m)->key, key)) {
-            *(*m)->tail = n;
-            (*m)->tail = &n->next;
             (*m)->count++;
             return *m;
         }
@@ -170,8 +157,6 @@ static map *insert(map **m, s8 key, s8 word, arena *perm)
 
     *m = new(perm, map, 1);
     (*m)->key = key;
-    (*m)->head = n;
-    (*m)->tail = &n->next;
     (*m)->count++;
     return *m;
 }
@@ -239,17 +224,17 @@ typedef struct {
 
 static sets findsets(s8 s, arena *perm, arena scratch)
 {
-    map  *seen  = 0;
-    map  *head  = 0;
-    map **tail  = &head;
-    sets r      = {0};
+    map  *seen = 0;
+    map  *head = 0;
+    map **tail = &head;
+    sets r     = {0};
 
     token t = next(s);
     for (; t.token.len; t = next(t.tail)) {
         if (!valid(t.token)) continue;
         arena tentative = *perm;
         s8 key = makekey(t.token, &tentative);
-        map *m = insert(&seen, key, t.token, &scratch);
+        map *m = insert(&seen, key, &scratch);
         if (m->count == 1) {
             *perm = tentative;
             *tail = m;
