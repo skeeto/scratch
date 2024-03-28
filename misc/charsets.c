@@ -322,7 +322,7 @@ static i32 solve(void)
     scratch.end = (scratch.beg = osalloc(cap)) + cap;
 
     u8buf *stdout = new(perm, u8buf, 1);
-    stdout->cap = 1<<16;
+    stdout->cap = 1<<14;
     stdout->buf = new(perm, u8, stdout->cap);
 
     sets r = findsets(loadstdin(perm), perm, scratch);
