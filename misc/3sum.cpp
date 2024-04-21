@@ -17,6 +17,10 @@
 // recursive solution at (and only at) -O3. Clang does not, producing a
 // much slower program.
 //
+// Of course, the interface defined here bears little resemblance to the
+// formal LeetCode prototype, which, as usual, is utterly brain-damaged,
+// especially the C prototype.
+//
 // Porting: Implement monotonic_seconds(), write(), and arena::arena().
 // Call run and exit using its returned status.
 //
