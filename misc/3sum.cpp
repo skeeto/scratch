@@ -328,7 +328,8 @@ static i32 run()
     arena scratch = {1<<24};  // 16MiB
 
     #if 0
-    span<i32> nums({-1, 0, 1, 2, -1, -4});
+    i32 example[] = {-1, 0, 1, 2, -1, -4};
+    span<i32> nums(example);
     #else
     span<i32> nums = generate(0, 3000, perm);
     #endif
