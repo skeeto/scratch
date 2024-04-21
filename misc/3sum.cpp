@@ -49,8 +49,8 @@ template<typename T, isize N>
 constexpr isize countof(T (&)[N]) { return N; }
 
 struct arena {
-    byte *beg;
-    byte *end;
+    byte *beg = 0;
+    byte *end = 0;
     arena(isize);  // [platform]
 };
 
@@ -414,6 +414,74 @@ extern "C" void mainCRTStartup()
     i32 r = run();
     ExitProcess(r);
 }
+
+
+#elif __linux && __amd64
+// $ cc -nostdlib -fno-builtin -g3 -O -o 3sum 3sum.cpp
+
+enum {
+    SYS_write           = 1,
+    SYS_brk             = 12,
+    SYS_exit            = 60,
+    SYS_clock_gettime   = 228,
+    CLOCK_MONOTONIC_RAW = 4,
+};
+
+static f64 monotonic_seconds()
+{
+    i64 ts[2];
+    asm (
+        "syscall"
+        :
+        : "a"(SYS_clock_gettime), "D"(CLOCK_MONOTONIC_RAW), "S"(ts)
+        : "rcx", "r11", "memory"
+    );
+    return (double)ts[0] + (double)ts[1]/1e9;
+}
+
+static b32 write(i32 fd, u8 *buf, i32 len)
+{
+    for (i32 off = 0; off < len;) {
+        isize r;
+        asm (
+            "syscall"
+            : "=a"(r)
+            : "a"(SYS_write), "D"(fd), "S"(buf+off), "d"(len-off)
+            : "rcx", "r11", "memory"
+        );
+        if (r < 1) return 0;
+        off += (i32)r;
+    }
+    return 1;
+}
+
+inline arena::arena(isize cap)
+{
+    asm (
+        "syscall"
+        : "=a"(beg)
+        : "a"(SYS_brk), "D"(beg)
+        : "rcx", "r11", "memory"
+    );
+    asm (
+        "syscall"
+        : "=a"(end)
+        : "a"(SYS_brk), "D"(beg+cap)
+        : "rcx", "r11", "memory"
+    );
+}
+
+extern "C" void entrypoint(void)
+{
+    i32 r = run();
+    asm ("syscall" :: "a"(SYS_exit), "D"(r));
+    __builtin_unreachable();
+}
+
+asm (
+    "_start: .globl _start\n"
+    "        call entrypoint\n"
+);
 
 
 #else  // POSIX
