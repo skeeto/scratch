@@ -377,7 +377,8 @@ static i32 run()
 
 #if _WIN32
 // $ cc -nostartfiles -O -o 3sum.exe 3sum.cpp
-// $ cl /O2 3sum.cpp /link /subsystem:console kernel32.lib libvcruntime.lib
+// $ cl /kernel /GS- /GR- /O2 3sum.cpp
+//      /link /subsystem:console kernel32.lib libvcruntime.lib
 
 #define W32(r) extern "C" __declspec(dllimport) r __stdcall
 W32(void)   ExitProcess(i32);
@@ -408,7 +409,6 @@ inline arena::arena(isize cap)
     end = beg + cap;
 }
 
-extern "C" { int _fltused; }
 extern "C" void mainCRTStartup()
 {
     i32 r = run();
