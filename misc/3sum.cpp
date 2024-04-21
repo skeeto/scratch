@@ -62,7 +62,7 @@ static T *make(arena *perm, isize count = 1)
     isize size = sizeof(T);
     isize pad  = -(uptr)perm->beg & (alignof(T) - 1);
     assert(count < (perm->end - perm->beg - pad)/size);
-    T *r = (T *)perm->beg + pad;
+    T *r = (T *)(perm->beg + pad);
     perm->beg += size*count + pad;
     for (isize i = 0; i < count; i++) {
         new ((void *)&r[i]) T{};
@@ -204,7 +204,7 @@ static span<triple> threesum_map(span<i32> nums, arena *perm, arena scratch)
 
 static i32 randint(u64 *rng, i32 lo, i32 hi)
 {
-    *rng = *rng*0x3243f6a8885a308d + 1;
+    *rng = *rng*0x3243f6a8885a308du + 1;
     return (i32)(((*rng>>32)*(hi - lo))>>32) + lo;
 }
 
@@ -256,7 +256,7 @@ struct bufout {
     b32 err = 0;
 
     bufout(arena *perm, i32 _fd, i32 _cap = 1<<12)
-        : buf{make<u8>(perm, _cap)}, cap{_cap}, fd{_fd} { }
+        : buf{make<u8>(perm, _cap)}, cap{_cap}, fd{_fd} {}
 };
 
 static void flush(bufout *b)
