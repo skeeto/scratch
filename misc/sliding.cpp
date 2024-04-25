@@ -200,6 +200,11 @@ static grid parse(s8 s, arena *perm)
     return r;
 }
 
+static u8 todir(v2 src, v2 dst)
+{
+    return src.x==dst.x ? "NS"[src.y<dst.y] : "WE"[src.x<dst.x];
+}
+
 // Solve the given puzzle, returning a formatted solution string.
 static s8 solve(s8 s, arena *perm, arena scratch)
 {
@@ -209,15 +214,12 @@ static s8 solve(s8 s, arena *perm, arena scratch)
         node *next = 0;
         node *prev;
         v2    coord;
-        i32   dir;
-        i32   len;
-        node(node *p, v2 c, i32 d)
-            : prev{p}, coord{c}, dir{d}, len{p?p->len+1:0} {}
+        node(node *p, v2 c) : prev{p}, coord{c} {}
     };
 
     node  *head = 0;
     node **tail = &head;
-    *tail = alloc<node>(&scratch, (node *)0, g.start, -1);
+    *tail = alloc<node>(&scratch, (node *)0, g.start);
     tail = &(*tail)->next;
     g[g.start] = MARKED;
 
@@ -227,12 +229,13 @@ static s8 solve(s8 s, arena *perm, arena scratch)
             // Format a solution string, back to front.
             s8 text;
             for (; head->prev; head = head->prev) {
-                v2 c   = head->coord;
-                u8 dir = "NESW"[head->dir];
+                v2 src = head->prev->coord;
+                v2 dst = head->coord;
+                u8 dir = todir(src, dst);
                 text = prepend(perm, ")\n", text);
-                text = prepend(perm, c.y,   text);
+                text = prepend(perm, dst.y, text);
                 text = prepend(perm, ", ",  text);
-                text = prepend(perm, c.x,   text);
+                text = prepend(perm, dst.x, text);
                 text = prepend(perm, " (",  text);
                 text = prepend(perm, dir,   text);
             }
@@ -245,7 +248,7 @@ static s8 solve(s8 s, arena *perm, arena scratch)
                 if (g[c+dirs[i]] == SOLID) {
                     if (g[c] == EMPTY) {
                         g[c] = MARKED;
-                        *tail = alloc<node>(&scratch, head, c, i);
+                        *tail = alloc<node>(&scratch, head, c);
                         tail = &(*tail)->next;
                     }
                     break;
