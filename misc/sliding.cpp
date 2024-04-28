@@ -67,7 +67,7 @@ struct arena {
 void *operator new(usize, void *p) { return p; };
 
 template<typename T, typename ...A>
-static T *alloc(isize count, arena *perm, A ...args)
+static T *make(isize count, arena *perm, A ...args)
 {
     assert(count >= 0);
     isize size  = sizeof(T);
@@ -79,10 +79,10 @@ static T *alloc(isize count, arena *perm, A ...args)
 }
 
 template<typename T>
-static T *alloc(arena *perm) { return alloc<T>(1, perm); }
+static T *make(arena *perm) { return make<T>(1, perm); }
 
 template<typename T, typename ...A>
-static T *alloc(arena *perm, A ...args) { return alloc<T>(1, perm, args...); }
+static T *make(arena *perm, A ...args) { return make<T>(1, perm, args...); }
 
 struct s8 {
     u8   *data = 0;
@@ -95,9 +95,9 @@ struct s8 {
 
     s8(u8 *beg, u8 *end) : data{beg}, len{end-beg} {}
 
-    s8(arena *perm, s8 s) : data{}, len{s.len}
+    s8(arena *perm, s8 s)
     {
-        data = alloc<u8>(s.len, perm);
+        data = make<u8>(s.len, perm);
         len  = s.len;
         for (isize i = 0; i < len; i++) {
             data[i] = s[i];
@@ -181,7 +181,7 @@ static grid parse(s8 s, arena *perm)
     r.size.x += state;
     r.size.y += state;
 
-    r.data = alloc<u8>(r.size.x*r.size.y, perm);
+    r.data = make<u8>(r.size.x*r.size.y, perm);
 
     state = 0;
     coord = {};
@@ -219,7 +219,7 @@ static s8 solve(s8 s, arena *perm, arena scratch)
 
     node  *head = 0;
     node **tail = &head;
-    *tail = alloc<node>(&scratch, (node *)0, g.start);
+    *tail = make<node>(&scratch, (node *)0, g.start);
     tail = &(*tail)->next;
     g[g.start] = MARKED;
 
@@ -248,7 +248,7 @@ static s8 solve(s8 s, arena *perm, arena scratch)
                 if (g[c+dirs[i]] == SOLID) {
                     if (g[c] == EMPTY) {
                         g[c] = MARKED;
-                        *tail = alloc<node>(&scratch, head, c);
+                        *tail = make<node>(&scratch, head, c);
                         tail = &(*tail)->next;
                     }
                     break;
@@ -280,7 +280,7 @@ static s8 gen(u64 seed, i32 w, i32 h, i32 steps, arena *perm, arena scratch)
         arena temp = scratch;
 
         grid g  = {};
-        g.data  = alloc<u8>(w*h, &temp);
+        g.data  = make<u8>(w*h, &temp);
         g.size  = v2{w, h};
         g.start = randv2(&seed, w, h);
         do {
@@ -296,7 +296,7 @@ static s8 gen(u64 seed, i32 w, i32 h, i32 steps, arena *perm, arena scratch)
 
         s8 r;
         r.len = (w + 1)*h;
-        r.data = alloc<u8>(r.len, perm);
+        r.data = make<u8>(r.len, perm);
         for (i32 y = 0; y < h; y++) {
             for (i32 x = 0; x < w; x++) {
                 i32 i = y*(w+1) + x;
