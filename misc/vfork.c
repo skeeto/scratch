@@ -392,15 +392,15 @@ static i32 run(i32 argc, u8 **argv, u8 **envp)
     if (argc < 2) return 1;
 
     arena scratch = newarena(1<<21);
-    u8buf *stdout = newu8buf(1, 1<<12, &scratch);
+    u8buf *stderr = newu8buf(2, 1<<12, &scratch);
     env *environ  = newenv(envp, &scratch);
 
     s8 path  = getenv(environ, s8("PATH"));
     s8 exe   = findexe(path, s8import(argv[1]), &scratch);
     exe.len -= !!exe.len;
-    print(stdout, s8("path   = "));
-    print(stdout, exe);
-    print(stdout, s8("\n"));
+    print(stderr, s8("path   = "));
+    print(stderr, exe);
+    print(stderr, s8("\n"));
 
     procstat r = startprocess(exe.data, argv+1, envp);
     i32 pid    = r.vfork;
@@ -410,19 +410,19 @@ static i32 run(i32 argc, u8 **argv, u8 **envp)
         wait4 = (i32)syscall4(SYS_wait4, pid, (uz)&status, 0, 0);
     }
 
-    print   (stdout, s8("pid    = "));
-    printi32(stdout, pid);
-    print   (stdout, s8("\n"));
-    print   (stdout, s8("execve = "));
-    printi32(stdout, r.execve);
-    print   (stdout, s8("\n"));
-    print   (stdout, s8("status = "));
-    printi32(stdout, status);
-    print   (stdout, s8("\n"));
-    print   (stdout, s8("wait4  = "));
-    printi32(stdout, wait4);
-    print   (stdout, s8("\n"));
-    flush   (stdout);
+    print   (stderr, s8("pid    = "));
+    printi32(stderr, pid);
+    print   (stderr, s8("\n"));
+    print   (stderr, s8("execve = "));
+    printi32(stderr, r.execve);
+    print   (stderr, s8("\n"));
+    print   (stderr, s8("status = "));
+    printi32(stderr, status);
+    print   (stderr, s8("\n"));
+    print   (stderr, s8("wait4  = "));
+    printi32(stderr, wait4);
+    print   (stderr, s8("\n"));
+    flush   (stderr);
 
     return status;
 }
