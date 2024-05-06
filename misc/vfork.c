@@ -1,5 +1,5 @@
 // libc-free vfork+execve on Linux
-// $ musl-cc -static -nostartfiles -ffreestanding -o vfork vfork.c
+// $ musl-gcc -static -nostartfiles -ffreestanding -o vfork vfork.c
 // $ ./vfork echo hello world
 //
 // It is impossible to safely call vfork from a high level language,
