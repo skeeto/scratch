@@ -42,9 +42,13 @@ typedef unsigned long uz;
 typedef          char byte;
 
 enum {
+    SYS_read    =  0,
     SYS_write   =  1,
+    SYS_close   =  3,
     SYS_brk     = 12,
     SYS_access  = 21,
+    SYS_pipe    = 22,
+    SYS_dup2    = 33,
     SYS_clone   = 56,
     SYS_execve  = 59,
     SYS_exit    = 60,
@@ -107,11 +111,19 @@ static iz syscall4(i32 n, uz a, uz b, uz c, uz d)
     return r;
 }
 
-__attribute((noreturn))
-static void exit(i32 r)
+static iz read(i32 fd, u8 *buf, iz len)
 {
-    asm ("syscall" :: "a"(SYS_exit), "D"(r));
-    __builtin_unreachable();
+    return syscall3(SYS_read, fd, (uz)buf, len);
+}
+
+static iz write(i32 fd, u8 *buf, iz len)
+{
+    return syscall3(SYS_write, fd, (uz)buf, len);
+}
+
+static i32 close(i32 fd)
+{
+    return (i32)syscall1(SYS_close, fd);
 }
 
 static i32 access(u8 *path, i32 mode)
@@ -119,14 +131,31 @@ static i32 access(u8 *path, i32 mode)
     return (i32)syscall2(SYS_access, (uz)path, mode);
 }
 
+static i32 pipe(i32 *fds)
+{
+    return (i32)syscall1(SYS_pipe, (uz)fds);
+}
+
+static i32 dup2(i32 old, i32 new)
+{
+    return (i32)syscall2(SYS_dup2, old, new);
+}
+
 static i32 execve(u8 *path, u8 **argv, u8 **envp)
 {
     return (i32)syscall3(SYS_execve, (uz)path, (uz)argv, (uz)envp);
 }
 
-static iz write(i32 fd, u8 *buf, iz len)
+__attribute((noreturn))
+static void exit(i32 r)
 {
-    return syscall3(SYS_write, fd, (uz)buf, len);
+    asm ("syscall" :: "a"(SYS_exit), "D"(r));
+    __builtin_unreachable();
+}
+
+static i32 wait4(i32 pid, i32 *status, i32 options, void *rusage)
+{
+    return (i32)syscall4(SYS_wait4, pid, (uz)status, options, (uz)rusage);
 }
 
 typedef struct {
@@ -429,6 +458,75 @@ static void setupproc(forkstack *f)
     exit(127);
 }
 
+typedef struct capout capout;
+struct __attribute((aligned(16))) capout {
+    void (*setup)(capout *) __attribute((noreturn));
+    u8    *path;
+    u8   **argv;
+    u8   **envp;
+    i32    execve;
+    i32    fds[2];
+};
+
+__attribute((noreturn))
+static void setupcapout(capout *f)
+{
+    close(f->fds[0]);
+    dup2(f->fds[1], 1);
+    close(f->fds[1]);
+    f->execve = execve(f->path, f->argv, f->envp);
+    exit(127);
+}
+
+// Start the given program and capture its output as a string.
+static s8 capture(u8 *path, u8 **argv, u8 **envp, arena *perm)
+{
+    s8  r   = {0};
+    i32 pid = 0;
+    i32 fd  = 0;
+
+    {
+        arena scratch = *perm;
+        capout *stack = newstack(&scratch, capout, 1<<12);
+        stack->setup  = setupcapout;
+        stack->path   = path;
+        stack->argv   = argv;
+        stack->envp   = envp;
+        pipe(stack->fds);
+
+        pid = afork(stack);
+        close(stack->fds[1]);
+        fd = stack->fds[0];
+
+        if (pid < 0) {
+            close(fd);
+            return r;
+        } else if (stack->execve) {
+            close(fd);
+            wait4(pid, 0, 0, 0);
+            return r;
+        }
+    }
+
+    // Stack no longer in use, now use it to capture output.
+    r.data = (u8 *)perm->beg;
+    iz cap = perm->end - perm->beg;
+    while (r.len < cap) {
+        iz len = read(fd, r.data+r.len, cap-r.len);
+        if (len < 1) break;
+        r.len += len;
+    }
+    close(fd);
+
+    if (pid != wait4(pid, 0, 0, 0)) {
+        r.data = 0;
+        r.len  = 0;
+    } else {
+        perm += r.len;
+    }
+    return r;
+}
+
 static i32 run(i32 argc, u8 **argv, u8 **envp)
 {
     if (argc < 2) return 1;
@@ -452,9 +550,9 @@ static i32 run(i32 argc, u8 **argv, u8 **envp)
 
     i32 pid    = afork(stack);
     i32 status = 0;
-    i32 wait4  = 0;
+    i32 wait4r = 0;
     if (pid > 0) {
-        wait4 = (i32)syscall4(SYS_wait4, pid, (uz)&status, 0, 0);
+        wait4r = wait4(pid, &status, 0, 0);
     }
 
     print   (stderr, s8("pid    = "));
@@ -467,8 +565,17 @@ static i32 run(i32 argc, u8 **argv, u8 **envp)
     printi32(stderr, status);
     print   (stderr, s8("\n"));
     print   (stderr, s8("wait4  = "));
-    printi32(stderr, wait4);
+    printi32(stderr, wait4r);
     print   (stderr, s8("\n"));
+    flush   (stderr);
+
+    u8 *calexe = findexe(path, s8("cal"), &scratch).data;
+    u8 *calargv[] = {s8("cal").data, s8("5").data, s8("2024").data, 0};
+    s8 cal = capture(calexe, calargv, envp, &scratch);
+    print   (stderr, s8("\"cal 5 2024\" output ("));
+    printi32(stderr, (i32)cal.len);
+    print   (stderr, s8(" bytes):\n"));
+    print   (stderr, cal);
     flush   (stderr);
 
     return status;
