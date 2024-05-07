@@ -149,7 +149,7 @@ static i32 execve(u8 *path, u8 **argv, u8 **envp)
 __attribute((noreturn))
 static void exit(i32 r)
 {
-    asm ("syscall" :: "a"(SYS_exit), "D"(r));
+    asm ("syscall" :: "a"(SYS_exit), "D"(r) : "memory");
     __builtin_unreachable();
 }
 
