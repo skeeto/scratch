@@ -5,33 +5,33 @@
 // It is impossible to safely call vfork from a high level language,
 // including C, even through a libc wrapper. Nearly all vforks in the
 // wild are unsafe and rely on luck, i.e. that the wrong registers are
-// not spilled betweeen vfork and execve in common build configurations.
+// not spilled between vfork and execve in common build configurations.
 // POSIX vfork is impossible to use correctly in any case, but Linux
 // vfork is defined thoroughly enough to use in low level languages.
 //
-// The startprocess() function is implemented in assembly and should be
-// a safe use of vfork. It even reports the precise execve result back
-// to the parent (via shared memory), and does not rely on a special
-// exit status, a la glibc.
-//
-// A more configurable enhancement would be an "afork"-like function
-// which runs the vfork child on its own stack, allocated out of an
-// arena, allowing the safe execution of high level code (dup2(2), etc.)
-// on the new stack. With libc fully out of the picture, the only vfork
-// hazards (global state, deadlocks, etc.) you need to worry about are
-// the ones you created for yourself.
+// The afork function in this program is implemented in assembly, and
+// the new child process runs on a fresh, temporary stack. It reports
+// the exact execve result back to the parent via shared memory, and
+// does not rely on a special exit status, a la glibc. The user setup
+// function configures the new process (dup2, etc.), and can be safely
+// implemented in a high level language like C. With libc fully out of
+// the picture, the only vfork hazards (global state, deadlocks, etc.)
+// you need to worry about are the ones you created for yourself.
 //
 // Unrelated to vfork, this program demonstrates handy tricks for
 // working without libc on Linux: allocation, string processing, path
 // handling, buffered output, environment variables, and hash maps.
 //
+// Ref: https://nullprogram.com/blog/2023/03/23/
+// Ref: https://gist.github.com/nicowilliams/a8a07b0fc75df05f684c23c18d7db234
 // This is free and unencumbered software released into the public domain.
 
-#define countof(a)       (iz)(sizeof(a) / sizeof(*(a)))
-#define assert(c)        while (!(c)) __builtin_unreachable()
-#define new(a, t, n)     (t *)allocend(a, sizeof(t), _Alignof(t), n)
-#define newbeg(a, t, n)  (t *)allocbeg(a, sizeof(t), _Alignof(t), n)
-#define s8(s)            (s8){(u8 *)s, countof(s)-1}
+#define countof(a)         (iz)(sizeof(a) / sizeof(*(a)))
+#define assert(c)          while (!(c)) __builtin_unreachable()
+#define new(a, t, n)       (t *)allocend(a, sizeof(t), _Alignof(t), n)
+#define newbeg(a, t, n)    (t *)allocbeg(a, sizeof(t), _Alignof(t), n)
+#define s8(s)              (s8){(u8 *)s, countof(s)-1}
+#define newstack(a, t, n)  (new(a, t, (n)/sizeof(t)) + (n)/sizeof(t) - 1)
 
 typedef unsigned char u8;
 typedef   signed int  b32;
@@ -45,10 +45,16 @@ enum {
     SYS_write   =  1,
     SYS_brk     = 12,
     SYS_access  = 21,
-    SYS_vfork   = 58,
+    SYS_clone   = 56,
     SYS_execve  = 59,
     SYS_exit    = 60,
     SYS_wait4   = 61,
+};
+
+enum {
+    SIGCHLD     = 17,
+    CLONE_VM    = 0x00000100,
+    CLONE_VFORK = 0x00004000,
 };
 
 static iz syscall1(i32 n, uz a)
@@ -101,35 +107,26 @@ static iz syscall4(i32 n, uz a, uz b, uz c, uz d)
     return r;
 }
 
-typedef struct {
-    i32 vfork;
-    i32 execve;
-} procstat;
-
-// vfork(2) then execve(2), returning both results. On success, the
-// vfork field will be the PID, and execve field will be zero.
-__attribute((naked))
-static procstat startprocess(u8 *path, u8 **argv, u8 **envp)
+__attribute((noreturn))
+static void exit(i32 r)
 {
-    asm volatile (
-        "    pushq  $0\n"               // result = {0, 0}
-        "    mov    %0, %%eax\n"        // vfork()
-        "    syscall\n"                 // "
-        "    test   %%eax, %%eax\n"
-        "    je     1f\n"               // if parent
-        "    mov    %%eax, (%%rsp)\n"   // result.vfork = eax
-        "    pop    %%rax\n"            // retrieve result
-        "    ret\n"
-        "1:  mov    %1, %%eax\n"        // if child
-        "    syscall\n"                 // execve()
-        "    mov    %%eax, 4(%%rsp)\n"  // result.execve = eax
-        "    mov    %2, %%eax\n"        // exit(127)
-        "    mov    $127, %%edi\n"      // "
-        "    syscall\n"                 // "
-        :
-        : "i"(SYS_vfork), "i"(SYS_execve), "i"(SYS_exit)
-        : "rax", "rcx", "r11", "memory"
-    );
+    asm ("syscall" :: "a"(SYS_exit), "D"(r));
+    __builtin_unreachable();
+}
+
+static i32 access(u8 *path, i32 mode)
+{
+    return (i32)syscall2(SYS_access, (uz)path, mode);
+}
+
+static i32 execve(u8 *path, u8 **argv, u8 **envp)
+{
+    return (i32)syscall3(SYS_execve, (uz)path, (uz)argv, (uz)envp);
+}
+
+static iz write(i32 fd, u8 *buf, iz len)
+{
+    return syscall3(SYS_write, fd, (uz)buf, len);
 }
 
 typedef struct {
@@ -159,6 +156,41 @@ static byte *allocend(arena *a, iz size, iz align, iz count)
     iz pad = (uz)a->end & (align - 1);
     assert(count < (a->end - a->beg - pad)/size);
     return __builtin_memset(a->end -= pad + count*size, 0, count*size);
+}
+
+// Create a new process with vfork, and run the setup function in the
+// child on the stack. The stack should be created with newstack. The
+// stack head must be a 16-byte-aligned struct whose first element is a
+// setup function pointer, whose single parameter receives the stack
+// head.
+//
+//    struct __attribute((aligned(16))) stack_head {
+//        void (*setup)(struct stack_head *) __attribute((noreturn));
+//        // ...
+//    };
+//
+// The setup function configures the child (dup2(2), etc.), then calls
+// execve(2), storing its result in the stack head object. The setup
+// function MUST NOT return, but exit(2) or otherwise terminate itself
+// should execve fail.
+//
+// afork() returns to the parent after the child is done with the stack,
+// forming a happens-before synchronization edge. The execve result may
+// be safely retrieved, and the stack may be discarded/reused.
+__attribute((naked))
+static i32 afork(void *stackhead)
+{
+    asm volatile (
+        "mov    %%rdi, %%rsi\n"
+        "mov    %0, %%edi\n"
+        "mov    %1, %%eax\n"
+        "syscall\n"
+        "mov    %%rsp, %%rdi\n"
+        "ret\n"
+        :
+        : "i"(SIGCHLD|CLONE_VM|CLONE_VFORK), "i"(SYS_clone)
+        : "rcx", "r11", "memory"
+    );
 }
 
 typedef struct {
@@ -256,9 +288,7 @@ static void flush(u8buf *b)
 {
     if (!b->err) {
         for (i32 off = 0; off < b->len;) {
-            i32 r = (i32)syscall3(
-                SYS_write, b->fd, (uz)(b->buf+off), b->len-off
-            );
+            i32 r = (i32)write(b->fd, b->buf+off, b->len-off);
             if (r < 1) {
                 b->err = 1;
                 break;
@@ -296,11 +326,6 @@ static void printi32(u8buf *b, i32 x)
         *--beg = '-';
     }
     print(b, s8span(beg, end));
-}
-
-static i32 access(u8 *path, i32 mode)
-{
-    return (i32)syscall2(SYS_access, (uz)path, mode);
 }
 
 // Search $PATH for the named program. The returned string includes a null
@@ -387,6 +412,23 @@ static s8 getenv(env *e, s8 name)
     return r ? *r : null;
 }
 
+typedef struct forkstack forkstack;
+struct __attribute((aligned(16))) forkstack {
+    void (*setup)(forkstack *) __attribute((noreturn));
+    u8    *path;
+    u8   **argv;
+    u8   **envp;
+    i32    execve;
+};
+
+__attribute((noreturn))
+static void setupproc(forkstack *f)
+{
+    // ... additional configuration (dup2, etc.) ...
+    f->execve = execve(f->path, f->argv, f->envp);
+    exit(127);
+}
+
 static i32 run(i32 argc, u8 **argv, u8 **envp)
 {
     if (argc < 2) return 1;
@@ -402,8 +444,13 @@ static i32 run(i32 argc, u8 **argv, u8 **envp)
     print(stderr, exe);
     print(stderr, s8("\n"));
 
-    procstat r = startprocess(exe.data, argv+1, envp);
-    i32 pid    = r.vfork;
+    forkstack *stack = newstack(&scratch, forkstack, 1<<12);
+    stack->setup = setupproc;
+    stack->path  = exe.data;
+    stack->argv  = argv + 1;
+    stack->envp  = envp;
+
+    i32 pid    = afork(stack);
     i32 status = 0;
     i32 wait4  = 0;
     if (pid > 0) {
@@ -414,7 +461,7 @@ static i32 run(i32 argc, u8 **argv, u8 **envp)
     printi32(stderr, pid);
     print   (stderr, s8("\n"));
     print   (stderr, s8("execve = "));
-    printi32(stderr, r.execve);
+    printi32(stderr, stack->execve);
     print   (stderr, s8("\n"));
     print   (stderr, s8("status = "));
     printi32(stderr, status);
@@ -433,8 +480,7 @@ void entrypoint(uz *stack)
     u8 **argv = (u8 **)(stack+1);
     u8 **envp = argv + argc + 1;
     i32 r = run(argc, argv, envp);
-    asm ("syscall" :: "a"(SYS_exit), "D"(r));
-    __builtin_unreachable();
+    exit(r);
 }
 
 asm (
