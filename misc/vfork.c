@@ -53,10 +53,8 @@ enum {
     SYS_execve  = 59,
     SYS_exit    = 60,
     SYS_wait4   = 61,
-};
 
-enum {
-    SIGCHLD     = 17,
+    SIGCHLD     = 0x00000011,
     CLONE_VM    = 0x00000100,
     CLONE_VFORK = 0x00004000,
 };
@@ -149,6 +147,7 @@ static i32 execve(u8 *path, u8 **argv, u8 **envp)
 __attribute((noreturn))
 static void exit(i32 r)
 {
+    // NOTE: memory clobber forces shared memory writes before exit
     asm ("syscall" :: "a"(SYS_exit), "D"(r) : "memory");
     __builtin_unreachable();
 }
@@ -264,12 +263,12 @@ static s8 s8concat(s8 head, s8 tail, arena *perm)
     if (!head.data || (byte *)(head.data+head.len) != perm->beg) {
         s8 copy = head;
         copy.data = newbeg(perm, u8, head.len);
-        __builtin_memcpy(copy.data, head.data, head.len);
+        if (head.len) __builtin_memcpy(copy.data, head.data, head.len);
         head = copy;
     }
 
     u8 *data = newbeg(perm, u8, tail.len);
-    __builtin_memcpy(data, tail.data, tail.len);
+    if (tail.len) __builtin_memcpy(data, tail.data, tail.len);
     head.len += tail.len;
     return head;
 }
@@ -492,7 +491,9 @@ static s8 capture(u8 *path, u8 **argv, u8 **envp, arena *perm)
         stack->path   = path;
         stack->argv   = argv;
         stack->envp   = envp;
-        pipe(stack->fds);
+        if (pipe(stack->fds)) {
+            return r;  // pipe() error
+        }
 
         pid = afork(stack);
         close(stack->fds[1]);
@@ -500,15 +501,15 @@ static s8 capture(u8 *path, u8 **argv, u8 **envp, arena *perm)
 
         if (pid < 0) {
             close(fd);
-            return r;
+            return r;  // clone() error
         } else if (stack->execve) {
             close(fd);
-            wait4(pid, 0, 0, 0);
-            return r;
+            wait4(pid, 0, 0, 0);  // reap
+            return r;  // execve() error
         }
     }
 
-    // Stack no longer in use, now use it to capture output.
+    // Stack no longer in use, now use that memory to capture output.
     r.data = (u8 *)perm->beg;
     iz cap = perm->end - perm->beg;
     while (r.len < cap) {
@@ -517,13 +518,9 @@ static s8 capture(u8 *path, u8 **argv, u8 **envp, arena *perm)
         r.len += len;
     }
     close(fd);
+    perm += r.len;
 
-    if (pid != wait4(pid, 0, 0, 0)) {
-        r.data = 0;
-        r.len  = 0;
-    } else {
-        perm += r.len;
-    }
+    wait4(pid, 0, 0, 0);
     return r;
 }
 
@@ -581,7 +578,8 @@ static i32 run(i32 argc, u8 **argv, u8 **envp)
     return status;
 }
 
-void entrypoint(uz *stack)
+__attribute((used))
+static void entrypoint(uz *stack)
 {
     i32  argc = (i32)*stack;
     u8 **argv = (u8 **)(stack+1);
