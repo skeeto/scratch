@@ -1,9 +1,9 @@
 // Find shortest path on CSV-formatted graph
-// $ cc -std=c++23 -nostartfiles -fno-exceptions -o findpath.exe findpath.cpp
+// $ cc -std=c++23 -nostartfiles -o findpath.exe findpath.cpp
 // $ ./findpath <graph.csv source destination
 //
 // $ ./findpath >random.csv
-// $ ./findpath <random.csv S R
+// $ ./findpath <random.csv A B
 //
 // Columns are source,destination,cost with non-negative costs. Sample:
 //
@@ -43,7 +43,7 @@ struct arena {
 
 // Allocate an extendable allocation at the front of the arena.
 template<typename T, typename ...A>
-T *sprout(iz count, arena *perm, A ...args)
+T *sow(iz count, arena *perm, A ...args)
 {
 	iz size = sizeof(T);
 	iz pad  = -(uz)perm->beg & (alignof(T) - 1);
@@ -91,14 +91,14 @@ static list<T> push(arena *perm, list<T> vs, T v)
 	if (vs.len == vs.cap) {
 		if ((byte *)(vs.data+vs.cap) != perm->beg) {
 			list<T> copy = vs;
-			copy.data = sprout<T>(copy.len, perm);
+			copy.data = sow<T>(copy.len, perm);
 			for (iz i = 0; i < vs.len; i++) {
 				copy[i] = vs[i];
 			}
 			vs = copy;
 		}
 		iz extend = vs.len ? vs.len : 4;
-		sprout<T>(extend, perm);
+		sow<T>(extend, perm);
 		vs.cap += extend;
 	}
 	vs.data[vs.len++] = v;
@@ -123,7 +123,7 @@ struct s8 {
 	template<iz N>
 	s8(char const (&s)[N]) : data{(u8 *)s}, len{N-1} {}
 
-	s8(s8 s, arena *a) : data{sprout<u8>(s.len, a)}, len{s.len}
+	s8(s8 s, arena *a) : data{sow<u8>(s.len, a)}, len{s.len}
 	{
 		for (iz i = 0; i < s.len; i++) {
 			data[i] = s[i];
@@ -202,7 +202,7 @@ static i32result parsei32(s8 s)
 	for (iz i = 0; i < s.len; i++) {
 		i32 v = s[i] - '0';
 		if ((u32)v > '9') return r;
-		if (r.value > (0x7fffffff - v)/10) return r;
+		if (r.value > (i32MAX - v)/10) return r;
 		r.value = r.value*10 + v;
 	}
 	r.ok = s.len > 0;
@@ -211,14 +211,11 @@ static i32result parsei32(s8 s)
 
 struct vertex;
 
-struct edge {
-	vertex *dst;
-	i32     cost;
-	edge() = default;
-	edge(vertex *dst, i32 cost) : dst{dst}, cost{cost} {}
-};
-
 struct vertex {
+	struct edge {
+		vertex *dst;
+		i32     cost;
+	};
 	vertex    *prev;
 	vertex    *child[4];
 	s8         name;
@@ -241,41 +238,44 @@ static vertex *find(vertex **m, s8 name, iz *count = 0, arena *perm = 0)
 	return *m;
 }
 
-struct slot {
-	vertex *vertex;
-	i32     priority;
+struct minheap {
+	struct slot {
+		vertex *vertex;
+		i32     priority;
+	};
+	list<slot> slots;
 };
 
-static i32 get(list<slot> q, iz i)
+static i32 get(minheap *q, iz i)
 {
-	return i<q.len ? q[i].priority : i32MAX;
+	return i<q->slots.len ? q->slots[i].priority : i32MAX;
 }
 
-static slot pop(list<slot> *q)
+static minheap::slot pop(minheap *q)
 {
-	slot r = (*q)[0];
-	(*q)[0] = (*q)[--q->len];
+	minheap::slot r = q->slots[0];
+	q->slots[0] = q->slots[--q->slots.len];
 	for (iz i = 0;;) {
 		iz left  = i*2 + 1;
 		iz right = i*2 + 2;
 		iz best  = i;
-		best = get(*q, left )<get(*q, best) ? left  : best;
-		best = get(*q, right)<get(*q, best) ? right : best;
+		best = get(q, left )<get(q, best) ? left  : best;
+		best = get(q, right)<get(q, best) ? right : best;
 		if (best == i) return r;
-		swap(*q, i, best);
+		swap(q->slots, i, best);
 		i = best;
 	}
 }
 
-static void push(list<slot> *q, vertex *v, i32 priority, arena *perm)
+static void push(minheap *q, vertex *v, i32 priority, arena *perm)
 {
-	*q = push(perm, *q, slot{v, priority});
-	for (iz i = q->len-1;;) {
+	q->slots = push(perm, q->slots, {v, priority});
+	for (iz i = q->slots.len-1;;) {
 		iz parent = (i - 1)/2;
-		if (get(*q, parent) <= get(*q, i)) {
+		if (get(q, parent) <= get(q, i)) {
 			break;
 		}
-		swap(*q, parent, i);
+		swap(q->slots, parent, i);
 		i = parent;
 	}
 }
@@ -306,8 +306,8 @@ static s8 findpath(s8 csv, s8 beg, s8 end, arena *perm, arena scratch)
 		if (!parsed.ok) return {};
 		i32 cost = parsed.value;
 
-		src->edges = push(&scratch, src->edges, edge{dst, cost});
-		dst->edges = push(&scratch, dst->edges, edge{src, cost});
+		src->edges = push(&scratch, src->edges, {dst, cost});
+		dst->edges = push(&scratch, dst->edges, {src, cost});
 	}
 
 	vertex *start = find(&verts, beg);
@@ -315,16 +315,16 @@ static s8 findpath(s8 csv, s8 beg, s8 end, arena *perm, arena scratch)
 	if (!start || !stop) return {};
 
 	// Dijkstra's algorithm
-	list<slot> queue;
+	minheap queue = {};
 	start->distance = 0;
 	push(&queue, start, 0, &scratch);
-	while (queue.len) {
+	while (queue.slots.len) {
 		auto [v, priority] = pop(&queue);
 		if (v->distance != priority) continue;
 
 		if (v == stop) {
 			// Found: print the solution to a string
-			s8 r;
+			s8 r = {};
 			r = append(perm, r, v->distance);
 
 			// Reverse the linked list
@@ -398,7 +398,7 @@ static b32 insert(edges **e, i32 src, i32 dst, arena *perm)
 
 static s8 gencsv(u64 seed, i32 nverts, i32 nedges, arena *perm, arena scratch)
 {
-	s8 r;
+	s8 r = {};
 	edges *exists = 0;
 	seed += 1111111111111111111u;
 	for (i32 i = 0; i < nedges; i++) {
@@ -435,8 +435,7 @@ W32(b32)    WriteFile(uz, u8 *, i32, i32 *, uz);
 
 static i32 trunc(iz n)
 {
-	i32 max = 0x7fffffff;
-	return n>max ? max : (i32)n;
+	return n>i32MAX ? i32MAX : (i32)n;
 }
 
 static b32 write(i32 fd, s8 s)
@@ -453,7 +452,7 @@ static b32 write(i32 fd, s8 s)
 
 static s8 load(i32 fd, arena *perm)
 {
-	s8 r;
+	s8 r = {};
 	r.data = (u8 *)perm->beg;
 	iz avail = perm->end - perm->beg;
 	uz stdin = GetStdHandle(-10 - fd);
@@ -492,13 +491,13 @@ static b32 run(byte *mem, iz cap)
 			return 1;
 		}
 		case 1: {
-			s8 csv = gencsv(0, 100, 100, perm, scratch);
+			s8 csv = gencsv(0, 100000, 100000, perm, scratch);
 			return !write(1, csv);
 		}
 		case 3: {
 			s8 input = load(0, perm);
 			s8 output = findpath(input, args[1], args[2], perm, scratch);
-			return !write(1, output);
+			return output.data ? !write(1, output) : 1;
 		}
 	}
 }
@@ -509,4 +508,5 @@ extern "C" void mainCRTStartup()
 	byte *mem = VirtualAlloc(0, cap, 0x3000, 4);
 	b32 err = run(mem, cap);
 	ExitProcess(!!err);
+	assert(0);
 }
