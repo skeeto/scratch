@@ -157,6 +157,13 @@ static void *heap_memset(void *p, byte x, iz len)
     return p;
 }
 
+static void heap_memcpy(void *restrict dst, void *restrict src, iz len)
+{
+    byte *d = dst;
+    byte *s = src;
+    for (; len; len--) *d++ = *s++;
+}
+
 static void *heap_bumpalloc(heap_arena *a, iz size, iz count)
 {
     iz pad = (uz)a->end & (sizeof(void *) - 1);
@@ -427,14 +434,17 @@ static void heap_mark(heap *h, void *p)
     if (!b.base || heap_isreachable(h, p)) return;
     heap_markreachable(h, p);
 
-    void **beg = b.base;
-    void **end = beg + b.size/sizeof(*beg);
+    uz *beg = b.base;
+    uz *end = beg + b.size/sizeof(*beg);
     for (; beg < end; beg++) {
+        // NOTE: Bypassing strict aliasing via memcpy()
+        uz copy;
+        heap_memcpy(&copy, beg, sizeof(copy));
         // FIXME: Unchecked recursion into arbitrary data! This is very
         // tricky to solve, especially with internal pointers. Research
         // is needed. Infinite loops are not a problem because the marks
         // track visited objects.
-        heap_mark(h, *beg);
+        heap_mark(h, (void *)copy);
     }
 }
 
