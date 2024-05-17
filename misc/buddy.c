@@ -1,4 +1,4 @@
-// Buddy Allocator (libc-free, GC-friendly querying)
+// Buddy Allocator with Garbage Collector
 //
 // Standout features:
 // * Internal pointers supported by all pointer-accepting interfaces
@@ -6,9 +6,8 @@
 // * Safe queries on any pointer: non-owned pointers return blank data
 // * Robust double-free detection (optional)
 // * Low memory overhead (<1.6%), no allocation block prefixes
-//
-// With query interfaces supporting internal pointers, this allocator is
-// a good foundation for a conservative garbage collector.
+// * No libc needed, platform agnostic across 32-and 64-bit hosts
+// * Conservative mark-and-sweep garbage collector with flexible API
 //
 // This is free and unencumbered software released into the public domain.
 
@@ -22,8 +21,9 @@
 #define heap_new(h, n, t)  (t *)heap_alloc3(h, n, sizeof(t), _Alignof(t))
 
 enum {
-    HEAP_DEBUG  = 1 << 8,
-    HEAP_STRICT = 1 << 9,
+    HEAP_DEBUG  = 1 <<  8,
+    HEAP_STRICT = 1 <<  9,
+    HEAP_GC     = 1 << 10,
 };
 
 typedef struct heap heap;
@@ -35,26 +35,35 @@ typedef struct {
 } heap_block;
 
 // Initialize a heap for allocating out of the given memory region. The
-// region may have any alignment. Set flags to zero for the defaults,
-// ORing HEAP_DEBUG, HEAP_STRICT, or the minimum allocation/alignment
-// exponent. The default exponent is 3 on 32-bit and 4 on 64-bit, and
-// smaller exponents are rounded up. Returns null if the region is too
-// small.
+// region may have any alignment. Flags are bitwise-OR of zero or more:
 //
-// When the HEAP_DEBUG flag is set, memory is pattern-filled on free,
-// and double-frees are detected. These operations introduce a small
-// performance cost to heap_free().
+// * HEAP_DEBUG
+//     Memory is pattern-filled on free, and double-frees are detected.
+//     Introduces a small performance cost to heap_free().
 //
-// When the HEAP_STRICT flag is set, internal pointers are unsupported
-// by heap_free(), and attempts to use them will abort. This flag is
-// incompatible with overly-aligned allocations. It does not speed up
-// freeing.
+// * HEAP_STRICT
+//     Internal pointers are unsupported by heap_free(), and attempts to
+//     use them will abort. Incompatible with over-aligned allocations.
+//     Does not speed up freeing.
+//
+// * HEAP_GC
+//     Allocate a marks bit array for the conservative mark-and-sweep
+//     garbage collector. Required for heap_{startgc,mark,sweep}(). This
+//     array doubles memory overhead.
+//
+// * The minimum allocation/alignment exponent
+//     Rounds up to 3 (8-byte) on 32-bit and 4 (16-byte) on 64-bit.
+//
+//  Returns null if the region is too small.
 //
 // Slightly more than 1/64th of the region is used for bookkeeping, and
 // the most efficiently-used regions will be about that much larger than
 // a power of two. For instance, allocate a virtual memory of size:
+//
 //   (1<<N) + (1<<(N-6)) + page_size
 //   heap     heapstate    misc.
+//
+// If using garbage collection, use 1<<(N-5) for the heapstate.
 static heap *heap_init(void *, ptrdiff_t, int flags);
 
 // Allocate zero-initialized memory, like malloc(3). Returns null if the
@@ -93,6 +102,18 @@ static heap_block heap_getblock(heap *, void *);
 // not one-past-the-end pointers, which likely point into another block.
 static void heap_free(heap *, void *);
 
+// Zero all reachability marks in preparation for garbage collection.
+static void heap_startgc(heap *);
+
+// Mark this object and all objects reachable through it, including
+// through internal pointers. Any pointer is permitted, and if it does
+// not point into a live object then it is ignored. Use this to share
+// the reachability roots to the garbage collector.
+static void heap_mark(heap *, void *);
+
+// Free objects that have not been marked. Completes garbage collection.
+static void heap_sweep(heap *);
+
 
 // Implementation
 
@@ -116,6 +137,7 @@ struct heap {
     void       *base;
     u32        *status;
     heap_node **free;
+    u32        *marks;
     i32         min;
     i32         max;
     i32         flags;
@@ -219,11 +241,18 @@ static heap *heap_init(void *buf, iz len, i32 flags)
         iz          total  = (iz)1<<max;
         iz          nints  = max-min<4 ? 1 : (iz)1<<(max - min + 1 - 5);
         u32        *status = heap_bump(&temp, u32, nints);
+        u32        *marks  = 0;
+        if (flags & HEAP_GC) {
+            iz      nmarks = max-min<5 ? 1 : (iz)1<<(max - min     - 5);
+                    marks  = heap_bump(&temp, u32, nmarks);
+            if (!marks) continue;
+        }
         heap       *h      = heap_bump(&temp, heap, 1);
         if (free && status && h && total<=temp.end-temp.beg) {
             h->base   = buf;
             h->status = status;
             h->free   = free;
+            h->marks  = marks;
             h->min    = min;
             h->max    = max;
             h->flags  = flags;
@@ -361,6 +390,87 @@ static void heap_free(heap *h, void *p)
         heap_markfree(h, n, exp+1);
     }
     heap_pushblock(&h->free[exp-h->min], n);
+}
+
+static iz heap_getmark(heap *h, void *p)
+{
+    iz bit = ((uz)p - (uz)h->base)>>h->min;
+    return bit;
+}
+
+static void heap_markreachable(heap *h, void *p)
+{
+    iz bit = heap_getmark(h, p);
+    h->marks[bit>>5] |= (u32)1<<(bit&31);
+}
+
+static u32 heap_isreachable(heap *h, void *p)
+{
+    iz bit = heap_getmark(h, p);
+    return h->marks[bit>>5] & ((u32)1<<(bit&31));
+}
+
+static void heap_startgc(heap *h)
+{
+    heap_assert(h->marks);
+    iz nints = h->max-h->min<5 ? 1 : (iz)1<<(h->max - h->min - 5);
+    for (iz i = 0; i < nints; i++) {
+        h->marks[i] = 0;
+    }
+}
+
+static void heap_mark(heap *h, void *p)
+{
+    heap_assert(h->marks);
+
+    heap_block b = heap_getblock(h, p);
+    if (!b.base || heap_isreachable(h, p)) return;
+    heap_markreachable(h, p);
+
+    void **beg = b.base;
+    void **end = beg + b.size/sizeof(*beg);
+    for (; beg < end; beg++) {
+        // FIXME: Unchecked recursion into arbitrary data! This is very
+        // tricky to solve, especially with internal pointers. Research
+        // is needed. Infinite loops are not a problem because the marks
+        // track visited objects.
+        heap_mark(h, *beg);
+    }
+}
+
+static void heap_sweep_recursive(heap *h, void *p, i32 exp)
+{
+    u32 leftused  = 0;
+    u32 rightused = 0;
+
+    if (exp > h->min) {
+        void *left = p;
+        leftused = heap_isused(h, left, exp-1);
+        if (leftused) {
+            heap_sweep_recursive(h, left, exp-1);
+        }
+
+        void *right = heap_buddy(h, left, exp-1);
+        rightused = heap_isused(h, right, exp-1);
+        if (rightused) {
+            heap_sweep_recursive(h, right, exp-1);
+        }
+    }
+
+    if (!leftused && !rightused && !heap_isreachable(h, p)) {
+        heap_assert(heap_isused(h, p, exp));
+        heap_free(h, p);
+    }
+}
+
+static void heap_sweep(heap *h)
+{
+    // NOTE: Recursion depth is bounded to (max - min + 1), controlled
+    // through the exp parameter decreasing at each level.
+    heap_assert(h->marks);
+    if (*h->status) {
+        heap_sweep_recursive(h, h->base, h->max);
+    }
 }
 
 
