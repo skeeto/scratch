@@ -22,9 +22,8 @@
 #define heap_new(h, n, t)  (t *)heap_alloc3(h, n, sizeof(t), _Alignof(t))
 
 enum {
-    HEAP_MIN    = 2 + ((int)sizeof(void *)>>2),
-    HEAP_DEBUG  = 1 << 0,
-    HEAP_STRICT = 1 << 1,
+    HEAP_DEBUG  = 1 << 8,
+    HEAP_STRICT = 1 << 9,
 };
 
 typedef struct heap heap;
@@ -36,8 +35,11 @@ typedef struct {
 } heap_block;
 
 // Initialize a heap for allocating out of the given memory region. The
-// region may have any alignment. The flags may be zero or more ORed
-// HEAP_DEBUG or HEAP_STRICT. Returns null if the region is too small.
+// region may have any alignment. Set flags to zero for the defaults,
+// ORing HEAP_DEBUG, HEAP_STRICT, or the minimum allocation/alignment
+// exponent. The default exponent is 3 on 32-bit and 4 on 64-bit, and
+// smaller exponents are rounded up. Returns null if the region is too
+// small.
 //
 // When the HEAP_DEBUG flag is set, memory is pattern-filled on free,
 // and double-frees are detected. These operations introduce a small
@@ -56,9 +58,10 @@ typedef struct {
 static heap *heap_init(void *, ptrdiff_t, int flags);
 
 // Allocate zero-initialized memory, like malloc(3). Returns null if the
-// memory could not be allocated. Alignment is 1<<HEAP_MIN, or 8-byte on
-// 32-bit and 16-byte on 64-bit. This is the lowest-level allocator and
-// should generally be avoided as error-prone.
+// memory could not be allocated. Alignment is 8-byte on 32-bit and
+// 16-byte on 64-bit, or larger if an exponent was set in the flags.
+// This is the lowest-level allocator and should generally be avoided as
+// error-prone.
 static void *heap_alloc1(heap *, ptrdiff_t size);
 
 // Allocate zero-initialized memory, like calloc(3). Returns null if the
@@ -113,6 +116,7 @@ struct heap {
     void       *base;
     u32        *status;
     heap_node **free;
+    i32         min;
     i32         max;
     i32         flags;
 };
@@ -189,35 +193,41 @@ static heap *heap_init(void *buf, iz len, i32 flags)
 {
     heap_assert(len >= 0);
 
+    i32 min = flags & 0xff;
+    heap_assert(min < (i32)sizeof(iz)*8);
+    i32 minmin = 2 + ((i32)sizeof(void *)>>2);
+    min = min<minmin ? minmin : min;
+
     // Align the region if needed
-    iz pad = -(uz)buf & ((1<<HEAP_MIN) - 1);
+    iz pad = -(uz)buf & (((iz)1<<min) - 1);
     if (!buf || len<pad) return 0;  // too small
     buf  = (char *)buf + pad;
     len -= pad;
 
     // Determine the largest possible upper bound. In other words, the
     // largest "square" within the region.
-    i32 max = HEAP_MIN;
+    i32 max = min;
     for (; (iz)2<<max <= len; max++) {}
 
     // Keep shrinking the square until everything fits
-    for (; max > HEAP_MIN; max--) {
+    for (; max > min; max--) {
         heap_arena temp = {};
         temp.beg = buf;
         temp.end = temp.beg + len;
 
-        heap_node **free   = heap_bump(&temp, heap_node *, max-HEAP_MIN+1);
+        heap_node **free   = heap_bump(&temp, heap_node *, max-min+1);
         iz          total  = (iz)1<<max;
-        iz          nints  = (iz)1<<(max - HEAP_MIN + 1 - 5);
+        iz          nints  = (iz)1<<(max - min + 1 - 5);
         u32        *status = heap_bump(&temp, u32, nints);
         heap       *h      = heap_bump(&temp, heap, 1);
         if (free && status && h && total<=temp.end-temp.beg) {
             h->base   = buf;
             h->status = status;
             h->free   = free;
+            h->min    = min;
             h->max    = max;
             h->flags  = flags;
-            heap_pushblock(&h->free[h->max-HEAP_MIN], h->base);
+            heap_pushblock(&h->free[h->max-min], h->base);
             return h;
         }
     }
@@ -232,27 +242,27 @@ static void *heap_alloc1(heap *h, iz size)
     }
 
     // Determine the size class
-    i32 exp = HEAP_MIN;
+    i32 exp = h->min;
     for (; (iz)1<<exp < size; exp++) {}
 
     // Find smallest available heap_node that fits
     i32 i = exp;
-    for (; i<h->max && !h->free[i-HEAP_MIN]; i++) {}
-    if (!h->free[i-HEAP_MIN]) {
+    for (; i<h->max && !h->free[i-h->min]; i++) {}
+    if (!h->free[i-h->min]) {
         return 0;  // none available (OOM)
     }
 
     // Split until it is as small as possible
     for (; i > exp; i--) {
-        heap_node *lo = h->free[i-HEAP_MIN];
+        heap_node *lo = h->free[i-h->min];
         heap_markused(h, lo, i);  // mark parent heap_node as used
         heap_popblock(lo);
         heap_node *hi = heap_buddy(h, lo, i-1);
-        heap_pushblock(&h->free[i-1-HEAP_MIN], hi);
-        heap_pushblock(&h->free[i-1-HEAP_MIN], lo);
+        heap_pushblock(&h->free[i-1-h->min], hi);
+        heap_pushblock(&h->free[i-1-h->min], lo);
     }
 
-    heap_node *n = h->free[exp-HEAP_MIN];
+    heap_node *n = h->free[exp-h->min];
     heap_popblock(n);
     heap_markused(h, n, exp);
     return heap_memset(n, 0, (iz)1<<exp);
@@ -269,7 +279,7 @@ static void *heap_alloc3(heap *h, iz count, iz size, iz align)
         return 0;  // too large (OOM)
     }
 
-    if (align <= (iz)1<<HEAP_MIN) {
+    if (align <= (iz)1<<h->min) {
         return heap_alloc1(h, count*size);
     }
 
@@ -294,7 +304,7 @@ static _Bool heap_owned(heap *h, void *p)
 static heap_block heap_fastgetblock(heap *h, void *p)
 {
     heap_block r = {0};
-    for (i32 exp = HEAP_MIN; exp <= h->max; exp++) {
+    for (i32 exp = h->min; exp <= h->max; exp++) {
         iz mask  = ((iz)1<<exp) - 1;
         iz shift = ((uz)p - (uz)h->base) & mask;
         p = (void *)((char *)p - shift);
@@ -314,7 +324,7 @@ static heap_block heap_getblock(heap *h, void *p)
     if (!heap_owned(h, p)) return null;
 
     heap_block b = heap_fastgetblock(h, p);
-    if (b.exp == HEAP_MIN) return b;
+    if (b.exp == h->min) return b;
 
     heap_node *n = b.base;
     if (heap_isused(h, n, b.exp-1)) return null;
@@ -350,7 +360,7 @@ static void heap_free(heap *h, void *p)
         n = (uz)buddy<(uz)n ? buddy : n;
         heap_markfree(h, n, exp+1);
     }
-    heap_pushblock(&h->free[exp-HEAP_MIN], n);
+    heap_pushblock(&h->free[exp-h->min], n);
 }
 
 
@@ -367,12 +377,13 @@ void mainCRTStartup(void)
     byte  *mem = VirtualAlloc(0x10000000, cap, 0x3000, 4);
     i32    off = 9;  // test misalignment
     heap  *h   = heap_init(mem+off, cap-off, HEAP_DEBUG);
+    heap_assert(h);
 
     // Test basic alloc and free
     void *p = heap_alloc1(h, 1);
-    heap_assert(heap_getblock(h, p).size == 1<<HEAP_MIN);
+    heap_assert(heap_getblock(h, p).size == 1<<h->min);
     heap_free(h, p);
-    for (iz i = 0; i < (iz)1<<(h->max - HEAP_MIN + 1 - 5); i++) {
+    for (iz i = 0; i < (iz)1<<(h->max - h->min + 1 - 5); i++) {
         heap_assert(!h->status[i]);
     }
 
