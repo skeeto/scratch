@@ -217,7 +217,7 @@ static heap *heap_init(void *buf, iz len, i32 flags)
 
         heap_node **free   = heap_bump(&temp, heap_node *, max-min+1);
         iz          total  = (iz)1<<max;
-        iz          nints  = (iz)1<<(max - min + 1 - 5);
+        iz          nints  = max-min<4 ? 1 : (iz)1<<(max - min + 1 - 5);
         u32        *status = heap_bump(&temp, u32, nints);
         heap       *h      = heap_bump(&temp, heap, 1);
         if (free && status && h && total<=temp.end-temp.beg) {
