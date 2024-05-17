@@ -541,5 +541,42 @@ void mainCRTStartup(void)
         nodes[j] = nodes[i];
     }
 
+    // Test garbage collection
+    h = heap_init(mem, 1<<16, HEAP_DEBUG|HEAP_GC|6);
+    heap_assert(h);
+    heap_assert(h->min == 6);
+    while (heap_alloc1(h, 1)) {}
+    heap_startgc(h);
+    heap_sweep(h);
+    heap_assert(!h->status[0]);  // all freed?
+
+    // Test garbage collection on a linked list
+    typedef struct node node;
+    struct node {
+        i32  value;
+        node *next;
+    };
+    node  *head = 0;
+    node **tail = &head;
+    for (i32 i = 0;; i++) {
+        node *last = heap_new(h, 1, node);
+        if (!last) break;
+        last->value = i;
+        *tail = last;
+        tail = &last->next;
+    }
+    heap_startgc(h);
+    heap_mark(h, head);
+    heap_sweep(h);
+    heap_assert(!heap_alloc1(h, 1));
+
+    uz lostnode = (uz)head;
+    head = head->next;  // "leak" first node
+    heap_startgc(h);
+    heap_mark(h, head);
+    heap_sweep(h);  // should free first node
+    uz newnode = (uz)heap_alloc1(h, 1);
+    heap_assert(lostnode == newnode);
+
     ExitProcess(0);
 }
