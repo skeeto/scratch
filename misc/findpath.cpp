@@ -24,7 +24,7 @@ typedef   signed int       b32;
 typedef   signed int       i32;
 typedef unsigned int       u32;
 typedef unsigned long long u64;
-typedef char16_t           c16;
+typedef          char16_t  c16;
 typedef          char      byte;
 typedef decltype(0z)       iz;
 typedef decltype(0uz)      uz;
@@ -154,7 +154,7 @@ static u64 hash(s8 s)
 
 static s8 append(arena *perm, s8 head, s8 tail)
 {
-	if ((byte *)(head.data+head.len) != perm->beg){
+	if ((byte *)(head.data+head.len) != perm->beg) {
 		head = s8{head, perm};
 	}
 	head.len += s8{tail, perm}.len;
