@@ -631,19 +631,20 @@ void *gc_alloc(iz count, iz size, iz align)
     heap_startgc(globalheap);
 
     // Gather reachability roots from the current thread
-    uz   *stackbeg, *stackend;
-    void *regs[8] = {0};
-	asm volatile (
-        "mov %%gs:(0x8), %0\n"  // TIB stack base
-        "mov %%rsp,      %1\n"
-        "mov %%rbp,    0(%2)\n"
-        "mov %%rbx,    8(%2)\n"
-        "mov %%rdi,   16(%2)\n"
-        "mov %%rsi,   24(%2)\n"
-        "mov %%r12,   32(%2)\n"
-        "mov %%r13,   40(%2)\n"
-        "mov %%r14,   48(%2)\n"
-        "mov %%r15,   56(%2)\n"
+    uz   *stackend;
+    uz   *stackbeg;
+    void *regs[8];
+    asm volatile (
+        "mov %%gs:(8), %0\n"  // TIB stack base
+        "mov %%rsp,    %1\n"
+        "mov %%rbp,  0(%2)\n"
+        "mov %%rbx,  8(%2)\n"
+        "mov %%rdi, 16(%2)\n"
+        "mov %%rsi, 24(%2)\n"
+        "mov %%r12, 32(%2)\n"
+        "mov %%r13, 40(%2)\n"
+        "mov %%r14, 48(%2)\n"
+        "mov %%r15, 56(%2)\n"
         : "=&r"(stackend), "=&r"(stackbeg)
         : "r"(&regs)
         : "memory"
