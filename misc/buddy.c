@@ -83,11 +83,6 @@ static void *heap_alloc2(heap *, ptrdiff_t n, ptrdiff_t size);
 // alignment will be the same as heap_alloc1().
 static void *heap_alloc3(heap *, ptrdiff_t n, ptrdiff_t size, ptrdiff_t align);
 
-// Determine if the given address lies within the managed region. The
-// status of the pointed-at memory, freed or allocated, is irrelevant.
-// Any pointer, even null, may be passed to this function.
-static _Bool heap_owned(heap *, void *);
-
 // Retrieve information about the underlying heap block for an address
 // lying anywhere within that block. Internal pointers are allowed, but
 // not one-past-the-end pointers. Returns zero if the pointer does not
