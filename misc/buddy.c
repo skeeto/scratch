@@ -603,7 +603,7 @@ void mainCRTStartup(void)
 // GCC or Clang, but because it lacks CRT dependencies, can be linked
 // into a program compilied by any toolchain.
 
-#define GC_HEAPSIZE ((iz)1<<30)  // 1 GiB
+enum { GC_EXP = 30 };  // ~1 GiB
 
 #define W32(r) __declspec(dllimport) r __stdcall
 W32(void *) OutputDebugStringA(char *);
@@ -614,7 +614,7 @@ void *gc_alloc(iz count, iz size, iz align)
     static heap *globalheap = 0;
     if (!globalheap) {
         void *mem = 0;
-        iz    cap = GC_HEAPSIZE;
+        iz    cap = ((iz)1<<GC_EXP) + ((iz)1<<(GC_EXP-5)) + ((iz)1<<12);
         for (; cap; cap >>= 1) {
             mem = VirtualAlloc(0, cap, 0x3000, 4);
             if (mem) break;
