@@ -479,7 +479,11 @@ static void heap_sweep(heap *h)
 }
 
 
-// Test / Demo
+#if TEST && _WIN32
+// Test
+// $ cc -nostartfiles -DTEST -o buddy.exe buddy.c
+// $ cl /DTEST buddy.c /link /subsystem:console kernel32.lib
+// $ ./buddy && echo ok
 
 #define W32(r) __declspec(dllimport) r __stdcall
 W32(void)   ExitProcess(i32);
@@ -575,3 +579,90 @@ void mainCRTStartup(void)
 
     ExitProcess(0);
 }
+
+
+#elif LIBGC && _WIN32 && __amd64
+// Single-threaded garbage collector for x64 Windows
+//
+// Dynamic library (gc.dll, gcc.dll.a):
+//   $ printf 'LIBRARY gc.dll\nEXPORTS\ngc_alloc\n' >gc.def
+//   $ cc -nostartfiles -shared -fno-builtin -DLIBGC -O2
+//        -s --entry 0 -Wl,--out-implib=gc.dll.a -o gc.lib buddy.c gc.def
+//
+// Static library (gc.a):
+//   $ cc -nostartfiles -c -fno-builtin -DLIBGC -O2 -o gc.o buddy.c
+//   $ ar r gc.a gc.o
+//
+// Header (gc.h):
+//   #pragma once
+//   #define new(n, t)  (t *)gc_alloc(n, sizeof(t), _Alignof(t))
+//   void *gc_alloc(long long, long long, long long);
+//
+// Global variables are not scanned, so live objects must always be
+// reachable from local variables. This library must be compiled with
+// GCC or Clang, but because it lacks CRT dependencies, can be linked
+// into a program compilied by any toolchain.
+
+#define GC_HEAPSIZE ((iz)1<<30)  // 1 GiB
+
+#define W32(r) __declspec(dllimport) r __stdcall
+W32(void *) OutputDebugStringA(char *);
+W32(void *) VirtualAlloc(uz, iz, i32, i32);
+
+void *gc_alloc(iz count, iz size, iz align)
+{
+    static heap *globalheap = 0;
+    if (!globalheap) {
+        void *mem = 0;
+        iz    cap = GC_HEAPSIZE;
+        for (; cap; cap >>= 1) {
+            mem = VirtualAlloc(0, cap, 0x3000, 4);
+            if (mem) break;
+        }
+        if (!mem) return 0;
+        globalheap = heap_init(mem, cap, HEAP_GC);
+        if (!globalheap) return 0;
+    }
+
+    void *r = heap_alloc3(globalheap, count, size, align);
+    if (r) return r;
+
+    OutputDebugStringA("gc_alloc: running garbage collection\n");
+    heap_startgc(globalheap);
+
+    // Gather reachability roots from the current thread
+    uz   *stackbeg, *stackend;
+    void *regs[8] = {0};
+	asm volatile (
+        "mov %%gs:(0x8), %0\n"  // TIB stack base
+        "mov %%rsp,      %1\n"
+        "mov %%rbp,    0(%2)\n"
+        "mov %%rbx,    8(%2)\n"
+        "mov %%rdi,   16(%2)\n"
+        "mov %%rsi,   24(%2)\n"
+        "mov %%r12,   32(%2)\n"
+        "mov %%r13,   40(%2)\n"
+        "mov %%r14,   48(%2)\n"
+        "mov %%r15,   56(%2)\n"
+        : "=&r"(stackend), "=&r"(stackbeg)
+        : "r"(&regs)
+        : "memory"
+    );
+
+    // Treat volatile registers as roots
+    for (i32 i = 0; i < (i32)(sizeof(regs)/sizeof(*regs)); i++) {
+        heap_mark(globalheap, regs[i]);
+    }
+
+    // Scan the stack for pointers
+    for (; stackbeg < stackend; stackbeg++) {
+        uz copy;
+        __builtin_memcpy(&copy, stackbeg, sizeof(copy));
+        heap_mark(globalheap, (void *)copy);
+    }
+    heap_sweep(globalheap);
+
+    // Try again
+    return heap_alloc3(globalheap, count, size, align);
+}
+#endif
