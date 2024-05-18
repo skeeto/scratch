@@ -488,8 +488,8 @@ static iz heap_sweep(heap *h)
 }
 
 
-#if LIBGC && _WIN32 && __amd64
-// Single-threaded garbage collector for x64 Windows
+#if LIBGC && _WIN32
+// Single-threaded garbage collector for Windows
 //
 // Dynamic library (gc.dll, gcc.dll.a):
 //   $ printf 'LIBRARY gc.dll\nEXPORTS\ngc_alloc\n' >gc.def
@@ -517,7 +517,7 @@ static iz heap_sweep(heap *h)
 
 #define W32(r) __declspec(dllimport) r __stdcall
 W32(void *) OutputDebugStringA(char *);
-W32(i32)    QueryPerformanceCounter(u64 *);
+W32(i32)    QueryPerformanceCounter(i64 *);
 W32(i32)    QueryPerformanceFrequency(i64 *);
 W32(void *) VirtualAlloc(uz, iz, i32, i32);
 
@@ -544,6 +544,51 @@ static void gc_printz(chars *b, iz x)
     gc_prints(b, p, (i32)(buf+32-p));
 }
 
+#if _WIN64
+typedef struct {
+    uz *stacklo;
+    uz *stackhi;
+    uz *regs[8];
+} gc_roots;
+#define GC_ROOTS(p, tmp)        \
+    asm volatile (              \
+        "mov %%rsp,    0(%1)\n" \
+        "mov %%gs:(8),   %0\n"  \
+        "mov %0,       8(%1)\n" \
+        "mov %%rbp,   16(%1)\n" \
+        "mov %%rbx,   24(%1)\n" \
+        "mov %%rdi,   32(%1)\n" \
+        "mov %%rsi,   40(%1)\n" \
+        "mov %%r12,   48(%1)\n" \
+        "mov %%r13,   56(%1)\n" \
+        "mov %%r14,   64(%1)\n" \
+        "mov %%r15,   72(%1)\n" \
+        : "=&r"(tmp)            \
+        : "r"(p)                \
+        : "memory"              \
+    )
+
+#else  // 32-bit
+typedef struct {
+    uz *stacklo;
+    uz *stackhi;
+    uz *regs[4];
+} gc_roots;
+#define GC_ROOTS(p, tmp)        \
+    asm volatile (              \
+        "mov %%esp,    0(%1)\n" \
+        "mov %%fs:(4),   %0\n"  \
+        "mov %0,       4(%1)\n" \
+        "mov %%ebx,    8(%1)\n" \
+        "mov %%ebp,   12(%1)\n" \
+        "mov %%esi,   16(%1)\n" \
+        "mov %%edi,   20(%1)\n" \
+        : "=&r"(tmp)            \
+        : "r"(p)                \
+        : "memory"              \
+    )
+#endif
+
 void *gc_alloc(iz count, iz size, iz align)
 {
     static heap *globalheap = 0;
@@ -562,42 +607,28 @@ void *gc_alloc(iz count, iz size, iz align)
     void *r = heap_alloc3(globalheap, count, size, align);
     if (r) return r;
 
-    u64 start;
+    i64 start;
     QueryPerformanceCounter(&start);
     heap_startgc(globalheap);
 
     // Gather reachability roots from the current thread
-    uz   *stackend;
-    uz   *stackbeg;
-    void *regs[8];
-    asm volatile (
-        "mov %%gs:(8), %0\n"  // TIB stack base
-        "mov %%rsp,    %1\n"
-        "mov %%rbp,  0(%2)\n"
-        "mov %%rbx,  8(%2)\n"
-        "mov %%rdi, 16(%2)\n"
-        "mov %%rsi, 24(%2)\n"
-        "mov %%r12, 32(%2)\n"
-        "mov %%r13, 40(%2)\n"
-        "mov %%r14, 48(%2)\n"
-        "mov %%r15, 56(%2)\n"
-        : "=&r"(stackend), "=&r"(stackbeg)
-        : "r"(&regs)
-        : "memory"
-    );
+    gc_roots roots;
+    register uz tmp;
+    GC_ROOTS(&roots, tmp);
 
     // Treat volatile registers as roots
-    for (i32 i = 0; i < (i32)(sizeof(regs)/sizeof(*regs)); i++) {
-        heap_mark(globalheap, regs[i]);
+    i32 nregs = sizeof(roots.regs)/sizeof(*roots.regs);
+    for (i32 i = 0; i < nregs; i++) {
+        heap_mark(globalheap, roots.regs[i]);
     }
 
     // Scan the stack for pointers
-    for (; stackbeg < stackend; stackbeg++) {
-        heap_mark(globalheap, (void *)*stackbeg);
+    for (uz *p = roots.stacklo; p < roots.stackhi; p++) {
+        heap_mark(globalheap, (void *)*p);
     }
-    iz freed = heap_sweep(globalheap);
 
-    u64 stop;
+    i64 stop;
+    iz freed = heap_sweep(globalheap);
     QueryPerformanceCounter(&stop);
 
     static i64 frequency = 0;
@@ -609,7 +640,7 @@ void *gc_alloc(iz count, iz size, iz align)
     gc_prints(&msg, "gc_alloc: freed ", 16);
     gc_printz(&msg, freed);
     gc_prints(&msg, " bytes in ", 10);
-    gc_printz(&msg, (iz)((i64)(1000000*(stop-start))/frequency));
+    gc_printz(&msg, 1e6f*(stop-start)/(float)(i32)frequency);
     gc_prints(&msg, " us\n", 4);
     OutputDebugStringA(msg.buf);
 
