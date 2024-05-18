@@ -95,7 +95,8 @@ static heap_block heap_getblock(heap *, void *);
 // Release an allocation. The pointer may point anywhere within the
 // allocation. Internal pointers are allowed, barring HEAP_STRICT, but
 // not one-past-the-end pointers, which likely point into another block.
-static void heap_free(heap *, void *);
+// Returns the real allocation size that was freed.
+static ptrdiff_t heap_free(heap *, void *);
 
 // Zero all reachability marks in preparation for garbage collection.
 static void heap_startgc(heap *);
@@ -107,7 +108,8 @@ static void heap_startgc(heap *);
 static void heap_mark(heap *, void *);
 
 // Free objects that have not been marked. Completes garbage collection.
-static void heap_sweep(heap *);
+// Returns the total number of bytes freed.
+static ptrdiff_t heap_sweep(heap *);
 
 
 // Implementation
@@ -117,6 +119,8 @@ static void heap_sweep(heap *);
 
 typedef   signed int       i32;
 typedef unsigned int       u32;
+typedef   signed long long i64;
+typedef unsigned long long u64;
 typedef          ptrdiff_t iz;
 typedef          size_t    uz;
 typedef          char      byte;
@@ -365,7 +369,7 @@ static heap_block heap_getblock(heap *h, void *p)
     return b;
 }
 
-static void heap_free(heap *h, void *p)
+static iz heap_free(heap *h, void *p)
 {
     heap_block b = {0};
     if (h->flags & HEAP_DEBUG) {
@@ -392,6 +396,7 @@ static void heap_free(heap *h, void *p)
         heap_markfree(h, n, exp+1);
     }
     heap_pushblock(&h->free[exp-h->min], n);
+    return b.size;
 }
 
 static iz heap_getmark(heap *h, void *p)
@@ -443,8 +448,9 @@ static void heap_mark(heap *h, void *p)
     }
 }
 
-static void heap_sweep_recursive(heap *h, void *p, i32 exp)
+static iz heap_sweep_recursive(heap *h, void *p, i32 exp)
 {
+    iz  total     = 0;
     u32 leftused  = 0;
     u32 rightused = 0;
 
@@ -452,30 +458,33 @@ static void heap_sweep_recursive(heap *h, void *p, i32 exp)
         void *left = p;
         leftused = heap_isused(h, left, exp-1);
         if (leftused) {
-            heap_sweep_recursive(h, left, exp-1);
+            total += heap_sweep_recursive(h, left, exp-1);
         }
 
         void *right = heap_buddy(h, left, exp-1);
         rightused = heap_isused(h, right, exp-1);
         if (rightused) {
-            heap_sweep_recursive(h, right, exp-1);
+            total += heap_sweep_recursive(h, right, exp-1);
         }
     }
 
     if (!leftused && !rightused && !heap_isreachable(h, p)) {
         heap_assert(heap_isused(h, p, exp));
-        heap_free(h, p);
+        total += heap_free(h, p);
     }
+
+    return total;
 }
 
-static void heap_sweep(heap *h)
+static iz heap_sweep(heap *h)
 {
     // NOTE: Recursion depth is bounded to (max - min + 1), controlled
     // through the exp parameter decreasing at each level.
     heap_assert(h->marks);
     if (*h->status) {
-        heap_sweep_recursive(h, h->base, h->max);
+        return heap_sweep_recursive(h, h->base, h->max);
     }
+    return 0;
 }
 
 
@@ -493,8 +502,9 @@ static void heap_sweep(heap *h)
 //
 // Header (gc.h):
 //   #pragma once
+//   #include <stddef.h>
 //   #define new(n, t)  (t *)gc_alloc(n, sizeof(t), _Alignof(t))
-//   void *gc_alloc(long long, long long, long long);
+//   void *gc_alloc(ptrdiff_t count, ptrdiff_t size, ptrdiff_t align);
 //
 // Global variables are not scanned, so live objects must always be
 // reachable from local variables. This library must be compiled with
@@ -507,7 +517,32 @@ static void heap_sweep(heap *h)
 
 #define W32(r) __declspec(dllimport) r __stdcall
 W32(void *) OutputDebugStringA(char *);
+W32(i32)    QueryPerformanceCounter(u64 *);
+W32(i32)    QueryPerformanceFrequency(i64 *);
 W32(void *) VirtualAlloc(uz, iz, i32, i32);
+
+typedef struct {
+    char *buf;
+    i32   len;
+    i32   cap;
+} chars;
+
+static void gc_prints(chars *b, char *buf, i32 len)
+{
+    i32 avail = b->cap - b->len;
+    i32 count = avail<len ? avail : len;
+    __builtin_memcpy(b->buf+b->len, buf, count);
+    b->len += count;
+}
+
+static void gc_printz(chars *b, iz x)
+{
+    char  buf[32];
+    char *p = buf + 32;
+    do *--p = (char)(x%10) + '0';
+    while (x /= 10);
+    gc_prints(b, p, (i32)(buf+32-p));
+}
 
 void *gc_alloc(iz count, iz size, iz align)
 {
@@ -527,7 +562,8 @@ void *gc_alloc(iz count, iz size, iz align)
     void *r = heap_alloc3(globalheap, count, size, align);
     if (r) return r;
 
-    OutputDebugStringA("gc_alloc: running garbage collection\n");
+    u64 start;
+    QueryPerformanceCounter(&start);
     heap_startgc(globalheap);
 
     // Gather reachability roots from the current thread
@@ -559,7 +595,23 @@ void *gc_alloc(iz count, iz size, iz align)
     for (; stackbeg < stackend; stackbeg++) {
         heap_mark(globalheap, (void *)*stackbeg);
     }
-    heap_sweep(globalheap);
+    iz freed = heap_sweep(globalheap);
+
+    u64 stop;
+    QueryPerformanceCounter(&stop);
+
+    static i64 frequency = 0;
+    if (!frequency) QueryPerformanceFrequency(&frequency);
+
+    chars msg = {0};
+    msg.buf = (char[64]){0};
+    msg.cap = 63;
+    gc_prints(&msg, "gc_alloc: freed ", 16);
+    gc_printz(&msg, freed);
+    gc_prints(&msg, " bytes in ", 10);
+    gc_printz(&msg, (iz)((i64)(1000000*(stop-start))/frequency));
+    gc_prints(&msg, " us\n", 4);
+    OutputDebugStringA(msg.buf);
 
     // Try again
     return heap_alloc3(globalheap, count, size, align);
@@ -618,7 +670,7 @@ void mainCRTStartup(void)
     heap_assert(!heap_alloc2(h, 1, 1));
 
     // Test freeing in a random order
-    unsigned long long rng = 1;
+    u64 rng = 1;
     for (iz i = nnodes-1; i > 0; i--) {
         rng = rng*0x3243f6a8885a308d + 1;
         iz j = (iz)(((rng>>32)*(i+1))>>32);
