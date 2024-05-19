@@ -370,6 +370,22 @@ static heap_block heap_getblock(heap *h, void *p)
     return b;
 }
 
+static iz heap_blockfree(heap *h, heap_block b)
+{
+    heap_node *n   = b.base;
+    i32        exp = b.exp;
+    heap_markfree(h, n, exp);
+    for (; exp < h->max; exp++) {
+        heap_node *buddy = heap_buddy(h, n, exp);
+        if (heap_isused(h, buddy, exp)) break;
+        heap_popblock(buddy);
+        n = (uz)buddy<(uz)n ? buddy : n;
+        heap_markfree(h, n, exp+1);
+    }
+    heap_pushblock(&h->free[exp-h->min], n);
+    return b.size;
+}
+
 static iz heap_free(heap *h, void *p)
 {
     heap_block b = {0};
@@ -386,18 +402,7 @@ static iz heap_free(heap *h, void *p)
         heap_assert(p == b.base);
     }
 
-    heap_node *n   = b.base;
-    i32        exp = b.exp;
-    heap_markfree(h, n, exp);
-    for (; exp < h->max; exp++) {
-        heap_node *buddy = heap_buddy(h, n, exp);
-        if (heap_isused(h, buddy, exp)) break;
-        heap_popblock(buddy);
-        n = (uz)buddy<(uz)n ? buddy : n;
-        heap_markfree(h, n, exp+1);
-    }
-    heap_pushblock(&h->free[exp-h->min], n);
-    return b.size;
+    return heap_blockfree(h, b);
 }
 
 static iz heap_getmark(heap *h, void *p)
@@ -470,7 +475,11 @@ static iz heap_sweep_recursive(heap *h, void *p, i32 exp)
     }
 
     if (!leftused && !rightused && !heap_isreachable(h, p)) {
-        total += heap_free(h, p);
+        heap_block b = {0};
+        b.base = p;
+        b.size = (iz)1<<exp;
+        b.exp  = exp;
+        total += heap_blockfree(h, b);
     }
 
     return total;
