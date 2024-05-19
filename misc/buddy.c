@@ -54,7 +54,7 @@ typedef struct {
 // * The minimum allocation/alignment exponent
 //     Rounds up to 3 (8-byte) on 32-bit and 4 (16-byte) on 64-bit.
 //
-//  Returns null if the region is too small.
+// Returns null if the region is too small.
 //
 // Slightly more than 1/64th of the region is used for bookkeeping, and
 // the most efficiently-used regions will be about that much larger than
@@ -117,6 +117,7 @@ static ptrdiff_t heap_sweep(heap *);
 #define heap_assert(c)      while (!(c)) *(volatile int *)0 = 0
 #define heap_bump(a, t, n)  (t *)heap_bumpalloc(a, sizeof(t), n)
 
+typedef   signed int       b32;
 typedef   signed int       i32;
 typedef unsigned int       u32;
 typedef   signed long long i64;
@@ -328,7 +329,7 @@ static void *heap_alloc2(heap *h, iz count, iz size)
     return heap_alloc3(h, count, size, 1);
 }
 
-static _Bool heap_owned(heap *h, void *p)
+static b32 heap_owned(heap *h, void *p)
 {
     uz beg = (uz)h->base;
     uz end = (uz)h->base + ((iz)1<<h->max);
@@ -469,7 +470,6 @@ static iz heap_sweep_recursive(heap *h, void *p, i32 exp)
     }
 
     if (!leftused && !rightused && !heap_isreachable(h, p)) {
-        heap_assert(heap_isused(h, p, exp));
         total += heap_free(h, p);
     }
 
@@ -491,7 +491,7 @@ static iz heap_sweep(heap *h)
 #if LIBGC && _WIN32
 // Single-threaded garbage collector for Windows
 //
-// Dynamic library (gc.dll, gcc.dll.a):
+// Dynamic library (gc.dll, gc.dll.a):
 //   $ printf 'LIBRARY gc.dll\nEXPORTS\ngc_alloc\n' >gc.def
 //   $ cc -nostartfiles -shared -fno-builtin -DLIBGC -O2
 //        -s --entry 0 -Wl,--out-implib=gc.dll.a -o gc.lib buddy.c gc.def
@@ -600,7 +600,7 @@ void *gc_alloc(iz count, iz size, iz align)
             if (mem) break;
         }
         if (!mem) return 0;
-        globalheap = heap_init(mem, cap, HEAP_GC);
+        globalheap = heap_init(mem, cap, HEAP_GC|4);
         if (!globalheap) return 0;
     }
 
@@ -640,7 +640,7 @@ void *gc_alloc(iz count, iz size, iz align)
     gc_prints(&msg, "gc_alloc: freed ", 16);
     gc_printz(&msg, freed);
     gc_prints(&msg, " bytes in ", 10);
-    gc_printz(&msg, 1e6f*(stop-start)/(float)(i32)frequency);
+    gc_printz(&msg, (iz)(1e6f*(float)(stop-start)/(float)(i32)frequency));
     gc_prints(&msg, " us\n", 4);
     OutputDebugStringA(msg.buf);
 
