@@ -437,8 +437,8 @@ static void heap_mark(heap *h, void *p)
     heap_assert(h->marks);
 
     heap_block b = heap_getblock(h, p);
-    if (!b.base || heap_isreachable(h, p)) return;
-    heap_markreachable(h, p);
+    if (!b.base || heap_isreachable(h, b.base)) return;
+    heap_markreachable(h, b.base);
 
     uz *beg = b.base;
     uz *end = beg + b.size/sizeof(*beg);
