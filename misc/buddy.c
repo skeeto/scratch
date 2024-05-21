@@ -105,7 +105,14 @@ static void heap_startgc(heap *);
 // through internal pointers. Any pointer is permitted, and if it does
 // not point into a live object then it is ignored. Use this to share
 // the reachability roots to the garbage collector.
-static void heap_mark(heap *, void *);
+//
+// The queue is a workspace buffer of length (iz)1<<(max-min).
+static void heap_mark(heap *, void *, void **queue);
+
+// Like heap_mark(), but recurses through the reachability graph instead
+// of using a temporary workspace. Only use if your data structures are
+// guaranteed to be shallowly nested!
+static void heap_mark_recursive(heap *, void *);
 
 // Free objects that have not been marked. Completes garbage collection.
 // Returns the total number of bytes freed.
@@ -432,7 +439,40 @@ static void heap_startgc(heap *h)
     }
 }
 
-static void heap_mark(heap *h, void *p)
+static b32 heap_shouldqueue(heap *h, void *p)
+{
+    heap_block b = heap_getblock(h, p);
+    if (b.base && !heap_isreachable(h, b.base)) {
+        heap_markreachable(h, b.base);
+        return 1;
+    }
+    return 0;
+}
+
+static void heap_mark(heap *h, void *p, void **queue)
+{
+    iz head = 0;
+    iz tail = 0;
+    if (heap_shouldqueue(h, p)) {
+        queue[head++] = p;
+    }
+    while (head != tail) {
+        void *next = queue[tail++];
+        heap_block b = heap_getblock(h, next);
+        void **beg = b.base;
+        void **end = beg + b.size/sizeof(*beg);
+        for (; beg < end; beg++) {
+            // NOTE: Bypassing strict aliasing via memcpy()
+            void *copy;
+            heap_memcpy(&copy, beg, sizeof(copy));
+            if (heap_shouldqueue(h, copy)) {
+                queue[head++] = copy;
+            }
+        }
+    }
+}
+
+static void heap_markrecursive(heap *h, void *p)
 {
     heap_assert(h->marks);
 
@@ -440,17 +480,13 @@ static void heap_mark(heap *h, void *p)
     if (!b.base || heap_isreachable(h, b.base)) return;
     heap_markreachable(h, b.base);
 
-    uz *beg = b.base;
-    uz *end = beg + b.size/sizeof(*beg);
+    void **beg = b.base;
+    void **end = beg + b.size/sizeof(*beg);
     for (; beg < end; beg++) {
         // NOTE: Bypassing strict aliasing via memcpy()
-        uz copy;
+        void *copy;
         heap_memcpy(&copy, beg, sizeof(copy));
-        // FIXME: Unchecked recursion into arbitrary data! This is very
-        // tricky to solve, especially with internal pointers. Research
-        // is needed. Infinite loops are not a problem because the marks
-        // track visited objects.
-        heap_mark(h, (void *)copy);
+        heap_markrecursive(h, copy);
     }
 }
 
@@ -521,10 +557,12 @@ static iz heap_sweep(heap *h)
 // into a program compilied by any toolchain.
 
 #ifndef GC_EXP
-#  define GC_EXP 30  // ~1 GiB
+#  define GC_EXP 28  // 256 MiB
 #endif
 
 #define W32(r) __declspec(dllimport) r __stdcall
+W32(uz)     LoadLibraryA(char *);
+W32(void *) GetProcAddress(uz, char *);
 W32(void *) OutputDebugStringA(char *);
 W32(i32)    QueryPerformanceCounter(i64 *);
 W32(i32)    QueryPerformanceFrequency(i64 *);
@@ -553,7 +591,7 @@ static void gc_printz(chars *b, iz x)
     gc_prints(b, p, (i32)(buf+32-p));
 }
 
-#if _WIN64
+#if __amd64
 typedef struct {
     uz *stacklo;
     uz *stackhi;
@@ -577,7 +615,7 @@ typedef struct {
         : "memory"              \
     )
 
-#else  // 32-bit
+#elif __i386
 typedef struct {
     uz *stacklo;
     uz *stackhi;
@@ -601,16 +639,35 @@ typedef struct {
 void *gc_alloc(iz count, iz size, iz align)
 {
     static heap *globalheap = 0;
-    if (!globalheap) {
-        void *mem = 0;
+    static void *markbuffer = 0;
+    static iz    markbuflen = 0;
+    static i32 (*discardfun)(void *, iz) = 0;
+    static enum {UNINIT, FAIL, SUCCESS} init;
+    switch (init) {
+    case UNINIT:;
         iz    cap = ((iz)1<<GC_EXP) + ((iz)1<<(GC_EXP-5)) + ((iz)1<<12);
-        for (; cap; cap >>= 1) {
-            mem = VirtualAlloc(0, cap, 0x3000, 4);
-            if (mem) break;
+        void *mem = VirtualAlloc(0, cap, 0x3000, 4);
+        globalheap = mem ? heap_init(mem, cap, HEAP_GC|4) : 0;
+        if (!globalheap) {
+            init = FAIL;
+            return 0;
         }
-        if (!mem) return 0;
-        globalheap = heap_init(mem, cap, HEAP_GC|4);
-        if (!globalheap) return 0;
+
+        markbuflen = sizeof(void *)<<(globalheap->max - globalheap->min);
+        markbuffer = VirtualAlloc(0, markbuflen, 0x3000, 4);
+        if (!markbuffer) {
+            init = FAIL;
+            return 0;
+        }
+
+        uz dll = LoadLibraryA("kernel32.dll");
+        discardfun = dll ? GetProcAddress(dll, "DiscardVirtualMemory") : 0;
+        init = SUCCESS;
+        break;
+    case FAIL:
+        return 0;
+    case SUCCESS:
+        break;
     }
 
     void *r = heap_alloc3(globalheap, count, size, align);
@@ -628,12 +685,12 @@ void *gc_alloc(iz count, iz size, iz align)
     // Treat volatile registers as roots
     i32 nregs = sizeof(roots.regs)/sizeof(*roots.regs);
     for (i32 i = 0; i < nregs; i++) {
-        heap_mark(globalheap, roots.regs[i]);
+        heap_mark(globalheap, roots.regs[i], markbuffer);
     }
 
     // Scan the stack for pointers
     for (uz *p = roots.stacklo; p < roots.stackhi; p++) {
-        heap_mark(globalheap, (void *)*p);
+        heap_mark(globalheap, (void *)*p, markbuffer);
     }
 
     i64 stop;
@@ -652,6 +709,8 @@ void *gc_alloc(iz count, iz size, iz align)
     gc_printz(&msg, (iz)(1e6f*(float)(stop-start)/(float)(i32)frequency));
     gc_prints(&msg, " us\n", 4);
     OutputDebugStringA(msg.buf);
+
+    if (discardfun) discardfun(markbuffer, markbuflen);
 
     // Try again
     return heap_alloc3(globalheap, count, size, align);
@@ -744,14 +803,14 @@ void mainCRTStartup(void)
         tail = &last->next;
     }
     heap_startgc(h);
-    heap_mark(h, head);
+    heap_markrecursive(h, head);
     heap_sweep(h);
     heap_assert(!heap_alloc1(h, 1));
 
     uz lostnode = (uz)head;
     head = head->next;  // "leak" first node
     heap_startgc(h);
-    heap_mark(h, head);
+    heap_markrecursive(h, head);
     heap_sweep(h);  // should free first node
     uz newnode = (uz)heap_alloc1(h, 1);
     heap_assert(lostnode == newnode);
