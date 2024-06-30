@@ -177,7 +177,7 @@ static struct qoidecoder qoidecoder(const void *buf, int len)
     q.last   = -1;
     q.error  = 0;
     q.alpha  = p[12]==4;
-    q.srgb   = p[13]==1;
+    q.srgb   = p[13]==0;
     q.c      = 0xff000000;
     return q;
 }
