@@ -43,7 +43,7 @@ static struct qoidecoder qoidecoder(const void *buf, int len)
     q.last   = -1;
     q.error  = 0;
     q.alpha  = p[12]==4;
-    q.srgb   = p[13]==1;
+    q.srgb   = p[13]==0;
     q.c      = 0xff000000;
     return q;
 }
@@ -133,11 +133,11 @@ static struct qoiencoder qoiencoder(void *buf, int w, int h, const char *flags)
     p[ 4] = w>>24; p[ 5] = w>>16; p[ 6] = w>>8; p[ 7] = w>>0;
     p[ 8] = h>>24; p[ 9] = h>>16; p[10] = h>>8; p[11] = h>>0;
     p[12] = 3;  // channels
-    p[13] = 0;  // srgb
+    p[13] = 1;  // srgb (0==sRGB, 1==linear)
     for (flags = flags?flags:"";; flags++) {
         switch (*flags) {
         case 'a': p[12] = 4; break;
-        case 's': p[13] = 1; break;
+        case 's': p[13] = 0; break;
         case  0 : return q;
         }
     }
