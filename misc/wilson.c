@@ -291,7 +291,7 @@ int main(void)
 
     maze   m = wilson((v2){WIDTH, HEIGHT}, SEED, dumpframe, &scratch);
     image im = render(m, SCALE, 0, &scratch);
-    for (int i = 0; i < 3*30; i++) {
+    for (int i = 0; i < 3*60; i++) {
         fwrite(im.data, 1, im.len, stdout);
     }
 
