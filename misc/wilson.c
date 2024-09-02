@@ -69,14 +69,10 @@ static void connect(maze m, v2 s, int dir)
 {
     v2 d = apply(s, dir, 1);
     switch (dir) {
-    case 0: get(m, s)->east  = 1;
-            break;
-    case 1: get(m, s)->south = 1;
-            break;
-    case 2: get(m, d)->east  = 1;
-            break;
-    case 3: get(m, d)->south = 1;
-            break;
+    case 0: get(m, s)->east  = 1; break;
+    case 1: get(m, s)->south = 1; break;
+    case 2: get(m, d)->east  = 1; break;
+    case 3: get(m, d)->south = 1; break;
     }
 }
 
@@ -101,7 +97,7 @@ enum {
     FLAG_active = 1<<1,
 };
 
-static image render(maze m, int8_t scale, int32_t flags, arena *perm)
+static image render(maze m, int16_t scale, int32_t flags, arena *perm)
 {
     enum { header_len = 3 + 11 + 11 + 4, };
     image im  = {0};
@@ -136,32 +132,33 @@ static image render(maze m, int8_t scale, int32_t flags, arena *perm)
     for (int16_t y = 0; y < m.height; y++) {
         for (int16_t x = 0; x < m.width; x++) {
             cell c = *get(m, newv2(x, y));
+            v2 corner = newv2(x*scale, y*scale);
 
             uint32_t color = c.mark ? 0xffffff :
                 c.select ? 0xffff00 :
                 c.active ? 0x7fff7f : 0xafafaf;
-            for (int cy = 0; cy < scale; cy++) {
-                for (int cx = 0; cx < scale; cx++) {
-                    put(im, newv2(x*scale+cx, y*scale+cy), color);
+            for (int16_t cy = 0; cy < scale; cy++) {
+                for (int16_t cx = 0; cx < scale; cx++) {
+                    put(im, newv2(corner.x+cx, corner.y+cy), color);
                 }
             }
-            put(im, newv2(x*scale+scale-1, y*scale+scale-1), 0);
+            put(im, newv2(corner.x+scale-1, corner.y+scale-1), 0);
 
             if (!c.east) {
-                for (int cy = 0; cy < scale; cy++) {
-                    put(im, newv2(x*scale+scale-1, y*scale+cy), 0);
+                for (int16_t cy = 0; cy < scale; cy++) {
+                    put(im, newv2(corner.x+scale-1, corner.y+cy), 0);
                 }
             }
 
             if (!c.south) {
-                for (int cx = 0; cx < scale; cx++) {
-                    put(im, newv2(x*scale+cx, y*scale+scale-1), 0);
+                for (int16_t cx = 0; cx < scale; cx++) {
+                    put(im, newv2(corner.x+cx, corner.y+scale-1), 0);
                 }
             }
 
             if (flags & FLAG_dir) {
-                v2 center = newv2(x*scale+scale/2, y*scale+scale/2);
-                for (int8_t d = 0; d < scale/2; d++) {
+                v2 center = newv2(corner.x+scale/2, corner.y+scale/2);
+                for (int16_t d = 0; d < scale/2; d++) {
                     v2 p = apply(center, c.dir, d);
                     put(im, p, 0x0000ff);
                 }
@@ -235,10 +232,7 @@ static maze wilson(v2 dims, uint64_t seed, void (cb)(maze, arena), arena *perm)
             }
 
             int dir = rand32(&seed)>>30;
-            v2 target = newv2(
-                p.x + dirs[dir].x,
-                p.y + dirs[dir].y
-            );
+            v2 target = apply(p, dir, 1);
             if (valid(m, target)) {
                 get(m, p)->dir = dir & 3u;
                 p = target;
@@ -268,9 +262,17 @@ static maze wilson(v2 dims, uint64_t seed, void (cb)(maze, arena), arena *perm)
 
 #include <stdio.h>
 
+// NOTE: w=12, h=10, seed=1234567, scale=25 is a clean, quick demo.
+enum {
+    WIDTH  = 50,
+    HEIGHT = 40,
+    SCALE  = 15,  // should be odd
+    SEED   = 1234567,
+};
+
 static void dumpframe(maze m, arena scratch)
 {
-    image im = render(m, 15, FLAG_dir|FLAG_active, &scratch);
+    image im = render(m, SCALE, FLAG_dir|FLAG_active, &scratch);
     if (!fwrite(im.data, 1, im.len, stdout)) {
         exit(1);
     }
@@ -287,9 +289,9 @@ int main(void)
     char *mem     = malloc(cap);
     arena scratch = {mem, mem+cap};
 
-    maze   m = wilson((v2){50, 40}, -1234, dumpframe, &scratch);
-    image im = render(m, 15, 0, &scratch);
-    for (int i = 0; i < 3*60; i++) {
+    maze   m = wilson((v2){WIDTH, HEIGHT}, SEED, dumpframe, &scratch);
+    image im = render(m, SCALE, 0, &scratch);
+    for (int i = 0; i < 3*30; i++) {
         fwrite(im.data, 1, im.len, stdout);
     }
 
