@@ -1,0 +1,4 @@
+LIBRARY regex
+EXPORTS
+regex_new
+regex_match
