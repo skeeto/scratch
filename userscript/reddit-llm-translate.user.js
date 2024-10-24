@@ -51,6 +51,7 @@ async function translate(tag, lang = "English") {
   let response = await fetch(url, {
     method: "POST",
     body: JSON.stringify({
+      max_tokens: 4096,
       messages: [{
         role: "system",
         content:
