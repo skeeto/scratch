@@ -15,7 +15,12 @@
 //
 // Longer comments take more time. Typical comments take a couple of
 // seconds depending on your local hardware. The LLM auto-detects the
-// source language and can handle pages with a mixture of languages.
+// source language and can handle pages with a mixture of languages. A
+// real-world universal translator! Double-edged sword: Because LLMs are
+// so clever, it may refuse to translate a comment when it disapproves
+// of its content. Only few years ago, a machine translator refusing to
+// operate on moral grounds was just a hamfisted sci-fi metaphor, but
+// we're now living in that future.
 //
 // LLM and server instructions (any operating system):
 // 1. Install a C++ compiler (w64devkit, etc.)
@@ -29,6 +34,7 @@
 // your LLM, http://localhost:8080/, and kindly ask it to translate your
 // comment into the target language. If you don't know what the local
 // language is called, give the LLM a sample and request identification.
+// Don't overthink it. Talk to the LLM as you would a human assistant.
 //
 // Advanced option: gemma-2-9b-it produces slightly better translations
 // but is slower and consumes more resources. Even more important when
