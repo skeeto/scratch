@@ -71,7 +71,7 @@ async function translate(tag, lang = "English") {
 }
 
 async function translateAll() {
-  let elements = document.querySelectorAll(".usertext-body .md")
+  let elements = document.querySelectorAll(".usertext-body .md, a.title")
   for (let i = 1; i < elements.length; i++) {
     await translate(elements[i])
   }
