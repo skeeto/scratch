@@ -28,7 +28,7 @@
 // 3. $ make -j$(nproc)
 // 4. Open https://huggingface.co/bartowski/gemma-2-2b-it-GGUF
 // 5. Download gemma-2-2b-it-Q4_K_M.gguf
-// 6. $ ./llama-server -m gemma-2-2b-it-Q4_K_M.gguf
+// 6. $ ./llama-server -c 0 -m gemma-2-2b-it-Q4_K_M.gguf
 //
 // To reply in the foreign language, visit the local web interface to
 // your LLM, http://localhost:8080/, and kindly ask it to translate your
