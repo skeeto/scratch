@@ -1,6 +1,5 @@
 enum { HEAPCAP = 1<<21 };
 #include "common.cpp"
-extern "C" int wprintf(char16_t const *, ...);
 
 static s8 mapfile(c16 *path)
 {
