@@ -149,14 +149,14 @@ static i64 rdtscp()
     return (i64)hi<<32 | lo;
 }
 
-static u32 rand64(u64 *rng)
+static u32 rand32(u64 *rng)
 {
     *rng = *rng*0x3243f6a8885a308d + 1;
     return u32(*rng>>32);
 }
 
 template<typename T>
-void benchmark(char const *name, Arena scratch)
+static void benchmark(char const *name, Arena scratch)
 {
     iz  cap      = scratch.end - scratch.beg;
     i32 nruns    = 1<<8;
@@ -168,11 +168,15 @@ void benchmark(char const *name, Arena scratch)
         Arena a = scratch;
         i64 time = -rdtscp();
 
+        #if 1
         T arrays[256] = {};
+        #else
+        T *arrays = alloc<T>(&a, 256);  // much slower?!
+        #endif
 
         // Populate
         for (i32 i = 0; i < npush; i++) {
-            u32 r = rand64(&rng);
+            u32 r = rand32(&rng);
             i32 j = r >> 24;
             arrays[j] = push(&a, arrays[j], i32(r));
         }
