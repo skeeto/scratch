@@ -1,4 +1,4 @@
-// Brodnik array test and benchmark
+// "Brodnik" array test and benchmark
 // $ cc -std=c++23 -g3 -fsanitize=undefined -fsanitize-trap -o test brodnik.cpp
 // $ cc -std=c++23 -O2 -o bench brodnik.cpp
 //
@@ -13,8 +13,11 @@
 // could start at, say, 8. That might have some advantages, especially
 // when hand-vectorizing loops over Brodnik arrays.
 //
+// Update: Turns out this isn't actually a Brodnik array.
+//
 // Ref: https://sedgewick.io/wp-content/themes/sedgewick/papers/1999Optimal.pdf
 // Ref: https://old.reddit.com/r/algorithms/comments/1iun9zm
+// This is free and unencumbered software released into the public domain.
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -166,8 +169,8 @@ static void benchmark(char const *name, Arena scratch)
     f64 meansize = 0;
     for (i32 n = 0; n < nruns; n++) {
         Arena a = scratch;
-        i64 time = -rdtscp();
 
+        i64 time = -rdtscp();
         #if 1
         T arrays[256] = {};
         #else
@@ -189,14 +192,14 @@ static void benchmark(char const *name, Arena scratch)
                 scan += arrays[j][i-1];
             }
         }
-        asm("" :: "r"(scan) : "memory");
+        asm ("" :: "r"(scan) : "memory");
 
         time += rdtscp();
         besttime = besttime<time ? besttime : time;
 
         meansize += double(cap - (a.end - a.beg)) / nruns;
     }
-    printf("%8s%9d%9.3gMB\n", name, (int)(besttime>>10), meansize/(1<<20));
+    printf("%8s%9d%9.3gMB\n", name, int(besttime>>10), meansize/(1<<20));
 }
 
 int main()
