@@ -85,7 +85,7 @@ static iz *sort(Str *items, iz nitems, Str *order, iz norder, Arena *a)
     // Partition
     iz *unordered  = new(&scratch, nitems, iz);
     iz  nunordered = 0;
-    iz *offsets    = new(&scratch, norder, iz);  // for radix sort
+    iz *offsets    = new(&scratch, norder, iz);  // for counting sort
     for (iz i = 0; i < nitems; i++) {
         iz *n = upsert(&ordermap, items[i], 0);
         if (n) {
@@ -102,7 +102,7 @@ static iz *sort(Str *items, iz nitems, Str *order, iz norder, Arena *a)
     }
     offsets[0] = 0;
 
-    // Radix sort
+    // Counting sort
     iz  nordered = nitems - nunordered;
     iz *ordered  = new(&scratch, nordered, iz);
     for (iz i = 0; i < nitems; i++) {
