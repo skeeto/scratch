@@ -1,4 +1,5 @@
 // Gale-Shapley algorithm
+// $ cc -g3 -fsanitize=undefined -fsanitize-trap gale-shapley.c
 // Ref: https://old.reddit.com/r/C_Programming/comments/1j6fxqd
 // Ref: https://web.ece.ucsb.edu/~jrmarden/ewExternalFiles/lecture05-notes.pdf
 // This is free and unencumbered software released into the public domain.
