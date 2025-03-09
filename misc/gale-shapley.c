@@ -4,6 +4,7 @@
 // Ref: https://web.ece.ucsb.edu/~jrmarden/ewExternalFiles/lecture05-notes.pdf
 // This is free and unencumbered software released into the public domain.
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,12 +20,14 @@ static char *alloc(Arena *a, ptrdiff_t count, ptrdiff_t size, ptrdiff_t align)
     return memset(a->end -= pad + count*size, 0, count*size);
 }
 
+typedef int16_t Idx;
+
 typedef struct {
-    int *data;
-    int  len;
+    Idx *data;
+    Idx  len;
 } Square;
 
-static int *get(Square p, int i, int j)
+static Idx *get(Square p, Idx i, Idx j)
 {
     affirm(i>=0 && i<p.len);
     affirm(j>=0 && j<p.len);
@@ -34,10 +37,10 @@ static int *get(Square p, int i, int j)
 static Square invert(Square s, Arena *a)
 {
     Square r = s;
-    r.data = new(a, (ptrdiff_t)r.len*r.len, int);
-    for (int i = 0; i < r.len; i++) {
-        for (int j = 0; j < r.len; j++) {
-            int d = *get(s, i, j);
+    r.data = new(a, (ptrdiff_t)r.len*r.len, Idx);
+    for (Idx i = 0; i < r.len; i++) {
+        for (Idx j = 0; j < r.len; j++) {
+            Idx d = *get(s, i, j);
             *get(r, i, d-1) = j;
         }
     }
@@ -46,10 +49,10 @@ static Square invert(Square s, Arena *a)
 
 static _Bool validate(Square s, Arena scratch)
 {
-    int *seen = new(&scratch, s.len, int);
-    for (int i = 0; i < s.len; i++) {
-        for (int j = 0; j < s.len; j++) {
-            int v = *get(s, i, j);
+    Idx *seen = new(&scratch, s.len, Idx);
+    for (Idx i = 0; i < s.len; i++) {
+        for (Idx j = 0; j < s.len; j++) {
+            Idx v = *get(s, i, j);
             if (v<1 || v>s.len || seen[v-1]++ != i) {
                 return 0;
             }
@@ -58,34 +61,34 @@ static _Bool validate(Square s, Arena scratch)
     return 1;
 }
 
-static int *gale_shaply(Square aprefs, Square bprefs, Arena *a)
+static Idx *gale_shapley(Square aprefs, Square bprefs, Arena *a)
 {
     affirm(validate(aprefs, *a));
     affirm(validate(bprefs, *a));
     affirm(aprefs.len == bprefs.len);
 
-    int  len   = aprefs.len;
-    int *match = new(a, len, int);
-    for (int i = 0; i < len; i++) {
+    Idx  len   = aprefs.len;
+    Idx *match = new(a, len, Idx);
+    for (Idx i = 0; i < len; i++) {
         match[i] = -1;
     }
 
     // Bookkeeping / indexing
     Arena  scratch = *a;
     Square ainv    = invert(aprefs, &scratch);
-    int   *next    = new(&scratch, len, int);
-    int   *queue   = new(&scratch, len, int);
-    int    head    = 0;
-    int    tail    = 0;
-    for (int i = 0; i < len; i++) {
+    Idx   *next    = new(&scratch, len, Idx);
+    Idx   *queue   = new(&scratch, len, Idx);
+    Idx    head    = 0;
+    Idx    tail    = 0;
+    for (Idx i = 0; i < len; i++) {
         queue[i] = i;
     }
 
-    for (int remaining = len; remaining;) {
-        int who = queue[tail];  // pop
+    for (Idx remaining = len; remaining;) {
+        Idx who = queue[tail];  // pop
         tail = tail+1==len ? 0 : tail+1;
 
-        int candidate = *get(ainv, who, next[who]++);
+        Idx candidate = *get(ainv, who, next[who]++);
         if (match[candidate] < 0) {
             // No previous match, auto-accept
             match[candidate] = who;
@@ -93,11 +96,11 @@ static int *gale_shaply(Square aprefs, Square bprefs, Arena *a)
             continue;
         }
 
-        int reject  = who;
-        int rank    = *get(bprefs, candidate, who);
-        int current = *get(bprefs, candidate, match[candidate]);
+        Idx reject  = who;
+        Idx rank    = *get(bprefs, candidate, who);
+        Idx current = *get(bprefs, candidate, match[candidate]);
         if (rank < current) {
-            // Current match is better, swap
+            // New match is better, swap
             reject = match[candidate];
             match[candidate] = who;
         }
@@ -108,27 +111,27 @@ static int *gale_shaply(Square aprefs, Square bprefs, Arena *a)
     return match;
 }
 
-static int randint(unsigned long long *rng, int max)
+static Idx randint(uint64_t *rng, Idx max)
 {
     *rng = *rng*0x3243f6a8885a308d + 1;
-    return (int)(((*rng>>32) * max)>>32);
+    return (Idx)(((*rng>>32) * max)>>32);
 }
 
-static Square randprefs(int len, int seed, Arena *a)
+static Square randprefs(Idx len, uint32_t seed, Arena *a)
 {
     Square s = {0};
     s.len  = len;
-    s.data = new(a, (ptrdiff_t)len*len, int);
+    s.data = new(a, (ptrdiff_t)len*len, Idx);
 
-    unsigned long long rng = 0x100000000 | seed;
-    for (int i = 0; i < len; i++) {
-        int *r = get(s, i, 0);
-        for (int j = 0; j < len; j++) {
+    uint64_t rng = (uint64_t)len<<32 | seed;
+    for (Idx i = 0; i < len; i++) {
+        Idx *r = get(s, i, 0);
+        for (Idx j = 0; j < len; j++) {
             r[j] = j + 1;
         }
-        for (int j = len-1; j > 0; j--) {
-            int k = randint(&rng, j+1);
-            int t = r[k];
+        for (Idx j = len-1; j > 0; j--) {
+            Idx k = randint(&rng, j+1);
+            Idx t = r[k];
             r[k]  = r[j];
             r[j]  = t;
         }
@@ -139,13 +142,13 @@ static Square randprefs(int len, int seed, Arena *a)
 
 int main(void)
 {
-    ptrdiff_t cap = (ptrdiff_t)1<<33;  // 8G for huge test/benchmark
+    ptrdiff_t cap = (ptrdiff_t)1<<30;  // 1G for huge test/benchmark
     char     *mem = malloc(cap);
 
     {
         // From the referenced lecture
         Square women = {
-            (int[]){
+            (Idx[]){
                 1, 2, 3, 4,
                 1, 2, 3, 4,
                 3, 1, 2, 4,
@@ -153,7 +156,7 @@ int main(void)
             }, 4,
         };
         Square men = {
-            (int[]){
+            (Idx[]){
                 3, 4, 1, 2,
                 2, 3, 4, 1,
                 1, 2, 3, 4,
@@ -162,7 +165,7 @@ int main(void)
         };
 
         Arena scratch = {mem, mem+cap};
-        int *r = gale_shaply(women, men, &scratch);
+        Idx *r = gale_shapley(women, men, &scratch);
         for (int i = 0; i < 4; i++) {
             static char names[][4] = {
                 "Ann", "Beth", "Cher", "Dot",
@@ -175,15 +178,15 @@ int main(void)
     {
         // Test against a huge input
         Arena  scratch = {mem, mem+cap};
-        int    len     = 10000;
+        Idx    len     = 10000;
         Square aprefs  = randprefs(len, 1234, &scratch);
         Square bprefs  = randprefs(len, 5678, &scratch);
-        int *r = gale_shaply(aprefs, bprefs, &scratch);
+        Idx *r = gale_shapley(aprefs, bprefs, &scratch);
         #if 0
-        for (int i = 0; i < len; i++) {
+        for (Idx i = 0; i < len; i++) {
             printf("%d %d\n", i, r[i]);
         }
         #endif
-        int *volatile sink = r; (void)sink;
+        Idx *volatile sink = r; (void)sink;
     }
 }
