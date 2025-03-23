@@ -1,0 +1,639 @@
+// Water Sort Puzzle Game
+// $ eval cc -O water-sort-puzzle.c $(pkg-config --cflags --libs sdl2)
+//
+// User interface:
+// * Click the "bottles" to make moves
+// * h: hint move
+// * q: quit the game
+// * r: reset puzzle
+// * u: undo last move
+// * 1-5: generate a new puzzle (1=easy, 5=hard)
+//
+// TODO: Add on-screen buttons, then build web version with empscripten.
+//
+// This is free and unencumbered software released into the public domain.
+#include <stddef.h>
+#include <stdint.h>
+
+#define new(a, n, t)    (t *)alloc(a, n, sizeof(t), _Alignof(t))
+#define affirm(c)       while (!(c)) *(volatile int *)0 = 0
+
+typedef int8_t      i8;
+typedef uint16_t    u16;
+typedef int32_t     b32;
+typedef int32_t     i32;
+typedef uint64_t    u64;
+typedef ptrdiff_t   iz;
+typedef size_t      uz;
+
+typedef struct {
+    char *beg;
+    char *end;
+} Arena;
+
+static void *alloc(Arena *a, iz count, iz size, iz align)
+{
+    iz pad = (uz)a->end & (align - 1);
+    affirm(count < (a->end - a->beg - pad)/size);
+    char *r = a->end -= pad + count*size;
+    for (iz i = 0; i < count*size; i++) {
+        r[i] = 0;
+    }
+    return r;
+}
+
+enum { MAXBOTTLE = 14 };
+typedef struct {
+    u16 s[MAXBOTTLE];
+} State;
+
+static b32 null(State s)
+{
+    return !s.s[0] && !s.s[1] && !s.s[2];
+}
+
+static b32 equals(State a, State b, i32 nbottle)
+{
+    for (i32 i = 0; i < nbottle; i++) {
+        if (a.s[i] != b.s[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static u64 hash64(State s, i32 nbottle)
+{
+    u64 h = 0;
+    for (i32 i = 0; i < nbottle; i++) {
+        h ^= s.s[i];
+        h *= 1111111111111111111u;
+    }
+    return h;
+}
+
+typedef struct {
+    State *slots;
+    iz     len;
+    i32    exp;
+} StateSet;
+
+static StateSet newset(Arena *a, i32 exp)
+{
+    StateSet s = {0};
+    s.slots = new(a, (iz)1<<exp, State);
+    s.exp   = exp;
+    return s;
+}
+
+static void sort(u16 *nums, i32 len)
+{
+    for (i32 i = 1; i < len; i++) {
+        for (i32 j = i; j>0 && nums[j-1]>nums[j]; j--) {
+            u16 swap  = nums[j-1];
+            nums[j-1] = nums[j];
+            nums[j]   = swap;
+        }
+    }
+}
+
+static State normalize(State s, i32 nbottle)
+{
+    sort(s.s, nbottle);
+    return s;
+}
+
+static b32 insert(StateSet *t, State s, i32 nbottle)
+{
+    affirm(t->len < ((iz)1<<t->exp) - ((iz)1<<(t->exp-2)));
+    State norm = normalize(s, nbottle);
+    u64   hash = hash64(norm, nbottle);
+    uz    mask = ((uz)1 << t->exp) - 1;
+    uz    step = (hash >> (64 - t->exp)) | 1;
+    for (iz i = (iz)hash;;) {
+        i = (i + step) & mask;
+        if (null(t->slots[i])) {
+            t->slots[i] = norm;
+            t->len++;
+            return 1;
+        } else if (equals(t->slots[i], norm, nbottle)) {
+            return 0;
+        }
+    }
+}
+
+static i32 height(u16 x)
+{
+    i32 r = 0;
+    if (x) {
+        u16 c = x&15;
+        do {
+            r++;
+            x >>= 4;
+        } while (c == (x&15));
+    }
+    return r;
+}
+
+static i32 space(u16 x)
+{
+    i32 r = 4;
+    while (x) {
+        r--;
+        x >>= 4;
+    }
+    return r;
+}
+
+typedef struct {
+    i32 src;
+    i32 dst;
+} Move;
+
+static State apply(State s, Move e)
+{
+    i32 h = height(s.s[e.src]);
+    u16 m = (u16)((1 << (h*4)) - 1);
+    s.s[e.dst] = (u16)(s.s[e.dst]<<(4*h) | (s.s[e.src] & m));
+    s.s[e.src] = (u16)(s.s[e.src]>>(4*h)                   );
+    return s;
+}
+
+static b32 solved(State s, i32 nbottle)
+{
+    for (i32 i = 0; i < nbottle; i++) {
+        u16 v = s.s[i];
+        u16 r = (u16)(s.s[i]>>4 | s.s[i]<<4);
+        if (v ^ r) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static i32 getmoves(State s, i32 nbottle, Move *e)
+{
+    enum { MAXCOLOR = MAXBOTTLE-2 };
+    i8  lens[MAXCOLOR+1]    = {0};
+    i8  hist[MAXCOLOR+1][4] = {0};
+    i8  empty[MAXBOTTLE]    = {0};
+    i32 nempty              = 0;
+    for (i32 i = 0; i < nbottle; i++) {
+        u16 v = s.s[i]&15;
+        if (v) {
+            hist[v][lens[v]++] = (i8)i;
+        } else {
+            empty[nempty++] = (i8)i;
+        }
+    }
+
+    i32 r = 0;
+    for (i32 src = 0; src < nbottle; src++) {
+        u16 v = s.s[src]&15;
+        if (!v) continue;
+
+        i32 h = height(s.s[src]);
+        for (i32 i = 0; i < lens[v]; i++) {
+            i32 dst = hist[v][i];
+            i32 spc = space(s.s[dst]);
+            if (dst!=src && spc>=h) {
+                e[r].src = src;
+                e[r].dst = dst;
+                r++;
+            }
+        }
+
+        for (i32 i = 0; i < nempty; i++) {
+            e[r].src = src;
+            e[r].dst = empty[i];
+            r++;
+        }
+    }
+    return r;
+}
+
+typedef struct {
+    State *states;
+    i32    len;
+} Solution;
+
+static Solution solve(State init, i32 nbottle, Arena *a)
+{
+    Solution r = {0};
+
+    i32      exp  = 19;
+    StateSet seen = newset(a, exp);
+    insert(&seen, init, nbottle);
+
+    typedef struct {
+        State s;
+        i32   delta;
+    } Node;
+
+    iz    cap   = (iz)1<<exp;
+    Node *queue = new(a, cap, Node);
+    i32   head  = 0;
+    i32   tail  = 0;
+    queue[head++].s = init;
+
+    while (tail < head) {
+        Node n = queue[tail++];
+        Move moves[64];
+        i32 nmoves = getmoves(n.s, nbottle, moves);
+
+        for (i32 i = 0; i < nmoves; i++) {
+            State next = apply(n.s, moves[i]);
+            if (insert(&seen, next, nbottle)) {
+                affirm(head - tail < 0x7fffffff);
+                queue[head].s     = next;
+                queue[head].delta = head - tail + 1;
+                if (solved(next, nbottle)) {
+                    r.len = 1;
+                    for (i32 i = head; queue[i].delta; i -= queue[i].delta) {
+                        r.len++;
+                    }
+                    r.states = new(a, r.len, State);
+
+                    i32 len = r.len;
+                    for (i32 i = head; queue[i].delta; i -= queue[i].delta) {
+                        r.states[--len] = queue[i].s;
+                    }
+                    r.states[--len] = init;
+                    return r;
+                }
+                head++;
+                affirm(head < cap);
+            }
+        }
+    }
+    return r;
+}
+
+static i32 randint(u64 *rng, i32 lo, i32 hi)
+{
+    u64 x = *rng = *rng*0x3243f6a8885a308d + 1;
+    return (i32)((x>>32)*(hi - lo)>>32) + lo;
+}
+
+static State genpuzzle(u64 seed, i32 nbottle)
+{
+    // NOTE: ~0.34% of generated puzzles are unsolvable
+    affirm(nbottle>=4 && nbottle<=MAXBOTTLE);
+    State s      = {0};
+    i32   ncolor = nbottle - 2;
+    for (i32 i = 0; i < 4; i++) {
+        for (i32 c = 0; c < ncolor; c++) {
+            for (;;) {
+                i32 dst = randint(&seed, 0, nbottle-2);
+                if (space(s.s[dst])) {
+                    s.s[dst] = (u16)(s.s[dst]<<4 | (c+1));
+                    break;
+                }
+            }
+        }
+    }
+    return s;
+}
+
+
+// UI
+
+#if 1
+#include "SDL.h"
+
+enum { MAXUNDO = 256 };
+
+typedef uint8_t u8;
+typedef int64_t i64;
+typedef float   f32;
+
+static i32 colors[] = {
+    0x222222,
+    0x8b4513, 0x228b22, 0x4682b4,
+    0x4b0082, 0xff0000, 0xffd700,
+    0x7fff00, 0x00ffff, 0x0000ff,
+    0xff00ff, 0x2f4f4f, 0xf0f8ff,
+};
+
+typedef struct {
+    State states[MAXUNDO];
+    i32   head;
+    i32   tail;
+
+    i32   nbottles;
+    i32   width;
+    i32   height;
+    i32   mousex;
+    i32   mousey;
+    i32   bottle;
+    i32   select;
+    i32   slot;
+    b32   click;
+    i32   border;
+} UI;
+
+static void push(UI *ui, State s)
+{
+    ui->states[ui->head++%MAXUNDO] = s;
+    ui->tail += ui->head-ui->tail > MAXUNDO;
+}
+
+static b32 pop(UI *ui)
+{
+    if (ui->head-1 > ui->tail) {
+        ui->head--;
+        return 1;
+    }
+    return 0;
+}
+
+static State top(UI *ui)
+{
+    State r = {0};
+    if (ui->head > ui->tail) {
+        r = ui->states[(ui->head-1)%MAXUNDO];
+    }
+    return r;
+}
+
+static void draw(SDL_Renderer *r, UI *ui)
+{
+    // TODO: on-screen buttons for reset, undo, hint, generate
+    // TODO: puzzle editor, to turn it into a solver
+
+    if (ui->border) {
+        i32 c = ui->border;
+        SDL_SetRenderDrawColor(r, (u8)(c>>16), (u8)(c>>8), (u8)(c>>0), 0xff);
+        SDL_RenderClear(r);
+
+        i32 pad = ui->width / 75;
+        SDL_Rect bg = {pad, pad, ui->width-1-pad*2, ui->height-1-pad*2};
+        c = colors[0];
+        SDL_SetRenderDrawColor(r, (u8)(c>>16), (u8)(c>>8), (u8)(c>>0), 0xff);
+        SDL_RenderFillRect(r, &bg);
+    } else {
+        i32 c = colors[0];
+        SDL_SetRenderDrawColor(r, (u8)(c>>16), (u8)(c>>8), (u8)(c>>0), 0xff);
+        SDL_RenderClear(r);
+    }
+
+    i32 bw   = ui->width  / 7;
+    i32 bh   = ui->height / 2;
+    i32 xpad = bw / 6;
+    i32 ypad = bh / 8;
+    i32 ww   =  bw - 2*xpad;
+    i32 wh   = (bh - 2*ypad)/4;
+
+    if (ui->select >= 0) {
+        SDL_Rect bottle = {
+            (ui->select%7)*bw,
+            ypad/2 + (ui->select/7)*bh,
+            bw, bh - ypad
+        };
+        SDL_SetRenderDrawColor(r, 0x7f, 0x7f, 0x7f, 0xff);
+        SDL_RenderFillRect(r, &bottle);
+    }
+
+    State s = top(ui);
+    if (null(s)) {
+        return;
+    }
+
+    ui->bottle = -1;
+    for (i32 i = 0; i < ui->nbottles; i++) {
+        u16 v = s.s[i];
+        for (; v && !(v&0xf000); v = (u16)(v<<4)) {}
+        for (i32 y = 0; y < 4; y++) {
+            u16 c = (v>>(y*4)) & 15;
+            i32 color = colors[c];
+            SDL_SetRenderDrawColor(
+                r, (u8)(color>>16), (u8)(color>>8), (u8)(color>>0), 0xff
+            );
+
+            SDL_Rect water = {
+                xpad + (i%7)*bw,
+                ypad + (i/7)*bh + y*wh,
+                ww+1, wh+1
+            };
+            SDL_RenderFillRect(r, &water);
+            SDL_SetRenderDrawColor(r, 0xff, 0xff, 0xff, 0xff);
+            SDL_RenderDrawRect(r, &water);
+
+            SDL_Point click = {ui->mousex, ui->mousey};
+            if (SDL_PointInRect(&click, &water)) {
+                ui->bottle = i;
+                ui->slot   = y;
+            }
+        }
+    }
+}
+
+static b32 valid(State s, i32 nbottle, Move e)
+{
+    Move moves[64];
+    i32 len = getmoves(s, nbottle, moves);
+    for (i32 i = 0; i < len; i++) {
+        if (moves[i].src==e.src && moves[i].dst==e.dst) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static State genvalid(u64 seed, i32 minsteps, i32 nbottles, Arena a)
+{
+    for (;;) {
+        Arena scratch = a;
+        seed += 1111111111111111111u;
+        State s = genpuzzle(seed, nbottles);
+        Solution r = solve(s, nbottles, &scratch);
+        if (r.len >= minsteps) {
+            return s;
+        }
+    }
+}
+
+int main(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+
+    iz    cap = (iz)1<<25;
+    char *mem = SDL_malloc(cap);
+    Arena a   = {mem, mem+cap};
+
+    UI *ui      = new(&a, 1, UI);
+    ui->width    = 600;
+    ui->height   = 600;
+    ui->nbottles = MAXBOTTLE;
+    ui->select   = -1;
+
+    SDL_Init(SDL_INIT_VIDEO);
+    SDL_Window *w = SDL_CreateWindow(
+        "Water Sort Puzzle",
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        ui->width, ui->height, 0
+    );
+    SDL_Renderer *r = SDL_CreateRenderer(
+        w, -1, SDL_RENDERER_SOFTWARE|SDL_RENDERER_PRESENTVSYNC
+    );
+    SDL_Cursor *arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
+    SDL_Cursor *hand  = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
+
+    u64 seed = (uz)a.beg;
+    #if __amd64
+    asm volatile ("rdrand %0" : "=r"(seed));
+    #endif
+
+    enum { BORDER_DURATION = 500 };
+    State puzzle     = {0};
+    i32   difficulty = 2;
+    i64   error      = 0;
+    i64   success    = 0;
+    for (;;) {
+        i64 now = SDL_GetTicks64();
+
+        seed *= 1111111111111111111u;  // stir seed
+        seed += SDL_GetTicks64();      //
+        if (null(puzzle)) {
+            // TODO: run on a separate thread so UI is responsive
+            // TODO: use multiple threads to search faster?
+            Arena tmp = a;
+            puzzle = genvalid(seed, 39+difficulty, ui->nbottles, tmp);
+            ui->head = ui->tail = 0;
+            push(ui, puzzle);
+        }
+
+        if (solved(top(ui), ui->nbottles)) {
+            success = now + BORDER_DURATION;
+        } else {
+            Arena    tmp = a;
+            Solution ok  = solve(top(ui), ui->nbottles, &tmp);
+            if (!ok.len) {
+                error = now + BORDER_DURATION;
+            }
+        }
+
+        ui->border = success>now ? 0x00ff00 : 0;
+        ui->border = error>now   ? 0xff0000 : ui->border;
+        ui->click  = 0;
+
+        SDL_Event e = {0};
+        while (SDL_PollEvent(&e)) {
+            switch (e.type) {
+            case SDL_QUIT:
+                return 0;
+
+            case SDL_KEYDOWN:
+                switch (e.key.keysym.sym) {
+                case '1':
+                case '2':
+                case '3':
+                case '4':
+                case '5':;  // generate a new puzzle
+                    difficulty = e.key.keysym.sym - '0';
+                    puzzle = (State){0};
+                    ui->head = ui->tail = 0;
+                    success = error = 0;
+                    break;
+                case 'h':;  // hint
+                    Arena    tmp = a;
+                    Solution ok  = solve(top(ui), ui->nbottles, &tmp);
+                    if (ok.len > 1) {
+                        push(ui, ok.states[1]);
+                    } else {
+                        error = now + BORDER_DURATION;
+                    }
+                    break;
+                case 'q':  // quit
+                    return 0;
+                case 'r':  // reset
+                    ui->head = ui->tail = 0;
+                    push(ui, puzzle);
+                    success = error = 0;
+                    break;
+                case 'u':  // undo
+                    success = error = 0;
+                    if (!pop(ui)) {
+                        error = now + BORDER_DURATION;
+                    }
+                    break;
+                }
+                break;
+
+            case SDL_MOUSEBUTTONUP:
+                ui->mousex = e.button.x;
+                ui->mousey = e.button.y;
+                ui->click  = 1;
+                break;
+
+            case SDL_MOUSEMOTION:
+                ui->mousex = e.motion.x;
+                ui->mousey = e.motion.y;
+                break;
+            }
+        }
+
+        draw(r, ui);
+
+        if (ui->bottle >= 0) {
+            SDL_SetCursor(hand);
+        } else {
+            SDL_SetCursor(arrow);
+        }
+
+        if (ui->click) {
+            if (ui->select >= 0) {
+                if (ui->select == ui->bottle) {
+                    ui->select = -1;
+                } else {
+                    State s = top(ui);
+                    Move  m = {ui->select, ui->bottle};
+                    if (valid(s, ui->nbottles, m)) {
+                        push(ui, apply(s, m));
+                        ui->select = -1;
+                    } else {
+                        ui->select = ui->bottle;
+                    }
+                }
+            } else {
+                ui->select = ui->bottle;
+            }
+        }
+
+        SDL_RenderPresent(r);
+    }
+}
+
+
+#else
+#include <stdlib.h>
+#include <stdio.h>
+
+static void print(State s, i32 nbottle)
+{
+    for (i32 y = 0; y < 4; y++) {
+        for (i32 x = 0; x < nbottle; x++) {
+            i32 v = s.s[x];
+            for (; v && !(v&0xf000); v <<= 4) {}
+            v >>= y*4;
+            printf("%3d", v&15);
+        }
+        putchar('\n');
+    }
+}
+
+int main(void)
+{
+    iz    cap = (iz)1<<25;
+    char *mem = malloc(cap);
+    Arena a   = {mem, mem+cap};
+    for (i32 i = 0; i < 1000; i++) {
+        Arena scratch = a;
+        i32   nbottle = 14;
+        State s       = genpuzzle(i+1, nbottle);
+        print(s, nbottle);
+        printf("%d steps\n", solve(s, nbottle, &scratch).len);
+    }
+}
+#endif
