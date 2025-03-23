@@ -2,12 +2,14 @@
 // $ eval cc -O water-sort-puzzle.c $(pkg-config --cflags --libs sdl2)
 //
 // User interface:
-// * Click the "bottles" to make moves
+// * Left-click the "bottles" to make moves
+// * Middle-click to get a hint
+// * Right-click to undo
 // * h: hint move
 // * q: quit the game
 // * r: reset puzzle
 // * u: undo last move
-// * 1-5: generate a new puzzle (1=easy, 5=hard)
+// * 1-5: generate a new puzzle (0=easy, 4=hard)
 //
 // TODO: Add on-screen buttons, then build web version with empscripten.
 //
@@ -301,7 +303,10 @@ static State genpuzzle(u64 seed, i32 nbottle)
 #if 1
 #include "SDL.h"
 
-enum { MAXUNDO = 256 };
+enum {
+    MAXUNDO         = 256,
+    BORDER_DURATION = 500,
+};
 
 typedef uint8_t u8;
 typedef int64_t i64;
@@ -316,20 +321,24 @@ static i32 colors[] = {
 };
 
 typedef struct {
+    i64   success;
+    i64   error;
+    i32   border;
+
+    i32   nbottles;
     State states[MAXUNDO];
     i32   head;
     i32   tail;
 
-    i32   nbottles;
     i32   width;
     i32   height;
+
+    b32   click;
     i32   mousex;
     i32   mousey;
-    i32   bottle;
     i32   select;
+    i32   bottle;
     i32   slot;
-    b32   click;
-    i32   border;
 } UI;
 
 static void push(UI *ui, State s)
@@ -453,6 +462,25 @@ static State genvalid(u64 seed, i32 minsteps, i32 nbottles, Arena a)
     }
 }
 
+static void undo(UI *ui, i64 now)
+{
+    ui->success = ui->error = 0;
+    if (!pop(ui)) {
+        ui->error = now + BORDER_DURATION;
+    }
+}
+
+static void hint(UI *ui, i64 now, Arena a)
+{
+    Arena    tmp = a;
+    Solution ok  = solve(top(ui), ui->nbottles, &tmp);
+    if (ok.len > 1) {
+        push(ui, ok.states[1]);
+    } else {
+        ui->error = now + BORDER_DURATION;
+    }
+}
+
 int main(int argc, char **argv)
 {
     (void)argc;
@@ -485,11 +513,8 @@ int main(int argc, char **argv)
     asm volatile ("rdrand %0" : "=r"(seed));
     #endif
 
-    enum { BORDER_DURATION = 500 };
     State puzzle     = {0};
     i32   difficulty = 2;
-    i64   error      = 0;
-    i64   success    = 0;
     for (;;) {
         i64 now = SDL_GetTicks64();
 
@@ -505,17 +530,17 @@ int main(int argc, char **argv)
         }
 
         if (solved(top(ui), ui->nbottles)) {
-            success = now + BORDER_DURATION;
+            ui->success = now + BORDER_DURATION;
         } else {
             Arena    tmp = a;
             Solution ok  = solve(top(ui), ui->nbottles, &tmp);
             if (!ok.len) {
-                error = now + BORDER_DURATION;
+                ui->error = now + BORDER_DURATION;
             }
         }
 
-        ui->border = success>now ? 0x00ff00 : 0;
-        ui->border = error>now   ? 0xff0000 : ui->border;
+        ui->border = ui->success>now ? 0x00ff00 : 0;
+        ui->border = ui->error>now   ? 0xff0000 : ui->border;
         ui->click  = 0;
 
         SDL_Event e = {0};
@@ -534,37 +559,38 @@ int main(int argc, char **argv)
                     difficulty = e.key.keysym.sym - '0';
                     puzzle = (State){0};
                     ui->head = ui->tail = 0;
-                    success = error = 0;
+                    ui->success = ui->error = 0;
                     break;
                 case 'h':;  // hint
-                    Arena    tmp = a;
-                    Solution ok  = solve(top(ui), ui->nbottles, &tmp);
-                    if (ok.len > 1) {
-                        push(ui, ok.states[1]);
-                    } else {
-                        error = now + BORDER_DURATION;
-                    }
+                    hint(ui, now, a);
                     break;
                 case 'q':  // quit
                     return 0;
                 case 'r':  // reset
                     ui->head = ui->tail = 0;
                     push(ui, puzzle);
-                    success = error = 0;
+                    ui->success = ui->error = 0;
                     break;
                 case 'u':  // undo
-                    success = error = 0;
-                    if (!pop(ui)) {
-                        error = now + BORDER_DURATION;
-                    }
+                    undo(ui, now);
                     break;
                 }
                 break;
 
-            case SDL_MOUSEBUTTONUP:
-                ui->mousex = e.button.x;
-                ui->mousey = e.button.y;
-                ui->click  = 1;
+            case SDL_MOUSEBUTTONDOWN:
+                switch (e.button.button) {
+                case 1:
+                    ui->mousex = e.button.x;
+                    ui->mousey = e.button.y;
+                    ui->click  = 1;
+                    break;
+                case 2:
+                    hint(ui, now, a);
+                    break;
+                case 3:
+                    undo(ui, now);
+                    break;
+                }
                 break;
 
             case SDL_MOUSEMOTION:
