@@ -320,6 +320,13 @@ static i32 colors[] = {
     0xff00ff, 0x2f4f4f, 0xf0f8ff,
 };
 
+enum {
+    STATUS_UNKNOWN,
+    STATUS_SOLVED,
+    STATUS_SOLVABLE,
+    STATUS_UNSOLVABLE,
+};
+
 typedef struct {
     i64   success;
     i64   error;
@@ -329,6 +336,7 @@ typedef struct {
     State states[MAXUNDO];
     i32   head;
     i32   tail;
+    i32   status;
 
     i32   width;
     i32   height;
@@ -343,12 +351,14 @@ typedef struct {
 
 static void push(UI *ui, State s)
 {
+    ui->status = STATUS_UNKNOWN;
     ui->states[ui->head++%MAXUNDO] = s;
     ui->tail += ui->head-ui->tail > MAXUNDO;
 }
 
 static b32 pop(UI *ui)
 {
+    ui->status = STATUS_UNKNOWN;
     if (ui->head-1 > ui->tail) {
         ui->head--;
         return 1;
@@ -502,11 +512,9 @@ int main(int argc, char **argv)
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         ui->width, ui->height, 0
     );
-    SDL_Renderer *r = SDL_CreateRenderer(
-        w, -1, SDL_RENDERER_SOFTWARE|SDL_RENDERER_PRESENTVSYNC
-    );
-    SDL_Cursor *arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
-    SDL_Cursor *hand  = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
+    SDL_Renderer *r     = SDL_CreateRenderer(w, -1, SDL_RENDERER_PRESENTVSYNC);
+    SDL_Cursor   *arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
+    SDL_Cursor   *hand  = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
 
     u64 seed = (uz)a.beg;
     #if __amd64
@@ -529,14 +537,23 @@ int main(int argc, char **argv)
             push(ui, puzzle);
         }
 
-        if (solved(top(ui), ui->nbottles)) {
-            ui->success = now + BORDER_DURATION;
-        } else {
-            Arena    tmp = a;
-            Solution ok  = solve(top(ui), ui->nbottles, &tmp);
-            if (!ok.len) {
-                ui->error = now + BORDER_DURATION;
+        if (ui->status == STATUS_UNKNOWN) {
+            if (solved(top(ui), ui->nbottles)) {
+                ui->status = STATUS_SOLVED;
+            } else {
+                Arena    tmp = a;
+                Solution ok  = solve(top(ui), ui->nbottles, &tmp);
+                ui->status = ok.len ? STATUS_SOLVABLE : STATUS_UNSOLVABLE;
             }
+        }
+
+        switch (ui->status) {
+        case STATUS_SOLVED:
+            ui->success = now + BORDER_DURATION;
+            break;
+        case STATUS_UNSOLVABLE:
+            ui->error = now + BORDER_DURATION;
+            break;
         }
 
         ui->border = ui->success>now ? 0x00ff00 : 0;
@@ -560,6 +577,8 @@ int main(int argc, char **argv)
                     puzzle = (State){0};
                     ui->head = ui->tail = 0;
                     ui->success = ui->error = 0;
+                    ui->status = STATUS_UNKNOWN;
+                    ui->select = -1;
                     break;
                 case 'h':;  // hint
                     hint(ui, now, a);
