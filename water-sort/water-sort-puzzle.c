@@ -459,14 +459,14 @@ static b32 valid(State s, i32 nbottle, Move e)
     return 0;
 }
 
-static State genvalid(u64 seed, i32 minsteps, i32 nbottles, Arena a)
+static State genvalid(u64 seed, i32 steps, i32 nbottles, Arena a)
 {
     for (;;) {
         Arena scratch = a;
         seed += 1111111111111111111u;
         State s = genpuzzle(seed, nbottles);
         Solution r = solve(s, nbottles, &scratch);
-        if (r.len >= minsteps) {
+        if (r.len == steps) {
             return s;
         }
     }
