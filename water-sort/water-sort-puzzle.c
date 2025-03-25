@@ -514,19 +514,6 @@ static u64 compress(u64 a, u64 b)
     return (a + b) * 1111111111111111111u;
 }
 
-static State genvalid(u64 seed, i32 steps, i32 nbottles, Arena a)
-{
-    for (;;) {
-        Arena scratch = a;
-        seed = compress(seed, 1023);
-        State s = genpuzzle(seed, nbottles);
-        Solution r = solve(s, nbottles, &scratch);
-        if (r.len == steps) {
-            return s;
-        }
-    }
-}
-
 typedef struct {
     u64        seed;
     SDL_mutex *lock;
@@ -541,28 +528,43 @@ static int worker(void *arg)
 {
     Worker *w    = arg;
     u64     seed = w->seed;
+
     SDL_SetThreadPriority(SDL_THREAD_PRIORITY_LOW);
-    for (SDL_LockMutex(w->lock);;) {
-        i32 ngenerated = 0;
+    SDL_LockMutex(w->lock);
+
+    for (;;) {
+        i32 needed = 0;
         for (i32 i = 0; i < 5; i++) {
             if (null(w->puzzles[i])) {
-                SDL_UnlockMutex(w->lock);
-                seed = compress(seed, SDL_GetTicks64());
-                seed = compress(seed, w->id);
-                seed = compress(seed, i + 1);
-                State s = genvalid(
-                    seed, STEP_BASE+i+1, w->nbottle, w->scratch
-                );
-                SDL_Log("thread %d: generated %d", w->id, i+1);
-                SDL_LockMutex(w->lock);
-                w->puzzles[i] = s;
-                ngenerated++;
+                needed |= 1<<i;
             }
         }
-        if (!ngenerated) {
+
+        if (!needed) {
             SDL_Log("thread %d: sleep", w->id);
             SDL_CondWait(w->cv, w->lock);
             SDL_Log("thread %d: woken", w->id);
+            continue;
+        }
+
+        SDL_UnlockMutex(w->lock);
+        for (;;) {
+            seed = compress(seed, SDL_GetTicks64());
+            seed = compress(seed, w->id);
+            seed = compress(seed, needed);
+
+            Arena scratch = w->scratch;
+            State s = genpuzzle(seed, w->nbottle);
+            Solution r = solve(s, w->nbottle, &scratch);
+            i32 difficulty = r.len - STEP_BASE;
+            i32 i = difficulty - 1;
+
+            if (difficulty>=1 && difficulty<=5 && (needed&(1<<i))) {
+                SDL_Log("thread %d: difficulty=%d", w->id, difficulty);
+                SDL_LockMutex(w->lock);
+                w->puzzles[i] = s;
+                break;
+            }
         }
     }
     return 0;
