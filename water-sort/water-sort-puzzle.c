@@ -277,21 +277,45 @@ static i32 randint(u64 *rng, i32 lo, i32 hi)
     return (i32)((x>>32)*(hi - lo)>>32) + lo;
 }
 
+// Distribution (0.34% unsolvable):
+//   steps freq. diff.
+//   30    0.01%
+//   31    0.00%
+//   32    0.04%
+//   33    0.27%
+//   34    0.82%
+//   35    2.32%
+//   36    5.11%
+//   37   11.23%
+//   38   17.53%
+//   39   22.06%
+//   40   20.90%     1
+//   41   13.31%     2
+//   42    4.93%     3
+//   43    1.07%     4
+//   44    0.06%     5
 static State genpuzzle(u64 seed, i32 nbottle)
 {
-    // NOTE: ~0.34% of generated puzzles are unsolvable
     affirm(nbottle>=4 && nbottle<=MAXBOTTLE);
-    State s      = {0};
-    i32   ncolor = nbottle - 2;
-    for (i32 i = 0; i < 4; i++) {
-        for (i32 c = 0; c < ncolor; c++) {
-            for (;;) {
-                i32 dst = randint(&seed, 0, nbottle-2);
-                if (space(s.s[dst])) {
-                    s.s[dst] = (u16)(s.s[dst]<<4 | (c+1));
-                    break;
-                }
-            }
+
+    enum { MAXCOLOR = MAXBOTTLE-2 };
+    i32 ncolor = nbottle - 2;
+
+    i8 colors[MAXCOLOR*4];
+    for (i32 c = 0; c < ncolor; c++) {
+        for (i32 i = 0; i < 4; i++) {
+            colors[4*c+i] = (i8)(c + 1);
+        }
+    }
+
+    State s   = {0};
+    i32   len = ncolor * 4;
+    for (i32 b = 0; b < nbottle-2; b++) {
+        for (i32 h = 0; h < 4; h++) {
+            i32 i = randint(&seed, 0, len);
+            u16 c = colors[i];
+            colors[i] = colors[--len];
+            s.s[b] |= (u16)(c<<(h*4));
         }
     }
     return s;
