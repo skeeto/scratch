@@ -28,6 +28,10 @@ typedef uint64_t    u64;
 typedef ptrdiff_t   iz;
 typedef size_t      uz;
 
+enum {
+    SOLVE_MEM = 1<<25,
+};
+
 typedef struct {
     char *beg;
     char *end;
@@ -328,8 +332,10 @@ static State genpuzzle(u64 seed, i32 nbottle)
 #include "SDL.h"
 
 enum {
-    MAXUNDO         = 256,
-    BORDER_DURATION = 500,
+    MAXUNDO   = 256,
+    BORDER_MS = 500,
+    STEP_BASE = 39,
+    NTHREADS  = (i32)sizeof(uz),
 };
 
 typedef uint8_t u8;
@@ -345,6 +351,7 @@ static i32 colors[] = {
 };
 
 enum {
+    STATUS_GENERATING,
     STATUS_UNKNOWN,
     STATUS_SOLVED,
     STATUS_SOLVABLE,
@@ -356,7 +363,7 @@ typedef struct {
     i64   error;
     i32   border;
 
-    i32   nbottles;
+    i32   nbottle;
     State states[MAXUNDO];
     i32   head;
     i32   tail;
@@ -369,7 +376,7 @@ typedef struct {
     i32   mousex;
     i32   mousey;
     i32   select;
-    i32   bottle;
+    i32   active;
     i32   slot;
 } UI;
 
@@ -397,6 +404,25 @@ static State top(UI *ui)
         r = ui->states[(ui->head-1)%MAXUNDO];
     }
     return r;
+}
+
+static void undo(UI *ui, i64 now)
+{
+    ui->success = ui->error = 0;
+    if (!pop(ui)) {
+        ui->error = now + BORDER_MS;
+    }
+}
+
+static void hint(UI *ui, i64 now, Arena a)
+{
+    Arena    tmp = a;
+    Solution ok  = solve(top(ui), ui->nbottle, &tmp);
+    if (ok.len > 1) {
+        push(ui, ok.states[1]);
+    } else {
+        ui->error = now + BORDER_MS;
+    }
 }
 
 static void draw(SDL_Renderer *r, UI *ui)
@@ -442,8 +468,8 @@ static void draw(SDL_Renderer *r, UI *ui)
         return;
     }
 
-    ui->bottle = -1;
-    for (i32 i = 0; i < ui->nbottles; i++) {
+    ui->active = -1;
+    for (i32 i = 0; i < ui->nbottle; i++) {
         u16 v = s.s[i];
         for (; v && !(v&0xf000); v = (u16)(v<<4)) {}
         for (i32 y = 0; y < 4; y++) {
@@ -464,7 +490,7 @@ static void draw(SDL_Renderer *r, UI *ui)
 
             SDL_Point click = {ui->mousex, ui->mousey};
             if (SDL_PointInRect(&click, &water)) {
-                ui->bottle = i;
+                ui->active = i;
                 ui->slot   = y;
             }
         }
@@ -483,11 +509,16 @@ static b32 valid(State s, i32 nbottle, Move e)
     return 0;
 }
 
+static u64 compress(u64 a, u64 b)
+{
+    return (a + b) * 1111111111111111111u;
+}
+
 static State genvalid(u64 seed, i32 steps, i32 nbottles, Arena a)
 {
     for (;;) {
         Arena scratch = a;
-        seed += 1111111111111111111u;
+        seed = compress(seed, 1023);
         State s = genpuzzle(seed, nbottles);
         Solution r = solve(s, nbottles, &scratch);
         if (r.len == steps) {
@@ -496,23 +527,45 @@ static State genvalid(u64 seed, i32 steps, i32 nbottles, Arena a)
     }
 }
 
-static void undo(UI *ui, i64 now)
-{
-    ui->success = ui->error = 0;
-    if (!pop(ui)) {
-        ui->error = now + BORDER_DURATION;
-    }
-}
+typedef struct {
+    u64        seed;
+    SDL_mutex *lock;
+    SDL_cond  *cv;
+    Arena      scratch;
+    State      puzzles[5];
+    i32        nbottle;
+    i32        id;
+} Worker;
 
-static void hint(UI *ui, i64 now, Arena a)
+static int worker(void *arg)
 {
-    Arena    tmp = a;
-    Solution ok  = solve(top(ui), ui->nbottles, &tmp);
-    if (ok.len > 1) {
-        push(ui, ok.states[1]);
-    } else {
-        ui->error = now + BORDER_DURATION;
+    Worker *w    = arg;
+    u64     seed = w->seed;
+    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_LOW);
+    for (SDL_LockMutex(w->lock);;) {
+        i32 ngenerated = 0;
+        for (i32 i = 0; i < 5; i++) {
+            if (null(w->puzzles[i])) {
+                SDL_UnlockMutex(w->lock);
+                seed = compress(seed, SDL_GetTicks64());
+                seed = compress(seed, w->id);
+                seed = compress(seed, i + 1);
+                State s = genvalid(
+                    seed, STEP_BASE+i+1, w->nbottle, w->scratch
+                );
+                SDL_Log("thread %d: generated %d", w->id, i+1);
+                SDL_LockMutex(w->lock);
+                w->puzzles[i] = s;
+                ngenerated++;
+            }
+        }
+        if (!ngenerated) {
+            SDL_Log("thread %d: sleep", w->id);
+            SDL_CondWait(w->cv, w->lock);
+            SDL_Log("thread %d: woken", w->id);
+        }
     }
+    return 0;
 }
 
 int main(int argc, char **argv)
@@ -520,15 +573,14 @@ int main(int argc, char **argv)
     (void)argc;
     (void)argv;
 
-    iz    cap = (iz)1<<25;
-    char *mem = SDL_malloc(cap);
-    Arena a   = {mem, mem+cap};
+    char *mem = SDL_malloc(SOLVE_MEM);
+    Arena a   = {mem, mem+SOLVE_MEM};
 
     UI *ui      = new(&a, 1, UI);
-    ui->width    = 600;
-    ui->height   = 600;
-    ui->nbottles = MAXBOTTLE;
-    ui->select   = -1;
+    ui->width   = 600;
+    ui->height  = 600;
+    ui->nbottle = MAXBOTTLE;
+    ui->select  = -1;
 
     SDL_Init(SDL_INIT_VIDEO);
     SDL_Window *w = SDL_CreateWindow(
@@ -540,47 +592,78 @@ int main(int argc, char **argv)
     SDL_Cursor   *arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
     SDL_Cursor   *hand  = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
 
-    u64 seed = (uz)a.beg;
+    u64 seed = 0;
+    seed = compress(seed, (uz)a.beg);
+    seed = compress(seed, SDL_GetTicks64());
     #if __amd64
     asm volatile ("rdrand %0" : "=r"(seed));
     #endif
+
+    SDL_mutex *lock    = SDL_CreateMutex();
+    Worker    *workers = new(&a, NTHREADS, Worker);
+    for (i32 i = 0; i < NTHREADS; i++) {
+        char *mem = SDL_malloc(SOLVE_MEM);
+        workers[i].seed    = compress(seed, (uz)mem);
+        workers[i].lock    = lock;
+        workers[i].cv      = SDL_CreateCond();
+        workers[i].scratch = (Arena){mem, mem+SOLVE_MEM};
+        workers[i].nbottle = ui->nbottle;
+        workers[i].id      = i + 1;
+        SDL_Thread *t = SDL_CreateThread(worker, "worker", workers+i);
+        SDL_DetachThread(t);
+    }
 
     State puzzle     = {0};
     i32   difficulty = 2;
     for (;;) {
         i64 now = SDL_GetTicks64();
 
-        seed *= 1111111111111111111u;  // stir seed
-        seed += SDL_GetTicks64();      //
         if (null(puzzle)) {
-            // TODO: run on a separate thread so UI is responsive
-            // TODO: use multiple threads to search faster?
-            Arena tmp = a;
-            puzzle = genvalid(seed, 39+difficulty, ui->nbottles, tmp);
-            ui->head = ui->tail = 0;
-            push(ui, puzzle);
+            SDL_LockMutex(lock);
+            for (i32 i = 0; i < NTHREADS; i++) {
+                State *s = workers[i].puzzles + difficulty - 1;
+                if (!null(*s)) {
+                    puzzle = *s;
+                    *s = (State){0};
+                    ui->head = ui->tail = 0;
+                    push(ui, puzzle);
+                    SDL_CondSignal(workers[i].cv);
+                    break;
+                }
+            }
+            SDL_UnlockMutex(lock);
         }
 
         if (ui->status == STATUS_UNKNOWN) {
-            if (solved(top(ui), ui->nbottles)) {
+            if (solved(top(ui), ui->nbottle)) {
                 ui->status = STATUS_SOLVED;
             } else {
                 Arena    tmp = a;
-                Solution ok  = solve(top(ui), ui->nbottles, &tmp);
+                Solution ok  = solve(top(ui), ui->nbottle, &tmp);
                 ui->status = ok.len ? STATUS_SOLVABLE : STATUS_UNSOLVABLE;
             }
         }
 
         switch (ui->status) {
+        case STATUS_GENERATING:
+            i32 green = SDL_GetTicks64() / 4 % 512;
+            green = green>255 ? 511-green : green;
+            ui->border = green<<8 | 0xff;
+            ui->success = ui->error = 0;
+            break;
+        case STATUS_UNKNOWN:
+        case STATUS_SOLVABLE:
+            ui->border = 0;
+            break;
         case STATUS_SOLVED:
-            ui->success = now + BORDER_DURATION;
+            ui->success = now + BORDER_MS;
             break;
         case STATUS_UNSOLVABLE:
-            ui->error = now + BORDER_DURATION;
+            ui->error = now + BORDER_MS;
             break;
         }
 
-        ui->border = ui->success>now ? 0x00ff00 : 0;
+        ui->border = ui->success>now ? 0x00ff00 : ui->border;
         ui->border = ui->error>now   ? 0xff0000 : ui->border;
         ui->click  = 0;
 
@@ -601,7 +684,7 @@ int main(int argc, char **argv)
                     puzzle = (State){0};
                     ui->head = ui->tail = 0;
                     ui->success = ui->error = 0;
-                    ui->status = STATUS_UNKNOWN;
+                    ui->status = STATUS_GENERATING;
                     ui->select = -1;
                     break;
                 case 'h':;  // hint
@@ -645,7 +728,7 @@ int main(int argc, char **argv)
 
         draw(r, ui);
 
-        if (ui->bottle >= 0) {
+        if (ui->active >= 0) {
             SDL_SetCursor(hand);
         } else {
             SDL_SetCursor(arrow);
@@ -653,20 +736,20 @@ int main(int argc, char **argv)
 
         if (ui->click) {
             if (ui->select >= 0) {
-                if (ui->select == ui->bottle) {
+                if (ui->select == ui->active) {
                     ui->select = -1;
                 } else {
                     State s = top(ui);
-                    Move  m = {ui->select, ui->bottle};
-                    if (valid(s, ui->nbottles, m)) {
+                    Move  m = {ui->select, ui->active};
+                    if (valid(s, ui->nbottle, m)) {
                         push(ui, apply(s, m));
                         ui->select = -1;
                     } else {
-                        ui->select = ui->bottle;
+                        ui->select = ui->active;
                     }
                 }
             } else {
-                ui->select = ui->bottle;
+                ui->select = ui->active;
             }
         }
 
@@ -694,9 +777,8 @@ static void print(State s, i32 nbottle)
 
 int main(void)
 {
-    iz    cap = (iz)1<<25;
-    char *mem = malloc(cap);
-    Arena a   = {mem, mem+cap};
+    char *mem = malloc(SOLVE_MEM);
+    Arena a   = {mem, mem+SOLVE_MEM};
     for (i32 i = 0; i < 1000; i++) {
         Arena scratch = a;
         i32   nbottle = 14;
