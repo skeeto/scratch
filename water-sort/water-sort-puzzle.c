@@ -11,7 +11,7 @@
 // * u: undo last move
 // * 1-5: generate a new puzzle (0=easy, 4=hard)
 //
-// TODO: Add on-screen buttons, then build web version with empscripten.
+// TODO: Add on-screen buttons, then compile to WASM with Clang
 //
 // This is free and unencumbered software released into the public domain.
 #include <stddef.h>
@@ -21,10 +21,13 @@
 #define affirm(c)       while (!(c)) *(volatile int *)0 = 0
 
 typedef int8_t      i8;
+typedef uint8_t     u8;
 typedef uint16_t    u16;
 typedef int32_t     b32;
 typedef int32_t     i32;
+typedef int64_t     i64;
 typedef uint64_t    u64;
+typedef float       f32;
 typedef ptrdiff_t   iz;
 typedef size_t      uz;
 
@@ -328,19 +331,10 @@ static State genpuzzle(u64 seed, i32 nbottle)
 
 // UI
 
-#if 1
-#include "SDL.h"
-
 enum {
     MAXUNDO   = 256,
     BORDER_MS = 500,
-    STEP_BASE = 39,
-    NTHREADS  = (i32)sizeof(uz),
 };
-
-typedef uint8_t u8;
-typedef int64_t i64;
-typedef float   f32;
 
 static i32 colors[] = {
     0x222222,
@@ -351,99 +345,67 @@ static i32 colors[] = {
 };
 
 enum {
-    STATUS_GENERATING,
-    STATUS_UNKNOWN,
-    STATUS_SOLVED,
-    STATUS_SOLVABLE,
-    STATUS_UNSOLVABLE,
+    DRAW_BOX,
+    DRAW_FILL,
 };
 
 typedef struct {
-    i64   success;
-    i64   error;
-    i32   border;
+    i32 mode;
+    i32 color;
+    i32 x, y, w, h;
+} DrawOp;
 
-    i32   nbottle;
-    State states[MAXUNDO];
-    i32   head;
-    i32   tail;
-    i32   status;
+typedef struct {
+    DrawOp *ops;
+    i32     len;
+} DrawList;
 
-    i32   width;
-    i32   height;
-
-    b32   click;
-    i32   mousex;
-    i32   mousey;
-    i32   select;
-    i32   active;
-    i32   slot;
+typedef struct {
+    i32 border;
+    i32 width;
+    i32 height;
+    i32 select;
+    i32 active;
+    i32 mousex;
+    i32 mousey;
 } UI;
 
-static void push(UI *ui, State s)
-{
-    ui->status = STATUS_UNKNOWN;
-    ui->states[ui->head++%MAXUNDO] = s;
-    ui->tail += ui->head-ui->tail > MAXUNDO;
-}
-
-static b32 pop(UI *ui)
-{
-    ui->status = STATUS_UNKNOWN;
-    if (ui->head-1 > ui->tail) {
-        ui->head--;
-        return 1;
-    }
-    return 0;
-}
-
-static State top(UI *ui)
-{
-    State r = {0};
-    if (ui->head > ui->tail) {
-        r = ui->states[(ui->head-1)%MAXUNDO];
-    }
-    return r;
-}
-
-static void undo(UI *ui, i64 now)
-{
-    ui->success = ui->error = 0;
-    if (!pop(ui)) {
-        ui->error = now + BORDER_MS;
-    }
-}
-
-static void hint(UI *ui, i64 now, Arena a)
-{
-    Arena    tmp = a;
-    Solution ok  = solve(top(ui), ui->nbottle, &tmp);
-    if (ok.len > 1) {
-        push(ui, ok.states[1]);
-    } else {
-        ui->error = now + BORDER_MS;
-    }
-}
-
-static void draw(SDL_Renderer *r, UI *ui)
+static DrawList renderui(State state, i32 nbottle, UI *ui, Arena *a)
 {
     // TODO: on-screen buttons for reset, undo, hint, generate
     // TODO: puzzle editor, to turn it into a solver
 
+    DrawList r = {0};
+    r.ops = new(a, 256, DrawOp);
+
     if (ui->border) {
-        i32 c = ui->border;
-        SDL_SetRenderDrawColor(r, (u8)(c>>16), (u8)(c>>8), (u8)(c>>0), 0xff);
-        SDL_RenderClear(r);
+        r.ops[r.len++] = (DrawOp){
+            .mode  = DRAW_FILL,
+            .color = ui->border,
+            .x     = 0,
+            .y     = 0,
+            .w     = ui->width,
+            .h     = ui->height,
+        };
 
         i32 pad = ui->width / 75;
-        SDL_Rect bg = {pad, pad, ui->width-1-pad*2, ui->height-1-pad*2};
-        c = colors[0];
-        SDL_SetRenderDrawColor(r, (u8)(c>>16), (u8)(c>>8), (u8)(c>>0), 0xff);
-        SDL_RenderFillRect(r, &bg);
+        r.ops[r.len++] = (DrawOp){
+            .mode  = DRAW_FILL,
+            .color = colors[0],
+            .x     = pad,
+            .y     = pad,
+            .w     = ui->width  - 1 - pad * 2,
+            .h     = ui->height - 1 - pad * 2,
+        };
     } else {
-        i32 c = colors[0];
-        SDL_SetRenderDrawColor(r, (u8)(c>>16), (u8)(c>>8), (u8)(c>>0), 0xff);
-        SDL_RenderClear(r);
+        r.ops[r.len++] = (DrawOp){
+            .mode  = DRAW_FILL,
+            .color = colors[0],
+            .x     = 0,
+            .y     = 0,
+            .w     = ui->width,
+            .h     = ui->height,
+        };
     }
 
     i32 bw   = ui->width  / 7;
@@ -454,46 +416,125 @@ static void draw(SDL_Renderer *r, UI *ui)
     i32 wh   = (bh - 2*ypad)/4;
 
     if (ui->select >= 0) {
-        SDL_Rect bottle = {
-            (ui->select%7)*bw,
-            ypad/2 + (ui->select/7)*bh,
-            bw, bh - ypad
+        r.ops[r.len++] = (DrawOp){
+            .mode  = DRAW_FILL,
+            .color = 0x7f7f7f,
+            .x     = (ui->select%7)*bw,
+            .y     = ypad/2 + (ui->select/7)*bh,
+            .w     = bw,
+            .h     = bh - ypad,
         };
-        SDL_SetRenderDrawColor(r, 0x7f, 0x7f, 0x7f, 0xff);
-        SDL_RenderFillRect(r, &bottle);
     }
 
-    State s = top(ui);
-    if (null(s)) {
-        return;
+    if (null(state)) {
+        return r;
     }
 
     ui->active = -1;
-    for (i32 i = 0; i < ui->nbottle; i++) {
-        u16 v = s.s[i];
+    for (i32 i = 0; i < nbottle; i++) {
+        u16 v = state.s[i];
         for (; v && !(v&0xf000); v = (u16)(v<<4)) {}
         for (i32 y = 0; y < 4; y++) {
-            u16 c = (v>>(y*4)) & 15;
-            i32 color = colors[c];
-            SDL_SetRenderDrawColor(
-                r, (u8)(color>>16), (u8)(color>>8), (u8)(color>>0), 0xff
-            );
-
-            SDL_Rect water = {
-                xpad + (i%7)*bw,
-                ypad + (i/7)*bh + y*wh,
-                ww+1, wh+1
+            DrawOp water = (DrawOp){
+                .mode  = DRAW_FILL,
+                .color = colors[(v>>(y*4)) & 15],
+                .x     = xpad + (i%7)*bw,
+                .y     = ypad + (i/7)*bh + y*wh,
+                .w     = ww+1,
+                .h     = wh+1,
             };
-            SDL_RenderFillRect(r, &water);
-            SDL_SetRenderDrawColor(r, 0xff, 0xff, 0xff, 0xff);
-            SDL_RenderDrawRect(r, &water);
+            r.ops[r.len++] = water;
 
-            SDL_Point click = {ui->mousex, ui->mousey};
-            if (SDL_PointInRect(&click, &water)) {
+            water.mode  = DRAW_BOX;
+            water.color = 0xffffff;
+            r.ops[r.len++] = water;
+
+            if (ui->mousex >= water.x &&
+                ui->mousey >= water.y &&
+                ui->mousex <  water.x+water.w &&
+                ui->mousey <  water.y+water.h) {
                 ui->active = i;
-                ui->slot   = y;
             }
         }
+    }
+
+    return r;
+}
+
+enum {
+    STATUS_GENERATING,
+    STATUS_UNKNOWN,
+    STATUS_SOLVED,
+    STATUS_SOLVABLE,
+    STATUS_UNSOLVABLE,
+};
+
+enum {
+    INPUT_NONE,
+    INPUT_CLICK,
+    INPUT_HINT,
+    INPUT_RESET,
+    INPUT_UNDO,
+};
+
+typedef struct {
+    i64   success;
+    i64   error;
+
+    UI    ui;
+
+    i32   input;
+
+    i32   nbottle;
+    State puzzle;
+    State states[MAXUNDO];
+    i32   head;
+    i32   tail;
+    i32   status;
+} Game;
+
+static void push(Game *g, State s)
+{
+    g->status = STATUS_UNKNOWN;
+    g->states[g->head++%MAXUNDO] = s;
+    g->tail += g->head-g->tail > MAXUNDO;
+}
+
+static b32 pop(Game *g)
+{
+    g->status = STATUS_UNKNOWN;
+    if (g->head-1 > g->tail) {
+        g->head--;
+        return 1;
+    }
+    return 0;
+}
+
+static State top(Game *g)
+{
+    State r = {0};
+    if (g->head > g->tail) {
+        r = g->states[(g->head-1)%MAXUNDO];
+    }
+    return r;
+}
+
+static void undo(Game *g, i64 now)
+{
+    g->success = g->error = 0;
+    if (!pop(g)) {
+        g->error = now + BORDER_MS;
+    }
+}
+
+static void hint(Game *g, i64 now, Arena a)
+{
+    Arena    tmp = a;
+    Solution ok  = solve(top(g), g->nbottle, &tmp);
+    if (ok.len > 1) {
+        push(g, ok.states[1]);
+    } else {
+        g->error = now + BORDER_MS;
     }
 }
 
@@ -508,6 +549,82 @@ static b32 valid(State s, i32 nbottle, Move e)
     }
     return 0;
 }
+
+static void update(Game *game, i64 now, Arena scratch)
+{
+    if (game->status == STATUS_UNKNOWN) {
+        if (solved(top(game), game->nbottle)) {
+            game->status = STATUS_SOLVED;
+        } else {
+            Solution ok  = solve(top(game), game->nbottle, &scratch);
+            game->status = ok.len ? STATUS_SOLVABLE : STATUS_UNSOLVABLE;
+        }
+    }
+
+    switch (game->status) {
+    case STATUS_GENERATING:
+        i32 green = (i32)(now / 4 % 512);
+        green = green>255 ? 511-green : green;
+        game->ui.border = green<<8 | 0xff;
+        game->success = game->error = 0;
+        break;
+    case STATUS_UNKNOWN:
+    case STATUS_SOLVABLE:
+        game->ui.border = 0;
+        break;
+    case STATUS_SOLVED:
+        game->success = now + BORDER_MS;
+        break;
+    case STATUS_UNSOLVABLE:
+        game->error = now + BORDER_MS;
+        break;
+    }
+
+    game->ui.border = game->success>now ? 0x00ff00 : game->ui.border;
+    game->ui.border = game->error>now   ? 0xff0000 : game->ui.border;
+
+    switch (game->input) {
+    case INPUT_HINT:
+        hint(game, now, scratch);
+        break;
+    case INPUT_RESET:
+        game->head = game->tail = 0;
+        push(game, game->puzzle);
+        game->success = game->error = 0;
+        break;
+    case INPUT_UNDO:
+        undo(game, now);
+        break;
+    }
+
+    if (game->input == INPUT_CLICK) {
+        if (game->ui.select >= 0) {
+            if (game->ui.select == game->ui.active) {
+                game->ui.select = -1;
+            } else {
+                State s = top(game);
+                Move  m = {game->ui.select, game->ui.active};
+                if (valid(s, game->nbottle, m)) {
+                    push(game, apply(s, m));
+                    game->ui.select = -1;
+                } else {
+                    game->ui.select = game->ui.active;
+                }
+            }
+        } else {
+            game->ui.select = game->ui.active;
+        }
+    }
+}
+
+
+#ifdef SDL
+#include "SDL.h"
+
+enum {
+    STEP_BASE = 39,
+    NTHREADS  = (i32)sizeof(uz),
+};
 
 static u64 compress(u64 a, u64 b)
 {
@@ -578,17 +695,17 @@ int main(int argc, char **argv)
     char *mem = SDL_malloc(SOLVE_MEM);
     Arena a   = {mem, mem+SOLVE_MEM};
 
-    UI *ui      = new(&a, 1, UI);
-    ui->width   = 600;
-    ui->height  = 600;
-    ui->nbottle = MAXBOTTLE;
-    ui->select  = -1;
+    Game *game  = new(&a, 1, Game);
+    game->nbottle = MAXBOTTLE;
+    game->ui.width   = 600;
+    game->ui.height  = 600;
+    game->ui.select  = -1;
 
     SDL_Init(SDL_INIT_VIDEO);
     SDL_Window *w = SDL_CreateWindow(
         "Water Sort Puzzle",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        ui->width, ui->height, 0
+        game->ui.width, game->ui.height, 0
     );
     SDL_Renderer *r     = SDL_CreateRenderer(w, -1, SDL_RENDERER_PRESENTVSYNC);
     SDL_Cursor   *arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
@@ -609,7 +726,7 @@ int main(int argc, char **argv)
         workers[i].lock    = lock;
         workers[i].cv      = SDL_CreateCond();
         workers[i].scratch = (Arena){mem, mem+SOLVE_MEM};
-        workers[i].nbottle = ui->nbottle;
+        workers[i].nbottle = game->nbottle;
         workers[i].id      = i + 1;
         SDL_Thread *t = SDL_CreateThread(worker, "worker", workers+i);
         SDL_DetachThread(t);
@@ -618,7 +735,8 @@ int main(int argc, char **argv)
     State puzzle     = {0};
     i32   difficulty = 2;
     for (;;) {
-        i64 now = SDL_GetTicks64();
+        Arena scratch = a;
+        i64   now     = SDL_GetTicks64();
 
         if (null(puzzle)) {
             SDL_LockMutex(lock);
@@ -627,8 +745,8 @@ int main(int argc, char **argv)
                 if (!null(*s)) {
                     puzzle = *s;
                     *s = (State){0};
-                    ui->head = ui->tail = 0;
-                    push(ui, puzzle);
+                    game->head = game->tail = 0;
+                    push(game, puzzle);
                     SDL_CondSignal(workers[i].cv);
                     break;
                 }
@@ -636,39 +754,7 @@ int main(int argc, char **argv)
             SDL_UnlockMutex(lock);
         }
 
-        if (ui->status == STATUS_UNKNOWN) {
-            if (solved(top(ui), ui->nbottle)) {
-                ui->status = STATUS_SOLVED;
-            } else {
-                Arena    tmp = a;
-                Solution ok  = solve(top(ui), ui->nbottle, &tmp);
-                ui->status = ok.len ? STATUS_SOLVABLE : STATUS_UNSOLVABLE;
-            }
-        }
-
-        switch (ui->status) {
-        case STATUS_GENERATING:
-            i32 green = SDL_GetTicks64() / 4 % 512;
-            green = green>255 ? 511-green : green;
-            ui->border = green<<8 | 0xff;
-            ui->success = ui->error = 0;
-            break;
-        case STATUS_UNKNOWN:
-        case STATUS_SOLVABLE:
-            ui->border = 0;
-            break;
-        case STATUS_SOLVED:
-            ui->success = now + BORDER_MS;
-            break;
-        case STATUS_UNSOLVABLE:
-            ui->error = now + BORDER_MS;
-            break;
-        }
-
-        ui->border = ui->success>now ? 0x00ff00 : ui->border;
-        ui->border = ui->error>now   ? 0xff0000 : ui->border;
-        ui->click  = 0;
-
+        game->input = INPUT_NONE;
         SDL_Event e = {0};
         while (SDL_PollEvent(&e)) {
             switch (e.type) {
@@ -677,30 +763,25 @@ int main(int argc, char **argv)
 
             case SDL_KEYDOWN:
                 switch (e.key.keysym.sym) {
-                case '1':
-                case '2':
-                case '3':
-                case '4':
-                case '5':;  // generate a new puzzle
+                case '1': case '2': case '3': case '4': case '5':
+                    // generate a new puzzle
                     difficulty = e.key.keysym.sym - '0';
                     puzzle = (State){0};
-                    ui->head = ui->tail = 0;
-                    ui->success = ui->error = 0;
-                    ui->status = STATUS_GENERATING;
-                    ui->select = -1;
+                    game->head = game->tail = 0;
+                    game->success = game->error = 0;
+                    game->status = STATUS_GENERATING;
+                    game->ui.select = -1;
                     break;
-                case 'h':;  // hint
-                    hint(ui, now, a);
+                case 'h':
+                    game->input = INPUT_HINT;
                     break;
-                case 'q':  // quit
+                case 'q':
                     return 0;
-                case 'r':  // reset
-                    ui->head = ui->tail = 0;
-                    push(ui, puzzle);
-                    ui->success = ui->error = 0;
+                case 'r':
+                    game->input = INPUT_RESET;
                     break;
-                case 'u':  // undo
-                    undo(ui, now);
+                case 'u':
+                    game->input = INPUT_UNDO;
                     break;
                 }
                 break;
@@ -708,85 +789,48 @@ int main(int argc, char **argv)
             case SDL_MOUSEBUTTONDOWN:
                 switch (e.button.button) {
                 case 1:
-                    ui->mousex = e.button.x;
-                    ui->mousey = e.button.y;
-                    ui->click  = 1;
+                    game->ui.mousex = e.button.x;
+                    game->ui.mousey = e.button.y;
+                    game->input = INPUT_CLICK;
                     break;
                 case 2:
-                    hint(ui, now, a);
+                    game->input = INPUT_HINT;
                     break;
                 case 3:
-                    undo(ui, now);
+                    game->input = INPUT_UNDO;
                     break;
                 }
                 break;
 
             case SDL_MOUSEMOTION:
-                ui->mousex = e.motion.x;
-                ui->mousey = e.motion.y;
+                game->ui.mousex = e.motion.x;
+                game->ui.mousey = e.motion.y;
                 break;
             }
         }
 
-        draw(r, ui);
+        DrawList dl = renderui(top(game), game->nbottle, &game->ui, &scratch);
+        for (i32 i = 0; i < dl.len; i++) {
+            i32 c = dl.ops[i].color;
+            SDL_SetRenderDrawColor(r, (u8)(c>>16), (u8)(c>>8), (u8)c, 0xff);
+            switch (dl.ops[i].mode) {
+            case DRAW_FILL:
+                SDL_RenderFillRect(r, (void *)&dl.ops[i].x);
+                break;
+            case DRAW_BOX:
+                SDL_RenderDrawRect(r, (void *)&dl.ops[i].x);
+                break;
+            }
+        }
 
-        if (ui->active >= 0) {
+        if (game->ui.active >= 0) {
             SDL_SetCursor(hand);
         } else {
             SDL_SetCursor(arrow);
         }
 
-        if (ui->click) {
-            if (ui->select >= 0) {
-                if (ui->select == ui->active) {
-                    ui->select = -1;
-                } else {
-                    State s = top(ui);
-                    Move  m = {ui->select, ui->active};
-                    if (valid(s, ui->nbottle, m)) {
-                        push(ui, apply(s, m));
-                        ui->select = -1;
-                    } else {
-                        ui->select = ui->active;
-                    }
-                }
-            } else {
-                ui->select = ui->active;
-            }
-        }
-
+        update(game, now, scratch);
         SDL_RenderPresent(r);
-    }
-}
-
-
-#else
-#include <stdlib.h>
-#include <stdio.h>
-
-static void print(State s, i32 nbottle)
-{
-    for (i32 y = 0; y < 4; y++) {
-        for (i32 x = 0; x < nbottle; x++) {
-            i32 v = s.s[x];
-            for (; v && !(v&0xf000); v <<= 4) {}
-            v >>= y*4;
-            printf("%3d", v&15);
-        }
-        putchar('\n');
-    }
-}
-
-int main(void)
-{
-    char *mem = malloc(SOLVE_MEM);
-    Arena a   = {mem, mem+SOLVE_MEM};
-    for (i32 i = 0; i < 1000; i++) {
-        Arena scratch = a;
-        i32   nbottle = 14;
-        State s       = genpuzzle(i+1, nbottle);
-        print(s, nbottle);
-        printf("%d steps\n", solve(s, nbottle, &scratch).len);
     }
 }
 #endif
