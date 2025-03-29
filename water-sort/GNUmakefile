@@ -1,15 +1,19 @@
 CC        = cc
 CFLAGS    = -O2
 LDFLAGS   = -s
-D_CFLAGS  = -g2 -Wall -Wextra -Wconversion -Wno-sign-conversion \
+D_CFLAGS  = -g3 -Wall -Wextra -Wconversion -Wno-sign-conversion \
   -fsanitize=undefined -fsanitize-trap
 LDLIBS   != pkg-config --cflags --libs sdl2
 
-water-sort-puzzle$(EXE): water-sort-puzzle.c
+water-sort$(EXE): water-sort-puzzle.c
 	$(CC) -DSDL $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 debug$(EXE): water-sort-puzzle.c
 	$(CC) -DSDL $(D_CFLAGS) -o $@ $^ $(LDLIBS)
 
+water-sort.wasm: water-sort-puzzle.c
+	clang --target=wasm32 -nostdlib -DWASM $(CFLAGS) $(D_CFLAGS) \
+	  -s -Wl,--no-entry -fno-builtin -O2 -o $@ $^
+
 clean:
-	rm -f water-sort-puzzle$(EXE)
+	rm -f water-sort-puzzle$(EXE) debug$(EXE) water-sort.wasm

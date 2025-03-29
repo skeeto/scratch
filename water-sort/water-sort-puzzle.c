@@ -11,8 +11,6 @@
 // * u: undo last move
 // * 1-5: generate a new puzzle (0=easy, 4=hard)
 //
-// TODO: Add on-screen buttons, then compile to WASM with Clang
-//
 // This is free and unencumbered software released into the public domain.
 #include <stddef.h>
 #include <stdint.h>
@@ -118,7 +116,7 @@ static b32 insert(StateSet *t, State s, i32 nbottle)
     State norm = normalize(s, nbottle);
     u64   hash = hash64(norm, nbottle);
     uz    mask = ((uz)1 << t->exp) - 1;
-    uz    step = (hash >> (64 - t->exp)) | 1;
+    uz    step = (uz)(hash >> (64 - t->exp)) | 1;
     for (iz i = (iz)hash;;) {
         i = (i + step) & mask;
         if (null(t->slots[i])) {
@@ -224,6 +222,7 @@ static i32 getmoves(State s, i32 nbottle, Move *e)
 typedef struct {
     State *states;
     i32    len;
+    i32    width;
 } Solution;
 
 static Solution solve(State init, i32 nbottle, Arena *a)
@@ -246,6 +245,7 @@ static Solution solve(State init, i32 nbottle, Arena *a)
     queue[head++].s = init;
 
     while (tail < head) {
+        r.width = r.width>head-tail ? r.width : head-tail;
         Node n = queue[tail++];
         Move moves[64];
         i32 nmoves = getmoves(n.s, nbottle, moves);
@@ -356,8 +356,9 @@ typedef struct {
 } DrawOp;
 
 typedef struct {
-    DrawOp *ops;
-    i32     len;
+    i32    active;
+    i32    len;
+    DrawOp ops[256];
 } DrawList;
 
 typedef struct {
@@ -370,16 +371,15 @@ typedef struct {
     i32 mousey;
 } UI;
 
-static DrawList renderui(State state, i32 nbottle, UI *ui, Arena *a)
+static DrawList *renderui(State state, i32 nbottle, UI *ui, Arena *a)
 {
-    // TODO: on-screen buttons for reset, undo, hint, generate
     // TODO: puzzle editor, to turn it into a solver
 
-    DrawList r = {0};
-    r.ops = new(a, 256, DrawOp);
+    DrawList *r = new(a, 1, DrawList);
+    r->active = -1;
 
     if (ui->border) {
-        r.ops[r.len++] = (DrawOp){
+        r->ops[r->len++] = (DrawOp){
             .mode  = DRAW_FILL,
             .color = ui->border,
             .x     = 0,
@@ -389,7 +389,7 @@ static DrawList renderui(State state, i32 nbottle, UI *ui, Arena *a)
         };
 
         i32 pad = ui->width / 75;
-        r.ops[r.len++] = (DrawOp){
+        r->ops[r->len++] = (DrawOp){
             .mode  = DRAW_FILL,
             .color = colors[0],
             .x     = pad,
@@ -398,7 +398,7 @@ static DrawList renderui(State state, i32 nbottle, UI *ui, Arena *a)
             .h     = ui->height - 1 - pad * 2,
         };
     } else {
-        r.ops[r.len++] = (DrawOp){
+        r->ops[r->len++] = (DrawOp){
             .mode  = DRAW_FILL,
             .color = colors[0],
             .x     = 0,
@@ -416,7 +416,7 @@ static DrawList renderui(State state, i32 nbottle, UI *ui, Arena *a)
     i32 wh   = (bh - 2*ypad)/4;
 
     if (ui->select >= 0) {
-        r.ops[r.len++] = (DrawOp){
+        r->ops[r->len++] = (DrawOp){
             .mode  = DRAW_FILL,
             .color = 0x7f7f7f,
             .x     = (ui->select%7)*bw,
@@ -443,11 +443,11 @@ static DrawList renderui(State state, i32 nbottle, UI *ui, Arena *a)
                 .w     = ww+1,
                 .h     = wh+1,
             };
-            r.ops[r.len++] = water;
+            r->ops[r->len++] = water;
 
             water.mode  = DRAW_BOX;
             water.color = 0xffffff;
-            r.ops[r.len++] = water;
+            r->ops[r->len++] = water;
 
             if (ui->mousex >= water.x &&
                 ui->mousey >= water.y &&
@@ -458,6 +458,7 @@ static DrawList renderui(State state, i32 nbottle, UI *ui, Arena *a)
         }
     }
 
+    r->active = ui->active;
     return r;
 }
 
@@ -482,7 +483,6 @@ typedef struct {
     i64   error;
 
     UI    ui;
-
     i32   input;
 
     i32   nbottle;
@@ -562,7 +562,7 @@ static void update(Game *game, i64 now, Arena scratch)
     }
 
     switch (game->status) {
-    case STATUS_GENERATING:
+    case STATUS_GENERATING:;
         i32 green = (i32)(now / 4 % 512);
         green = green>255 ? 511-green : green;
         game->ui.border = green<<8 | 0xff;
@@ -618,7 +618,7 @@ static void update(Game *game, i64 now, Arena scratch)
 }
 
 
-#ifdef SDL
+#if SDL
 #include "SDL.h"
 
 enum {
@@ -809,16 +809,16 @@ int main(int argc, char **argv)
             }
         }
 
-        DrawList dl = renderui(top(game), game->nbottle, &game->ui, &scratch);
-        for (i32 i = 0; i < dl.len; i++) {
-            i32 c = dl.ops[i].color;
+        DrawList *dl = renderui(top(game), game->nbottle, &game->ui, &scratch);
+        for (i32 i = 0; i < dl->len; i++) {
+            i32 c = dl->ops[i].color;
             SDL_SetRenderDrawColor(r, (u8)(c>>16), (u8)(c>>8), (u8)c, 0xff);
-            switch (dl.ops[i].mode) {
+            switch (dl->ops[i].mode) {
             case DRAW_FILL:
-                SDL_RenderFillRect(r, (void *)&dl.ops[i].x);
+                SDL_RenderFillRect(r, (void *)&dl->ops[i].x);
                 break;
             case DRAW_BOX:
-                SDL_RenderDrawRect(r, (void *)&dl.ops[i].x);
+                SDL_RenderDrawRect(r, (void *)&dl->ops[i].x);
                 break;
             }
         }
@@ -831,6 +831,70 @@ int main(int argc, char **argv)
 
         update(game, now, scratch);
         SDL_RenderPresent(r);
+    }
+}
+
+
+#elif WASM
+static Game *game;
+static Arena perm;
+
+__attribute((export_name("game_init")))
+void game_init(i32 seed)
+{
+    static char heap[SOLVE_MEM];
+    perm.beg = heap;
+    perm.end = heap + SOLVE_MEM;
+
+    game = new(&perm, 1, Game);
+    game->nbottle   = MAXBOTTLE;
+    game->ui.select = -1;
+    game->puzzle    = genpuzzle(seed, game->nbottle);
+    push(game, game->puzzle);
+}
+
+__attribute((export_name("game_render")))
+DrawList *game_render(i32 width, i32 height, i32 mousex, i32 mousey)
+{
+    game->ui.width  = width;
+    game->ui.height = height;
+    game->ui.mousex = mousex;
+    game->ui.mousey = mousey;
+    Arena scratch   = perm;
+    return renderui(top(game), game->nbottle, &game->ui, &scratch);
+}
+
+__attribute((export_name("game_update")))
+void game_update(i32 input, i32 x, i32 y, i32 now)
+{
+    game->input     = input;
+    game->ui.mousex = x;
+    game->ui.mousey = y;
+    update(game, now, perm);
+}
+
+
+#else
+// Used to generate a seed list for WASM build.
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(void)
+{
+    #pragma omp parallel for
+    for (int seed = 0; seed <= 1<<24; seed++) {
+        char *mem = malloc(SOLVE_MEM);
+        Arena a   = {mem, mem+SOLVE_MEM};
+        State s = genpuzzle(seed, MAXBOTTLE);
+        Solution r = solve(s, MAXBOTTLE, &a);
+        if (r.len >= 44) {
+            #pragma omp critical
+            {
+                printf("%8d%3d%6d\n", seed, r.len, r.width);
+                fflush(stdout);
+            }
+        }
+        free(mem);
     }
 }
 #endif
