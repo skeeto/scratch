@@ -1,4 +1,4 @@
-# Water Sort Puzzle Game (SDL2)
+# Water Sort Puzzle Game (SDL2 and WASM)
 
 Move water between bottles until each bottle is a single color. Bottles
 can only hold four units of water, and water can only be poured onto alike
