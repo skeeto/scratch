@@ -4,6 +4,8 @@ Move water between bottles until each bottle is a single color. Bottles
 can only hold four units of water, and water can only be poured onto alike
 or into empty bottles.
 
+Play online (WASM): [Water Sort Puzzle](https://nullprogram.com/water-sort/)
+
 ## Build
 
 Get a C compiler and SDL2, then:
