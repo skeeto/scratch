@@ -12,8 +12,8 @@ debug$(EXE): water-sort-puzzle.c
 	$(CC) -DSDL $(D_CFLAGS) -o $@ $^ $(LDLIBS)
 
 water-sort.wasm: water-sort-puzzle.c
-	clang --target=wasm32 -nostdlib -DWASM $(CFLAGS) $(D_CFLAGS) \
-	  -s -Wl,--no-entry -fno-builtin -O2 -o $@ $^
+	clang --target=wasm32 -nostdlib -DWASM -Wall -Wextra $(CFLAGS) \
+	  -s -Wl,--no-entry -fno-builtin -o $@ $^
 
 clean:
 	rm -f water-sort-puzzle$(EXE) debug$(EXE) water-sort.wasm
