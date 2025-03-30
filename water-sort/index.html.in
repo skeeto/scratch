@@ -50,12 +50,12 @@ const SEEDS = [
 const WASM =
 #include "water-sort.wasm.b64"
 
-function main() {
+async function main() {
     let bytes   = Uint8Array.from(atob(WASM), function(c) {
         return c.charCodeAt(0)
     })
-    let module  = new WebAssembly.Module(bytes)
-    let wasm    = new WebAssembly.Instance(module)
+    let module  = await WebAssembly.compile(bytes)
+    let wasm    = await WebAssembly.instantiate(module)
     let exports = wasm.exports
     let title   = document.querySelector("#title")
     let canvas  = document.querySelector("canvas")
