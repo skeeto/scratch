@@ -1,0 +1,203 @@
+<!doctype html>
+<title>Water Sort</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width">
+<style>
+html, body {
+    background: #222222;
+    font-family: sans-serif;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    text-align: center;
+    width: 100%;
+}
+h1 {
+    color: white;
+    margin: 0;
+}
+button {
+    font-size: 150%;
+    height: 8%;
+    margin: 0.3em;
+    width: 25%;
+}
+</style>
+
+<canvas></canvas>
+<h1 id="title"></h1>
+<button id="reset">reset</button>
+<button id="hint">hint</button>
+<button id="undo">undo</button>
+<br/>
+<button id="prev">prev</button>
+<button id="next">next</button>
+
+<script>
+const INPUT_NONE  = 0
+const INPUT_CLICK = 1
+const INPUT_HINT  = 2
+const INPUT_RESET = 3
+const INPUT_UNDO  = 4
+
+const DRAW_BOX  = 0
+const DRAW_FILL = 1
+
+const SEEDS = [
+#include "seeds.txt"
+]
+
+const WASM =
+#include "water-sort.wasm.b64"
+
+function main() {
+    let bytes   = Uint8Array.from(atob(WASM), function(c) {
+        return c.charCodeAt(0)
+    })
+    let module  = new WebAssembly.Module(bytes)
+    let wasm    = new WebAssembly.Instance(module)
+    let exports = wasm.exports
+    let title   = document.querySelector("#title")
+    let canvas  = document.querySelector("canvas")
+    let ctx     = canvas.getContext("2d")
+    let memory  = exports.memory
+    let start   = Date.now()
+    let mousex  = -1
+    let mousey  = -1
+
+    function now() {
+        return Date.now() - start
+    }
+
+    function render() {
+        let width  = canvas.width  = window.innerWidth
+        let height = canvas.height = width
+        let ptr    = exports.game_render(width, height, mousex, mousey)
+        let dl     = new Int32Array(memory.buffer, ptr)
+        let active = dl[0]
+        let len    = dl[1]
+        let ops    = dl.subarray(2)
+
+        for (let i = 0; i < len; i++) {
+            let op    = ops.subarray(6*i, 6*i+6)
+            let style = `#${op[1].toString(16).padStart(6, "0")}`
+            switch (op[0]) {
+            case DRAW_BOX:
+                ctx.strokeStyle = style
+                ctx.strokeRect(op[2], op[3], op[4], op[5])
+                break
+            case DRAW_FILL:
+                ctx.fillStyle = style
+                ctx.fillRect(op[2], op[3], op[4], op[5])
+                break
+            }
+        }
+
+        if (active >= 0) {
+            canvas.style.cursor = "pointer"
+        } else {
+            canvas.style.cursor = "auto"
+        }
+    }
+
+    canvas.addEventListener("mousemove", function(e) {
+        mousex = e.clientX
+        mousey = e.clientY
+    })
+
+    canvas.addEventListener("contextmenu", function(e) {
+        e.preventDefault()
+    })
+
+    canvas.addEventListener("mousedown", function(e) {
+        mousex = e.clientX
+        mousey = e.clientY
+        switch (e.button) {
+        case 0: exports.game_update(INPUT_CLICK, mousex, mousey, now())
+                break
+        case 1: exports.game_update(INPUT_HINT, mousex, mousey, now())
+                break
+        case 2: exports.game_update(INPUT_UNDO, mousex, mousey, now())
+                break
+        }
+    })
+
+    document.addEventListener("keydown", function(e) {
+        if (e.key == "u") {
+            exports.game_update(INPUT_UNDO, mousex, mousey, now())
+        } else if (e.key == "h") {
+            exports.game_update(INPUT_HINT, mousex, mousey, now())
+        } else if (e.key == "r") {
+            exports.game_update(INPUT_RESET, mousex, mousey, now())
+        }
+    })
+
+    document.querySelector("#reset").addEventListener("click", function(e) {
+        exports.game_update(INPUT_RESET, mousex, mousey, now())
+    })
+    document.querySelector("#hint").addEventListener("click", function(e) {
+        exports.game_update(INPUT_HINT, mousex, mousey, now())
+    })
+    document.querySelector("#undo").addEventListener("click", function(e) {
+        exports.game_update(INPUT_UNDO, mousex, mousey, now())
+    })
+
+    function getlevel() {
+        let level = localStorage["level"]
+        return level ? parseFloat(level) : 0
+    }
+
+    function settitle(level) {
+        title.textContent = `puzzle ${level+1}`
+    }
+
+    function setlevel(level) {
+        localStorage["level"] = level
+        exports.game_init(SEEDS[level])
+        settitle(level)
+    }
+
+    document.querySelector("#prev").addEventListener("click", function(e) {
+        let level = getlevel()
+        level = (level + SEEDS.length - 1) % SEEDS.length
+        setlevel(level)
+    })
+    document.querySelector("#next").addEventListener("click", function(e) {
+        let level = getlevel()
+        level = (level + 1) % SEEDS.length
+        setlevel(level)
+    })
+
+    canvas.addEventListener("touchstart", function(e) {
+        e.preventDefault()
+        let touch = e.touches[e.touches.length - 1]
+        mousex = touch.clientX
+        mousey = touch.clientY
+    })
+    canvas.addEventListener("touchmove", function(e) {
+        e.preventDefault()
+        let touch = e.touches[e.touches.length - 1]
+        mousex = touch.clientX
+        mousey = touch.clientY
+    })
+    canvas.addEventListener("touchend", function(e) {
+        e.preventDefault()
+        if (mousex>=0 && mousey>=0) {
+            exports.game_update(INPUT_CLICK, mousex, mousey, now())
+        }
+        mousex = mousey = -1
+    })
+
+    function animate() {
+        // TODO: stop requesting frames when state is static
+        requestAnimationFrame(animate)
+        exports.game_update(INPUT_NONE, mousex, mousey, now())
+        render()
+    }
+    requestAnimationFrame(animate)
+
+    setlevel(getlevel())
+}
+
+main()
+</script>

@@ -8,18 +8,13 @@ Play online (WASM): [Water Sort Puzzle](https://nullprogram.com/water-sort/)
 
 ## Build
 
-Get a C compiler and SDL2, then:
+For the native application, get any C compiler and SDL2, then:
 
     $ eval cc -O water-sort-puzzle.c $(pkg-config --cflags --libs sdl2)
 
 Or just run `make`. For WASM, get Clang, then:
 
-	$ clang --target=wasm32 -nostdlib -DWASM -O2 -fno-builtin
-            -s -Wl,--no-entry -o water-sort.wasm water-sort-puzzle.c
-
-Or run `make`:
-
-    $ make water-sort.wasm
+    $ make index.html
 
 Then visit `index.html` in a browser.
 
