@@ -13,7 +13,7 @@ debug$(EXE): water-sort-puzzle.c
 
 water-sort.wasm: water-sort-puzzle.c
 	clang --target=wasm32 -nostdlib -DWASM -Wall -Wextra $(CFLAGS) \
-	  -s -Wl,--no-entry -fno-builtin -o $@ $^
+	  $(LDFLAGS) -Wl,--no-entry -fno-builtin -o $@ $^
 
 clean:
 	rm -f water-sort-puzzle$(EXE) debug$(EXE) water-sort.wasm
