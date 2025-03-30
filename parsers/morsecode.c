@@ -11,24 +11,27 @@
 int
 morse_decode(int state, int c)
 {
-    static const unsigned char t[] = {
-        0x03, 0x3f, 0x7b, 0x4f, 0x2f, 0x63, 0x5f, 0x77, 0x7f, 0x72,
-        0x87, 0x3b, 0x57, 0x47, 0x67, 0x4b, 0x81, 0x40, 0x01, 0x58,
-        0x00, 0x68, 0x51, 0x32, 0x88, 0x34, 0x8c, 0x92, 0x6c, 0x02,
-        0x03, 0x18, 0x14, 0x00, 0x10, 0x00, 0x00, 0x00, 0x0c, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x1c, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x24,
-        0x00, 0x28, 0x04, 0x00, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35,
-        0x36, 0x37, 0x38, 0x39, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46,
-        0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50,
-        0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a
-    };
+    //complete binary tree in level order
+    //invalid nodes contain the NUL character
+    static const unsigned char t[] =
+        "\0"
+        "ET"
+        "IANM"
+        "SURWDKGO"
+        //invalid strict prefixes have their MSB set
+        "HV\xc6\0\xcc\x80\xd0JB\xd8\xc3\xd9Z\xd1\0\0"
+        "\xb5\xb4\0\xb3\0\0\0\xb2\0\0\0\0\0\0\0\xb1"
+        "\xb6\0\0\0\0\0\0\0\xb7\0\0\0\xb8\0\xb9\xb0";
     int v = t[-state];
     switch (c) {
-    case 0x00: return v >> 2 ? t[(v >> 2) + 63] : 0;
-    case 0x2e: return v &  2 ? state*2 - 1 : 0;
-    case 0x2d: return v &  1 ? state*2 - 2 : 0;
-    default:   return 0;
+    case 0x00: return v & 0x7f;
+    case 0x2e:
+    case 0x2d:
+        return
+            v & 0x80 || //invalid strict prefix
+            t[-(state * 2 + c - 0x2f)] == 0x80 //c-0x2f==-1 when c==0x2e
+            ? 0 : state*2 + c - 0x2f;
+    default: return 0;
     }
 }
 
@@ -77,6 +80,7 @@ main(void)
         {"-.-.-",  0 }, {"-.--.",  0 }, {"-.---",  0 }, {"--...", '7'},
         {"--..-",  0 }, {"--.-.",  0 }, {"--.--",  0 }, {"---..", '8'},
         {"---.-",  0 }, {"----.", '9'}, {"-----", '0'},
+        {"x", 0},
     };
 
     int fails = 0;
@@ -160,6 +164,25 @@ main(void)
             printf(CR("FAIL") ": ......, got %d, want 0\n", state);
             fails++;
             break;
+        }
+    }
+
+    // Test rejecting bad prefix ".-.-"
+    ntests++;
+    char *prefix=".-.-", *p=prefix;
+    for (int state = 0, count = 0; *p; count++) {
+        state = morse_decode(state, *p);
+        p++;
+        if (*p && state >= 0) {
+            printf(CR("FAIL") ": %.*s, got %d, want < 0\n",
+                   count, prefix, state);
+            fails++;
+            break;
+        } else if (!*p && state == 0) {
+            printf(CG("PASS") ": %s\n", prefix);
+        } else if (!*p && state < 0) {
+            printf(CR("FAIL") ": %s, got %d, want 0\n", prefix, state);
+            fails++;
         }
     }
 
