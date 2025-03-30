@@ -16,7 +16,7 @@ water-sort.wasm: water-sort-puzzle.c
 	  $(LDFLAGS) -Wl,--no-entry -fno-builtin -o $@ $^
 
 water-sort.wasm.b64: water-sort.wasm
-	(printf '"'; base64 -w0 $^; printf '"') >$@
+	(printf '"'; base64 <$^ | tr -d '\n'; printf '"') >$@
 
 index.html: index.html.in seeds.txt water-sort.wasm.b64
 	clang -E -P -undef -nostdinc -x c -o $@ index.html.in
