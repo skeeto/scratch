@@ -57,6 +57,7 @@ async function main() {
     let module  = await WebAssembly.compile(bytes)
     let wasm    = await WebAssembly.instantiate(module)
     let exports = wasm.exports
+    let html    = document.querySelector("html")
     let title   = document.querySelector("#title")
     let canvas  = document.querySelector("canvas")
     let ctx     = canvas.getContext("2d")
@@ -69,8 +70,16 @@ async function main() {
         return Date.now() - start
     }
 
+    function min(a, b) {
+        return b<a ? b : a;
+    }
+
+    function max_width() {
+        return html.clientHeight * 0.7 | 0
+    }
+
     function render() {
-        let width  = canvas.width  = window.innerWidth
+        let width  = canvas.width  = min(html.clientWidth, max_width())
         let height = canvas.height = width
         let ptr    = exports.game_render(width, height, mousex, mousey)
         let dl     = new Int32Array(memory.buffer, ptr)
@@ -99,6 +108,10 @@ async function main() {
             canvas.style.cursor = "auto"
         }
     }
+
+    function onresize() { html.style.maxWidth = `${max_width()}px` }
+    window.addEventListener("resize", onresize);
+    onresize()
 
     canvas.addEventListener("mousemove", function(e) {
         mousex = e.clientX
