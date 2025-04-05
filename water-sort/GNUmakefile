@@ -5,15 +5,15 @@ D_CFLAGS  = -g3 -Wall -Wextra -Wconversion -Wno-sign-conversion \
   -fsanitize=undefined -fsanitize-trap
 LDLIBS   != pkg-config --cflags --libs sdl2
 
-water-sort$(EXE): water-sort-puzzle.c
-	$(CC) -DSDL $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+water-sort$(EXE): main_sdl2.c water-sort.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ main_sdl2.c $(LDLIBS)
 
-debug$(EXE): water-sort-puzzle.c
-	$(CC) -DSDL $(D_CFLAGS) -o $@ $^ $(LDLIBS)
+debug$(EXE): main_sdl2.c water-sort.c
+	$(CC) $(D_CFLAGS) -o $@ main_sdl2.c $(LDLIBS)
 
-water-sort.wasm: water-sort-puzzle.c
-	clang --target=wasm32 -nostdlib -DWASM -Wall -Wextra $(CFLAGS) \
-	  $(LDFLAGS) -Wl,--no-entry -fno-builtin -o $@ $^
+water-sort.wasm: main_wasm.c water-sort.c
+	clang --target=wasm32 -nostdlib -Wall -Wextra $(CFLAGS) \
+	  $(LDFLAGS) -Wl,--no-entry -fno-builtin -o $@ main_wasm.c
 
 water-sort.wasm.b64: water-sort.wasm
 	(printf '"'; base64 <$^ | tr -d '\n'; printf '"') >$@
