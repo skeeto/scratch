@@ -29,5 +29,5 @@ debug.exe: main_windows.c water-sort.c
 	$(CC) -nostartfiles -mwindows $(DBG_CFLAGS) -o $@ main_windows.c
 
 clean:
-	rm -f water-sort-sdl$(EXE) debug-sdl$(EXE) \
+	rm -f water-sort-sdl$(EXE) debug-sdl$(EXE) water-sort.exe debug.exe \
 	   water-sort.wasm water-sort.wasm.b64 index.html
