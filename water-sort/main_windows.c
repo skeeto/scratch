@@ -17,6 +17,7 @@ enum {
     CS_OWNDC            = 0x0020,
     GWLP_USERDATA       = -21,
     IDC_ARROW           = 0x7f00,
+    IDC_HAND            = 0x7f89,
     MEM_COMMIT          = 0x1000,
     MEM_RESERVE         = 0x2000,
     PAGE_READWRITE      = 4,
@@ -98,6 +99,7 @@ W32(uz)     DefWindowProcA(uz, i32, uz, uz);
 W32(uz)     DispatchMessageA(Msg *);
 W32(uz)     LoadCursorA(uz, i32);
 W32(uz)     SelectObject(uz, uz);
+W32(uz)     SetCursor(uz);
 W32(uz)     SetWindowLongPtrA(uz, i32, void *);
 W32(void *) GetWindowLongPtrA(uz, i32);
 W32(void)   ExitProcess(i32);
@@ -111,6 +113,12 @@ static void paint(uz wnd, Game *game, Arena scratch)
     i32 w = game->ui.width  = rect[2] - rect[0];
     i32 h = game->ui.height = rect[3] - rect[1];
     DrawList *dl = renderui(top(game), game->nbottle, &game->ui, &scratch);
+
+    if (game->ui.active >= 0) {
+        SetCursor(LoadCursorA(0, IDC_HAND));
+    } else {
+        SetCursor(LoadCursorA(0, IDC_ARROW));
+    }
 
     Paint ps = {0};
     uz dc    = BeginPaint(wnd, &ps);
@@ -283,7 +291,6 @@ void __stdcall WinMainCRTStartup(void)
     wc.style     = CS_OWNDC,
     wc.proc      = (uz)wndproc;
     wc.classname = class;
-    wc.cursor    = LoadCursorA(0, IDC_ARROW);
     RegisterClassA(&wc);
     uz wnd = CreateWindowExA(
         0, class, title, style, x, y, width, height, 0, 0, 0, ctx
