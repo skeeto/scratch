@@ -40,6 +40,6 @@ Or run `make water-sort.exe` (w64devkit).
 
 ## See Also
 
-* [https://www.coolmathgames.com/blog/how-to-play-lipuzz-water-sort](https://www.coolmathgames.com/blog/how-to-play-lipuzz-water-sort)
+* [Lipuzz: Water Sort | The Complete Strategy Guide](https://www.coolmathgames.com/blog/how-to-play-lipuzz-water-sort)
 * [Lessons learned from my first dive into WebAssembly](https://nullprogram.com/blog/2025/04/04/)
 * [r/watersortpuzzle](https://old.reddit.com/r/watersortpuzzle/)
