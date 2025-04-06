@@ -15,11 +15,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define lenof(a)        (i32)(sizeof(a) / sizeof(*(a)))
 #define new(a, n, t)    (t *)alloc(a, n, sizeof(t), _Alignof(t))
 #define affirm(c)       while (!(c)) *(volatile int *)0 = 0
 
 typedef int8_t      i8;
 typedef uint8_t     u8;
+typedef int16_t     i16;
 typedef uint16_t    u16;
 typedef int32_t     b32;
 typedef int32_t     i32;
