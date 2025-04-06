@@ -78,8 +78,8 @@ W32(b32)    DeleteObject(uz);
 W32(b32)    EndPaint(uz, Paint *);
 W32(b32)    GetClientRect(uz, i32 *);
 W32(b32)    GetCursorPos(i32 *);
-W32(b32)    GetMessageA(Msg *, uz, i32, i32);
 W32(b32)    InvalidateRect(uz, i32 *, b32);
+W32(b32)    PeekMessageA(Msg *, uz, i32, i32, b32);
 W32(b32)    QueryPerformanceCounter(i64 *);
 W32(b32)    QueryPerformanceFrequency(i64 *);
 W32(b32)    ScreenToClient(uz, i32 *);
@@ -295,6 +295,7 @@ void __stdcall WinMainCRTStartup(void)
     uz wnd = CreateWindowExA(
         0, class, title, style, x, y, width, height, 0, 0, 0, ctx
     );
+    paint(wnd, &ctx->game, ctx->perm);
 
     i64 freq;
     QueryPerformanceFrequency(&freq);
@@ -307,14 +308,15 @@ void __stdcall WinMainCRTStartup(void)
 
         if (MsgWaitForMultipleObjects(0, 0, 0, 30, -1) != WAIT_TIMEOUT) {
             Msg m;
-            GetMessageA(&m, 0, 0, 0);
-            switch (m.msg) {
-            case WM_QUIT: {
-                ExitProcess(0);
-            } break;
+            while (PeekMessageA(&m, 0, 0, 0, 1)) {
+                switch (m.msg) {
+                case WM_QUIT: {
+                    ExitProcess(0);
+                } break;
+                }
+                TranslateMessage(&m);
+                DispatchMessageA(&m);
             }
-            TranslateMessage(&m);
-            DispatchMessageA(&m);
         }
 
         if (ctx->dirty) {
