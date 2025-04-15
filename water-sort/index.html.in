@@ -96,8 +96,23 @@ function webgl_renderer(canvas) {
 
     let rect = gl.createBuffer()
     gl.bindBuffer(gl.ARRAY_BUFFER, rect)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+        0,0, 1,0, 0,1, 1,1
+    ]), gl.STATIC_DRAW)
     gl.enableVertexAttribArray(a_point)
     gl.vertexAttribPointer(a_point, 2, gl.FLOAT, false, 0, 0)
+
+    let strip = gl.createBuffer()
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, strip)
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Int8Array([
+        0, 1, 2, 3  // GL_TRIANGLE_STRIP order
+    ]), gl.STATIC_DRAW)
+
+    let lines = gl.createBuffer()
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lines)
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Int8Array([
+        0, 1, 3, 2  // GL_LINE_LOOP order
+    ]), gl.STATIC_DRAW)
 
     let rects = gl.createBuffer()
     gl.bindBuffer(gl.ARRAY_BUFFER, rects)
@@ -148,25 +163,23 @@ function webgl_renderer(canvas) {
         gl.viewport(0, 0, width, height)
         gl.uniform2f(u_dims, width, height)
 
-        gl.bindBuffer(gl.ARRAY_BUFFER, rect)
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-            0,0, 1,0, 0,1, 1,1
-        ]), gl.STATIC_DRAW)
         gl.bindBuffer(gl.ARRAY_BUFFER, rects)
-        gl.bufferData(gl.ARRAY_BUFFER, fillattrs, gl.STATIC_DRAW)
+        gl.bufferData(gl.ARRAY_BUFFER, fillattrs, gl.STREAM_DRAW)
         ext.vertexAttribDivisorANGLE(a_color, 2)
         ext.vertexAttribDivisorANGLE(a_xywh,  2)
-        ext.drawArraysInstancedANGLE(gl.TRIANGLE_STRIP, 0, 4, fillcount*2)
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, strip)
+        ext.drawElementsInstancedANGLE(
+            gl.TRIANGLE_STRIP, 4, gl.UNSIGNED_BYTE, 0, fillcount*2
+        )
 
-        gl.bindBuffer(gl.ARRAY_BUFFER, rect)
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-            0,0, 1,0, 1,1, 0,1
-        ]), gl.STATIC_DRAW)
         gl.bindBuffer(gl.ARRAY_BUFFER, rects)
-        gl.bufferData(gl.ARRAY_BUFFER, boxattrs,  gl.STATIC_DRAW)
+        gl.bufferData(gl.ARRAY_BUFFER, boxattrs,  gl.STREAM_DRAW)
         ext.vertexAttribDivisorANGLE(a_color, 4)
         ext.vertexAttribDivisorANGLE(a_xywh,  4)
-        ext.drawArraysInstancedANGLE(gl.LINE_LOOP, 0, 4, boxcount*4)
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, lines)
+        ext.drawElementsInstancedANGLE(
+            gl.LINE_LOOP, 4, gl.UNSIGNED_BYTE, 0, boxcount*4
+        )
     }
 }
 
