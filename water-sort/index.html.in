@@ -354,11 +354,11 @@ async function main() {
     let running = true
     function animate() {
         // TODO: stop requesting frames when state is static
+        request = requestAnimationFrame(animate)
         if (running) {
             exports.game_update(INPUT_NONE, mousex, mousey, now())
             render()
         }
-        request = requestAnimationFrame(animate)
     }
     requestAnimationFrame(animate)
 
