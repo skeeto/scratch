@@ -50,11 +50,7 @@ const SEEDS = [
 const WASM =
 #include "water-sort.wasm.b64"
 
-function webgl_renderer(canvas) {
-    let gl = canvas.getContext("webgl")
-    if (gl == null) {
-        return null
-    }
+function webgl_renderer(gl) {
     let ext = gl.getExtension("ANGLE_instanced_arrays")
 
     let program = gl.createProgram()
@@ -224,8 +220,11 @@ async function main() {
     let mousex  = -1
     let mousey  = -1
 
-    let renderer = webgl_renderer(canvas)
-    if (renderer == null) {
+    let renderer = null
+    let gl = canvas.getContext("webgl")
+    if (gl != null) {
+        renderer = webgl_renderer(gl)
+    } else {
         renderer = canvas_renderer(canvas)
         document.title += " (canvas)"
     }
@@ -352,13 +351,25 @@ async function main() {
         mousex = mousey = -1
     })
 
+    let running = true
     function animate() {
         // TODO: stop requesting frames when state is static
-        requestAnimationFrame(animate)
-        exports.game_update(INPUT_NONE, mousex, mousey, now())
-        render()
+        if (running) {
+            exports.game_update(INPUT_NONE, mousex, mousey, now())
+            render()
+        }
+        request = requestAnimationFrame(animate)
     }
     requestAnimationFrame(animate)
+
+    canvas.addEventListener("webglcontextlost", function(e) {
+        e.preventDefault()
+        running = false
+    })
+    canvas.addEventListener("webglcontextrestored", function(e) {
+        renderer = webgl_renderer(gl)
+        running = true
+    })
 
     setlevel(getlevel())
 }
