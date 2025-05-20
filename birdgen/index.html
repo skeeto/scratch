@@ -1,0 +1,94 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=0.3"/>
+
+<style>
+body {
+    font-family: sans-serif;
+    text-align: center;
+}
+.game {
+    font-size: 500%;
+    margin-left: 1em;
+}
+button {
+    font-size: 50%;
+    margin-bottom: 1em;
+    padding: 0.25em;
+}
+</style>
+
+<p>
+Three of these bird species are randomly-generated fakes. Can you figure out
+which is the real species?
+</p>
+
+<div class="game">
+  <div id="names">
+    <div></div>
+    <div></div>
+    <div></div>
+    <div></div>
+  </div>
+  <button id="generate">generate</button>
+  <button id="reveal">reveal</button>
+</div>
+
+<script>
+async function main() {
+    let response = await fetch('birdgen.wasm')
+    let bytes    = await response.arrayBuffer()
+    let module   = await WebAssembly.compile(bytes)
+    let instance = await WebAssembly.instantiate(module)
+
+    let seed = Math.random() * 0x20000000000000;
+    instance.exports.set_seed(BigInt(seed));
+
+    function generate() {
+        let results = instance.exports.generate()
+        let memory = new DataView(instance.exports.memory.buffer)
+        let answer = memory.getInt32(results+32, true)
+        let names  = []
+        for (let i = 0; i < 4; i++) {
+            let ptr = memory.getUint32(results+8*i+0, true)
+            let len = memory.getInt32(results+8*i+4, true)
+            let txt = new Uint8Array(memory.buffer, ptr, len)
+            names[i] = new TextDecoder().decode(txt)
+        }
+        return {
+            names:  names,
+            answer: answer
+        }
+    }
+
+    function getitem(i) {
+        return document.querySelector(`#names :nth-child(${i+1})`)
+    }
+
+    let results = null
+    function populate() {
+        results = generate()
+        for (let i = 0; i < 4; i++) {
+            let item = getitem(i)
+            item.textContent = results.names[i]
+            if (i == results.answer) {
+            } else {
+            }
+        }
+    }
+
+    function reveal() {
+        let name = results.names[results.answer]
+        let page = name.replace(/ /, "_")
+        let url  = `https://en.wikipedia.org/wiki/${page}`
+        let item = getitem(results.answer)
+        item.innerHTML = `<a href="${url}">${name}</a>`
+    }
+
+    document.querySelector("#generate").addEventListener("click", populate)
+    document.querySelector("#reveal").addEventListener("click", reveal)
+
+    populate()
+}
+main()
+</script>
