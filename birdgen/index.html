@@ -40,8 +40,8 @@ async function main() {
     let module   = await WebAssembly.compile(bytes)
     let instance = await WebAssembly.instantiate(module)
 
-    let seed = Math.random() * 0x20000000000000;
-    instance.exports.set_seed(BigInt(seed));
+    let seed = Math.random() * 0x20000000000000
+    instance.exports.set_seed(BigInt(seed))
 
     function generate() {
         let results = instance.exports.generate()
