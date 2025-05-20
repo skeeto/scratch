@@ -171,46 +171,46 @@ static Str choice(u64 *rng, Table t)
 
 static Str generate(Arena *a, u64 *rng, Tables t)
 {
-	for (;;) {
+    for (;;) {
         Arena x[1] = {*a};
         Str   r    = {};
 
         while (!r.len) {
-			if (!randn(rng, 10)) {
+            if (!randn(rng, 10)) {
                 r = concat(x, r, choice(rng, t.qualifiers));
                 r = concat(x, r, s(" "));
-			}
+            }
 
-			switch (randn(rng, 12)) {
+            switch (randn(rng, 12)) {
             case 0 ... 5:
                 r = concat(x, r, choice(rng, t.prefixes));
                 r = concat(x, r, s("-"));
                 r = concat(x, r, choice(rng, t.suffixes));
                 r = concat(x, r, s(" "));
                 break;
-			case 6 ... 8:
+            case 6 ... 8:
                 r = concat(x, r, choice(rng, t.colors));
                 r = concat(x, r, s(" "));
                 break;
-			case 9:
+            case 9:
                 r = concat(x, r, choice(rng, t.colors));
-				if (!randn(rng, 6)) {
+                if (!randn(rng, 6)) {
                     r = concat(x, r, s("-"));
-				} else {
+                } else {
                     r = concat(x, r, s("-and-"));
-				}
+                }
                 r = concat(x, r, choice(rng, t.colors));
                 r = concat(x, r, s(" "));
                 break;
-			}
-		}
+            }
+        }
         r = concat(x, r, choice(rng, t.species));
 
-		if (find(r, t.actual) < 0) {
+        if (find(r, t.actual) < 0) {
             *a = *x;  // commit
             return concat(a, r, s("\0"));
         }
-	}
+    }
 }
 
 
