@@ -1,3 +1,5 @@
+// This is free and unencumbered software released into the public domain.
+
 typedef unsigned char    u8;
 typedef __INT32_TYPE__   b32;
 typedef __INT32_TYPE__   i32;
@@ -11,7 +13,10 @@ typedef __SIZE_TYPE__    uz;
 #define s(s)            (Str){(u8 *)s, lenof(s)-1}
 #define new(a, n, t)    (t *)alloc(a, n, sizeof(t), _Alignof(t))
 
-typedef struct { u8 *beg, *end; } Arena;
+typedef struct {
+    u8 *beg;
+    u8 *end;
+} Arena;
 
 static void *alloc(Arena *a, iz count, iz size, iz align)
 {
@@ -44,7 +49,6 @@ static Table split(Arena *a, u8 *strings, i32 len)
             r.offs[++r.len] = i + 1;
         }
     }
-    r.offs[r.len] = len;
     return r;
 }
 
@@ -208,7 +212,7 @@ static Str generate(Arena *a, u64 *rng, Tables t)
 
         if (find(r, t.actual) < 0) {
             *a = *x;  // commit
-            return concat(a, r, s("\0"));
+            return r;
         }
     }
 }
@@ -238,19 +242,19 @@ i32 __stdcall mainCRTStartup()
 
     uz seed;
     asm volatile ("rdrand %0" : "=r"(seed));
-    u64 rng[1] = {seed * 1111111111111111111u};
+    u64 rng = seed * 1111111111111111111u;
 
-    Str real = choice(rng, t.actual);
+    Str real = choice(&rng, t.actual);
     affirm(find(real, t.actual) >= 0);
 
     Str names[4] = {};
     names[0] = real;
     for (i32 i = 1; i < 4; i++) {
-        names[i] = generate(&a, rng, t);
+        names[i] = generate(&a, &rng, t);
     }
 
     for (i32 i = 4; i > 0; i--) {
-        i32 r = randn(rng, i);
+        i32 r = randn(&rng, i);
         print(names[r]);
         print(s("\n"));
         names[r] = names[i-1];
@@ -279,7 +283,7 @@ static u64    rng;
 static Arena  arena;
 static Tables tables;
 
-void *sbrk(iz size)
+static void *sbrk(iz size)
 {
     uz npages = ((uz)size + 0xffff) >> 16;
     uz old    = __builtin_wasm_memory_grow(0, npages);
@@ -292,8 +296,8 @@ void *sbrk(iz size)
 __attribute((export_name("set_seed")))
 void wasm_set_seed(u64 seed)
 {
-    seed += 1111111111111111111u; seed ^= seed >> 33;
-    seed *= 1111111111111111111u; seed ^= seed >> 33;
+    seed += 1111111111111111111u;  seed ^= seed >> 33;
+    seed *= 1111111111111111111u;  seed ^= seed >> 33;
     rng = seed;
 }
 
