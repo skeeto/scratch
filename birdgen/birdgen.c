@@ -120,7 +120,7 @@ static Str clone(Arena *a, Str s)
 
 static Str concat(Arena *a, Str head, Str tail)
 {
-    if (!head.data || a->beg != head.data+head.len) {
+    if (a->beg != head.data+head.len) {
         head = clone(a, head);
     }
     head.len += clone(a, tail).len;

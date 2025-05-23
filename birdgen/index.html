@@ -35,7 +35,7 @@ which is the real species?
 
 <script>
 async function main() {
-    let response = await fetch('birdgen.wasm')
+    let response = await fetch("birdgen.wasm")
     let bytes    = await response.arrayBuffer()
     let module   = await WebAssembly.compile(bytes)
     let instance = await WebAssembly.instantiate(module)
@@ -45,14 +45,14 @@ async function main() {
 
     function generate() {
         let results = instance.exports.generate()
-        let memory = new DataView(instance.exports.memory.buffer)
-        let answer = memory.getInt32(results+32, true)
-        let names  = []
+        let memory  = new DataView(instance.exports.memory.buffer)
+        let answer  = memory.getInt32(results+32, true)
+        let names   = []
         for (let i = 0; i < 4; i++) {
-            let ptr = memory.getUint32(results+8*i+0, true)
-            let len = memory.getInt32(results+8*i+4, true)
+            let ptr = memory.getUint32(results + 8*i+0, true)
+            let len = memory.getInt32 (results + 8*i+4, true)
             let txt = new Uint8Array(memory.buffer, ptr, len)
-            names[i] = new TextDecoder().decode(txt)
+            names.push(new TextDecoder().decode(txt))
         }
         return {
             names:  names,
@@ -83,7 +83,6 @@ async function main() {
 
     document.querySelector("#generate").addEventListener("click", populate)
     document.querySelector("#reveal").addEventListener("click", reveal)
-
     populate()
 }
 main()
