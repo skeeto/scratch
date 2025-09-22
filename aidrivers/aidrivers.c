@@ -362,7 +362,7 @@ main(int argc, char *argv[])
     int reset = 1;
     int beams = 0;
     const char *overlayfile = 0;
-    struct {time_t a; int (*b)(); void *c;} seed = {time(0), main, &seed};
+    struct {time_t a; int (*b)(int, char **); void *c;} seed = {time(0), main, &seed};
     unsigned long long rng[1] = {hash(&seed, sizeof(seed), 0)};
     struct sysconf cfg = defaultcfg;
 
