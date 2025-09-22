@@ -49,14 +49,15 @@ struct StrTable {
 
 struct Field {
     Str name;
-    size_t index;
+    std::ptrdiff_t index;
     std::vector<Token> tokens;
 
-    Field(Str name, std::size_t index, StrTable& t): name{name}, index{index}
+    Field(Str name, std::ptrdiff_t index, StrTable& t)
+        : name{name}, index{index}
     {
         Token ns{};
-        std::size_t prev = 0;
-        for (std::size_t i = 0; i < name.size(); i++) {
+        std::ptrdiff_t prev = 0;
+        for (std::ptrdiff_t i = 0; i < std::ssize(name); i++) {
             if (name[i] == '.') {
                 auto sub = name.substr(prev, i-prev);
                 ns = t.intern(ns, sub);
@@ -70,8 +71,8 @@ struct Field {
 
     bool operator<(Field const& other) const
     {
-        std::size_t i = 0;
-        for (; i<tokens.size() && i<other.tokens.size(); i++) {
+        std::ptrdiff_t i = 0;
+        for (; i<std::ssize(tokens) && i<ssize(other.tokens); i++) {
             if (tokens[i] != other.tokens[i]) {
                 return tokens[i] < other.tokens[i];
             }
@@ -89,8 +90,8 @@ inline Headers parse_header(Str header)
 {
     Headers r;
 
-    std::size_t prev = 0;
-    for (std::size_t i = 0; i < header.size(); i++) {
+    std::ptrdiff_t prev = 0;
+    for (std::ptrdiff_t i = 0; i < std::ssize(header); i++) {
         if (header[i] == ',') {
             auto name = header.substr(prev, i-prev);
             r.fields.emplace_back(name, r.fields.size(), r.table);
@@ -109,11 +110,11 @@ enum class OpCode { OPEN, KEY, READ, COMMA, CLOSE };
 struct Op {
     OpCode    op;
     union {
-        ptrdiff_t index;
-        Token     token;
+        std::ptrdiff_t index;
+        Token          token;
     };
 
-    Op(OpCode op, ptrdiff_t index) : op{op}, index{index} {}
+    Op(OpCode op, std::ptrdiff_t index) : op{op}, index{index} {}
     Op(OpCode op, Token token) : op{op}, token{token} {}
 };
 
@@ -122,7 +123,7 @@ inline std::vector<Op> compile(Headers const& headers)
     std::vector<Op> program = {};
     program.emplace_back(OpCode::OPEN, 0);
 
-    ptrdiff_t i = 0;
+    std::ptrdiff_t i = 0;
     std::vector<Token> stack = {};
 
     for (auto& field : headers.fields) {
@@ -197,14 +198,16 @@ inline void run(
 
 // Test code
 
-inline std::int32_t randint(std::uint64_t *s, std::int32_t lo, std::int32_t hi)
+using Rng = std::uint64_t;
+
+inline std::int32_t randint(Rng& rng, std::int32_t lo, std::int32_t hi)
 {
-    *s = *s*0x3243f6a8885a308d + 1;
+    rng = rng*0x3243f6a8885a308d + 1;
     auto range = static_cast<std::uint64_t>(hi - lo);
-    return static_cast<std::int32_t>(((*s>>32)*range)>>32) + lo;
+    return static_cast<std::int32_t>(((rng>>32)*range)>>32) + lo;
 }
 
-inline std::string generate_field(std::uint64_t *rng)
+inline std::string generate_field(Rng& rng)
 {
     static const char words[64][8] = {
         "entry", "debtor", "better", "threw", "earl", "car", "tray", "grip",
@@ -228,7 +231,7 @@ inline std::string generate_field(std::uint64_t *rng)
     return r;
 }
 
-inline std::string generate_header(std::uint64_t *rng)
+inline std::string generate_header(Rng& rng)
 {
     std::int32_t len = randint(rng, 10, 100);
     std::string r;
@@ -262,9 +265,9 @@ int main()
     run(program, std::cout, headers.table, record);
 
     // Benchmark
-    std::uint64_t rng = 1;
+    Rng rng{1};
     for (int i = 0; i < 10000; i++) {
-        auto s = generate_header(&rng);
+        auto s = generate_header(rng);
         auto headers = parse_header(s);
         auto program = compile(headers);
         #if 0
