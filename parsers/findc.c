@@ -1,4 +1,4 @@
-// Unix "find" bytecode compiler (demo)
+// Unix "find" optimizing bytecode compiler (demo)
 // $ cc -std=gnu23 -o findc findc.c
 // Note: Requires a fairly recent C compiler (GCC 15, Clang 22).
 // Ref: https://nullprogram.com/blog/2025/12/23/
@@ -134,6 +134,7 @@ static Token parse_token(Str s)
 }
 
 typedef enum {
+    OP_nop,     // helps with optimization
     OP_halt,
     OP_not,     // invert register
     OP_braf,    // branch if false
@@ -144,27 +145,28 @@ typedef enum {
 typedef struct {
     Opcode opcode;
     union {
-        Slice(Str) args; // action
-        ptrdiff_t  rel;  // braf, brat
+        Slice(Str) *args; // action
+        ptrdiff_t   rel;  // braf, brat
     };
 } Asm;
 
-typedef struct IR IR;
-struct IR {
+typedef struct IRasm IRasm;
+struct IRasm {
     Opcode opcode;
     union {
-        Slice(Str) args;
-        IR        *target;
+        Slice(Str) args;    // action
+        IRasm     *target;  // braf, brat
     };
-    ptrdiff_t addr;
-    IR       *next;
+    ptrdiff_t addr;  // final address for computing branches
+    ptrdiff_t refs;  // number of incoming branches
+    IRasm    *next;
 };
 
 typedef struct {
-    IR  *head;
-    IR **tail;
-    IR  *link;
-} IRnode;
+    IRasm  *head;
+    IRasm **tail;
+    IRasm  *links;  // branches to be linked to appended chain
+} IRlist;
 
 typedef Slice(Asm) Program;
 
@@ -193,6 +195,9 @@ static Str print_asm(Arena *a, Str d, Program p, ptrdiff_t i, ptrdiff_t *labels)
 
     Asm ins = p.data[i];
     switch (ins.opcode) {
+    case OP_nop:
+        d = concat(a, d, S("nop"));
+        break;
     case OP_halt:
         d = concat(a, d, S("halt"));
         break;
@@ -211,9 +216,10 @@ static Str print_asm(Arena *a, Str d, Program p, ptrdiff_t i, ptrdiff_t *labels)
         break;
     case OP_action:
         d = concat(a, d, S("action\t"));
-        for (ptrdiff_t i = 0; i < ins.args.len; i++) {
+        Slice(Str) args = *ins.args;
+        for (ptrdiff_t i = 0; i < args.len; i++) {
             if (i) d = concat(a, d, S(" "));
-            d = concat(a, d, ins.args.data[i]);
+            d = concat(a, d, args.data[i]);
         }
         break;
     }
@@ -258,28 +264,31 @@ typedef struct {
     Slice(Token)  token_stack;
     Slice(Str)    args;
     ptrdiff_t     argi;
-    Slice(IRnode) code_stack;
+    Slice(IRlist) code_stack;
     bool          joinable;  // can we synthesize -a now?
     bool          active;    // has -exec, -ok, or -print?
 } Parser;
 
-static IR *new_ir(Arena *a, Opcode opcode)
+static IRasm *new_ir(Arena *a, Opcode opcode)
 {
-    IR *r = new(a, 1, IR);
+    IRasm *r = new(a, 1, IRasm);
     r->opcode = opcode;
     return r;
 }
 
-static IRnode append(IRnode head, IRnode tail)
+// Append tail to head, linking all open branch links to the first
+// instruction of tail.
+static IRlist append(IRlist head, IRlist tail)
 {
-    while (head.link) {
-        IR *next = head.link->target;
-        head.link->target = tail.head;
-        head.link = next;
+    while (head.links) {
+        IRasm *next = head.links->target;
+        tail.head->refs++;
+        head.links->target = tail.head;
+        head.links = next;
     }
     *head.tail = tail.head;
     head.tail = tail.tail;
-    head.link = tail.link;
+    head.links = tail.links;
     return head;
 }
 
@@ -289,25 +298,25 @@ static bool compile(Parser *p, Token t, Arena *a)
 
     case TOK_not:
         if (p->code_stack.len < 1) return false;
-        IRnode *top = p->code_stack.data + p->code_stack.len - 1;
+        IRlist *top = p->code_stack.data + p->code_stack.len - 1;
         *top->tail = new_ir(a, OP_not);
         top->tail = &(*top->tail)->next;
-        affirm(!top->link);
+        affirm(!top->links);
         return true;
 
     case TOK_and:
     case TOK_or:
         if (p->code_stack.len < 2) return false;
-        IRnode *head = p->code_stack.data + p->code_stack.len - 2;
-        IRnode *tail = p->code_stack.data + p->code_stack.len - 1;
+        IRlist *head = p->code_stack.data + p->code_stack.len - 2;
+        IRlist *tail = p->code_stack.data + p->code_stack.len - 1;
         p->code_stack.len--;
 
         Opcode opcode = t==TOK_and ? OP_braf : OP_brat;
-        IR *jmp = new_ir(a, opcode);
+        IRasm *jmp = new_ir(a, opcode);
         jmp->next   = tail->head;
-        jmp->target = tail->link;
+        jmp->target = tail->links;
         tail->head  = jmp;
-        tail->link  = jmp;
+        tail->links  = jmp;
 
         *head = append(*head, *tail);
         return true;
@@ -319,9 +328,9 @@ static bool compile(Parser *p, Token t, Arena *a)
                 break;
             }
         }
-        IR *action = new_ir(a, OP_action);
+        IRasm *action = new_ir(a, OP_action);
         action->args = slice(p->args, beg, p->argi);
-        *push(a, &p->code_stack) = (IRnode){
+        *push(a, &p->code_stack) = (IRlist){
             .head = action,
             .tail = &action->next,
         };
@@ -403,19 +412,20 @@ static bool parser_push(Parser *p, Token tok, Arena *a)
     affirm(0);
 }
 
-static Program assemble(IR *ir, Arena *a)
+static Program assemble(IRasm *ir, Arena *a)
 {
     Program r = {};
-    for (IR *n = ir; n; n = n->next) {
+    for (IRasm *n = ir; n; n = n->next) {
         n->addr = r.cap++;
     }
 
     r.data = new(a, r.cap, Asm);
 
-    for (IR *n = ir; n; n = n->next) {
+    for (IRasm *n = ir; n; n = n->next) {
         ptrdiff_t i = r.len++;
         r.data[i].opcode = n->opcode;
         switch (n->opcode) {
+        case OP_nop:
         case OP_halt:
         case OP_not:
             break;
@@ -424,10 +434,102 @@ static Program assemble(IR *ir, Arena *a)
             r.data[i].rel = n->target->addr - n->addr - 1;
             break;
         case OP_action:
-            r.data[i].args = n->args;
+            r.data[i].args = &n->args;
             break;
         }
         n->addr = r.cap++;
+    }
+
+    return r;
+}
+
+typedef struct {
+    IRasm    *ir;    // new IR linked list head
+    ptrdiff_t opts;  // number of optimizations applied
+} OptResult;
+
+static Opcode invert(Opcode opcode)
+{
+    switch (opcode) {
+    case OP_braf: return OP_brat; break;
+    case OP_brat: return OP_braf; break;
+    default: affirm(0);
+    }
+}
+
+static OptResult optimize_pass(IRasm *ir)
+{
+    OptResult r = {};
+    r.ir = ir;
+
+    IRasm **prev = &r.ir;
+    for (IRasm *n = r.ir; n; n = n->next) {
+        bool deleted = false;
+        switch (n->opcode) {
+        default:
+            break;
+
+        case OP_nop:
+            if (!n->refs) {
+                // delete nops which are not branch targets
+                *prev = n->next;
+                deleted = true;
+                r.opts++;
+            }
+            break;
+
+        case OP_not:
+            if (!n->next->refs) {
+                // These optimizations are only valid if the next
+                // instruction is not a branch target.
+
+                switch (n->next->opcode) {
+                default:
+                    break;
+
+                case OP_not:
+                    // not; not => nop; nop
+                    n->opcode = n->next->opcode = OP_nop;
+                    r.opts++;
+                    break;
+
+                case OP_braf:
+                case OP_brat:
+                    // not; brat => braf
+                    // not; braf => brat
+                    n->opcode = OP_nop;
+                    n->next->opcode = invert(n->next->opcode);
+                    r.opts++;
+                    break;
+                }
+            }
+            break;
+
+        case OP_braf:
+        case OP_brat:
+            Opcode inv = invert(n->opcode);
+
+            if (n->opcode == n->target->opcode) {
+                // adopt target's target
+                n->target->refs--;
+                n->target = n->target->target;
+                n->target->refs++;
+                r.opts++;
+            }
+
+            if (n->target->opcode==OP_nop || n->target->opcode==inv) {
+                // slide past target nop, allowing it to be deleted
+                n->target->refs--;
+                n->target = n->target->next;
+                n->target->refs++;
+                r.opts++;
+            }
+            break;
+        }
+
+        if (!deleted) {
+            prev = &n->next;
+        }
     }
 
     return r;
@@ -501,13 +603,22 @@ static Program parse_and_compile(Slice(Str) args, Arena *a)
         return (Program){};
     }
 
-    IRnode ir   = *p.code_stack.data;
-    IR    *halt = new_ir(a, OP_halt);
-    ir = append(ir, (IRnode){
+    IRlist node = *p.code_stack.data;
+    IRasm *halt = new_ir(a, OP_halt);
+    node = append(node, (IRlist){
         .head = halt,
         .tail = &halt->next
     });
-    Program r = assemble(ir.head, a);
+
+    OptResult opt = {.ir = node.head};
+    #if 1  // toggle off for debugging
+    for (;;) {
+        opt = optimize_pass(opt.ir);
+        if (!opt.opts) break;
+    }
+    #endif
+
+    Program r = assemble(opt.ir, a);
     return r;
 }
 
