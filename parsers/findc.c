@@ -142,12 +142,29 @@ typedef enum {
 } Opcode;
 
 typedef struct {
-    Opcode     opcode;
+    Opcode opcode;
     union {
         Slice(Str) args; // action
         ptrdiff_t  rel;  // braf, brat
     };
 } Asm;
+
+typedef struct IR IR;
+struct IR {
+    Opcode opcode;
+    union {
+        Slice(Str) args;
+        IR        *target;
+    };
+    ptrdiff_t addr;
+    IR       *next;
+};
+
+typedef struct {
+    IR  *head;
+    IR **tail;
+    IR  *link;
+} IRnode;
 
 typedef Slice(Asm) Program;
 
@@ -228,14 +245,6 @@ static Str print_program(Arena *a, Str dst, Program program)
     return dst;
 }
 
-static Program append(Program head, Program tail, Arena *a)
-{
-    for (ptrdiff_t i = 0; i < tail.len; i++) {
-        *push(a, &head) = tail.data[i];
-    }
-    return head;
-}
-
 static Slice(Str) slice(Slice(Str) s, ptrdiff_t beg, ptrdiff_t end)
 {
     affirm(beg>=0 && beg<=end && end<=s.len);
@@ -246,13 +255,33 @@ static Slice(Str) slice(Slice(Str) s, ptrdiff_t beg, ptrdiff_t end)
 }
 
 typedef struct {
-    Slice(Token)   token_stack;
-    Slice(Str)     args;
-    ptrdiff_t      argi;
-    Slice(Program) code_stack;
-    bool           joinable;  // can we synthesize -a now?
-    bool           active;    // has -exec, -ok, or -print?
+    Slice(Token)  token_stack;
+    Slice(Str)    args;
+    ptrdiff_t     argi;
+    Slice(IRnode) code_stack;
+    bool          joinable;  // can we synthesize -a now?
+    bool          active;    // has -exec, -ok, or -print?
 } Parser;
+
+static IR *new_ir(Arena *a, Opcode opcode)
+{
+    IR *r = new(a, 1, IR);
+    r->opcode = opcode;
+    return r;
+}
+
+static IRnode append(IRnode head, IRnode tail)
+{
+    while (head.link) {
+        IR *next = head.link->target;
+        head.link->target = tail.head;
+        head.link = next;
+    }
+    *head.tail = tail.head;
+    head.tail = tail.tail;
+    head.link = tail.link;
+    return head;
+}
 
 static bool compile(Parser *p, Token t, Arena *a)
 {
@@ -260,22 +289,27 @@ static bool compile(Parser *p, Token t, Arena *a)
 
     case TOK_not:
         if (p->code_stack.len < 1) return false;
-        Program *top = p->code_stack.data + p->code_stack.len - 1;
-        *push(a, top) = (Asm){.opcode=OP_not};
+        IRnode *top = p->code_stack.data + p->code_stack.len - 1;
+        *top->tail = new_ir(a, OP_not);
+        top->tail = &(*top->tail)->next;
+        affirm(!top->link);
         return true;
 
     case TOK_and:
     case TOK_or:
         if (p->code_stack.len < 2) return false;
-        Program *head = p->code_stack.data + p->code_stack.len - 2;
-        Program *tail = p->code_stack.data + p->code_stack.len - 1;
+        IRnode *head = p->code_stack.data + p->code_stack.len - 2;
+        IRnode *tail = p->code_stack.data + p->code_stack.len - 1;
         p->code_stack.len--;
-        Opcode jmp = t==TOK_and ? OP_braf : OP_brat;
-        *push(a, head) = (Asm){
-            .opcode = jmp,
-            .rel    = tail->len,
-        };
-        *head = append(*head, *tail, a);
+
+        Opcode opcode = t==TOK_and ? OP_braf : OP_brat;
+        IR *jmp = new_ir(a, opcode);
+        jmp->next   = tail->head;
+        jmp->target = tail->link;
+        tail->head  = jmp;
+        tail->link  = jmp;
+
+        *head = append(*head, *tail);
         return true;
 
     case TOK_dash:
@@ -285,12 +319,12 @@ static bool compile(Parser *p, Token t, Arena *a)
                 break;
             }
         }
-        Program program = {};
-        *push(a, &program) = (Asm){
-            .opcode = OP_action,
-            .args   = slice(p->args, beg, p->argi),
+        IR *action = new_ir(a, OP_action);
+        action->args = slice(p->args, beg, p->argi);
+        *push(a, &p->code_stack) = (IRnode){
+            .head = action,
+            .tail = &action->next,
         };
-        *push(a, &p->code_stack) = program;
         return true;
 
     case TOK_left:
@@ -369,6 +403,36 @@ static bool parser_push(Parser *p, Token tok, Arena *a)
     affirm(0);
 }
 
+static Program assemble(IR *ir, Arena *a)
+{
+    Program r = {};
+    for (IR *n = ir; n; n = n->next) {
+        n->addr = r.cap++;
+    }
+
+    r.data = new(a, r.cap, Asm);
+
+    for (IR *n = ir; n; n = n->next) {
+        ptrdiff_t i = r.len++;
+        r.data[i].opcode = n->opcode;
+        switch (n->opcode) {
+        case OP_halt:
+        case OP_not:
+            break;
+        case OP_braf:
+        case OP_brat:
+            r.data[i].rel = n->target->addr - n->addr - 1;
+            break;
+        case OP_action:
+            r.data[i].args = n->args;
+            break;
+        }
+        n->addr = r.cap++;
+    }
+
+    return r;
+}
+
 static Program parse_and_compile(Slice(Str) args, Arena *a)
 {
     Parser p = {};
@@ -437,8 +501,13 @@ static Program parse_and_compile(Slice(Str) args, Arena *a)
         return (Program){};
     }
 
-    Program r = p.code_stack.data[0];
-    *push(a, &r) = (Asm){.opcode=OP_halt};
+    IRnode ir   = *p.code_stack.data;
+    IR    *halt = new_ir(a, OP_halt);
+    ir = append(ir, (IRnode){
+        .head = halt,
+        .tail = &halt->next
+    });
+    Program r = assemble(ir.head, a);
     return r;
 }
 
