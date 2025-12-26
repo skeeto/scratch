@@ -36,7 +36,7 @@ source:
 
 <script>
 async function findc_load() {
-    let response = await fetch('findc.wasm')
+    let response = await fetch("findc.wasm")
     let bytes    = await response.arrayBuffer()
     let module   = await WebAssembly.compile(bytes)
     let instance = new WebAssembly.Instance(module)
@@ -45,14 +45,14 @@ async function findc_load() {
 
     return function(cmd, optimize) {
         let utf = new TextEncoder().encode(cmd)
-        let dst = exports.alloc(utf.length)
+        let dst = exports.alloc(utf.length) >>> 0
         for (let i = 0; i < utf.length; i++) {
             memory.setUint8(dst+i, utf[i])
         }
 
         let out = exports.compile(dst, utf.length, optimize)
-        let buf = memory.getUint32(out, true)
-        let len = memory.getInt32(out+4, true)
+        let buf = memory.getUint32(out+0, true)  // Str::data
+        let len = memory.getInt32(out+4, true)   // Str::len
         let asm = new Uint8Array(memory.buffer, buf, len)
         return new TextDecoder().decode(asm)
     }
@@ -64,15 +64,15 @@ async function main() {
     let out   = document.querySelector("#out")
     let opt   = document.querySelector("#opt")
 
-    function execute() {
+    function apply() {
         out.textContent = findc(cmd.value, !opt.checked)
     }
 
-    cmd.addEventListener("change", execute)
-    cmd.addEventListener("paste", execute)
-    cmd.addEventListener("input", execute)
-    opt.addEventListener("change", execute)
-    execute()
+    cmd.addEventListener("change", apply)
+    cmd.addEventListener("paste",  apply)
+    cmd.addEventListener("input",  apply)
+    opt.addEventListener("change", apply)
+    apply()
 }
 
 main()
