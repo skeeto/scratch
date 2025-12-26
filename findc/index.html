@@ -1,0 +1,79 @@
+<!doctype html>
+<title>findc : Unix "find" optimizing bytecode compiler (demo)</title>
+<style>
+body {
+    background: #eee;
+}
+#cmd {
+    box-sizing: border-box;
+    display: block;
+    font-family: monospace;
+    width: 100%;
+}
+#out {
+    background: #fff;
+    padding: 0.5em;
+}
+</style>
+
+<input
+  id="cmd"
+  value="/bin /usr/bin -type f ( -executable -o -name *.exe ) ! -ctime 7"
+/>
+<input id="opt" type="checkbox" checked/>
+<label for="opt">peephole optimizer</label>
+<pre id="out"></pre>
+
+article:
+<a href="https://nullprogram.com/blog/2025/12/23/">
+  Unix "find" expressions compiled to bytecode
+</a>
+<br/>
+source:
+<a href="https://github.com/skeeto/scratch/blob/master/parsers/findc.c">
+  <code>findc.c</code>
+</a>
+
+<script>
+async function findc_load() {
+    let response = await fetch('findc.wasm')
+    let bytes    = await response.arrayBuffer()
+    let module   = await WebAssembly.compile(bytes)
+    let instance = new WebAssembly.Instance(module)
+    let exports  = instance.exports
+    let memory   = new DataView(exports.memory.buffer)
+
+    return function(cmd, optimize) {
+        let utf = new TextEncoder().encode(cmd)
+        let dst = exports.alloc(utf.length)
+        for (let i = 0; i < utf.length; i++) {
+            memory.setUint8(dst+i, utf[i])
+        }
+
+        let out = exports.compile(dst, utf.length, optimize)
+        let buf = memory.getUint32(out, true)
+        let len = memory.getInt32(out+4, true)
+        let asm = new Uint8Array(memory.buffer, buf, len)
+        return new TextDecoder().decode(asm)
+    }
+}
+
+async function main() {
+    let findc = await findc_load()
+    let cmd   = document.querySelector("#cmd")
+    let out   = document.querySelector("#out")
+    let opt   = document.querySelector("#opt")
+
+    function execute() {
+        out.textContent = findc(cmd.value, !opt.checked)
+    }
+
+    cmd.addEventListener("change", execute)
+    cmd.addEventListener("paste", execute)
+    cmd.addEventListener("input", execute)
+    opt.addEventListener("change", execute)
+    execute()
+}
+
+main()
+</script>
