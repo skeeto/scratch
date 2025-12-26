@@ -4,7 +4,6 @@
 // Ref: https://nullprogram.com/blog/2025/12/23/
 // This is free and unencumbered software released into the public domain.
 #include <stddef.h>
-#include <stdio.h>
 
 #define S(s)            (Str){s, sizeof(s)-1}
 #define affirm(c)       while (!(c)) __builtin_trap()
@@ -541,7 +540,11 @@ static OptResult optimize_pass(IRasm *ir)
     return r;
 }
 
-static Program parse_and_compile(Slice(Str) args, Arena *a)
+enum {
+    OPT_debug = 1<<0,
+};
+
+static Program parse_and_compile(Slice(Str) args, int flags, Arena *a)
 {
     Parser p = {};
     p.args = args;
@@ -617,12 +620,12 @@ static Program parse_and_compile(Slice(Str) args, Arena *a)
     });
 
     OptResult opt = {.ir = node.head};
-    #if 1  // toggle off for debugging
-    for (;;) {
-        opt = optimize_pass(opt.ir);
-        if (!opt.opts) break;
+    if (!(flags & OPT_debug)) {
+        for (;;) {
+            opt = optimize_pass(opt.ir);
+            if (!opt.opts) break;
+        }
     }
-    #endif
 
     Program r = assemble(opt.ir, a);
     return r;
@@ -681,35 +684,128 @@ static Args splitargs(int argc, char **argv, Arena *a)
     return r;
 }
 
+static Str demo(Args args, int flags, Arena *a)
+{
+    Str r = {};
+
+    if (args.flags) {
+        r = concat(a, r, S("//"));
+        if (args.flags & FLAG_H) r = concat(a, r, S(" -H"));
+        if (args.flags & FLAG_L) r = concat(a, r, S(" -L"));
+        r = concat(a, r, S("\n"));
+    }
+
+    for (ptrdiff_t i = 0; i < args.paths.len; i++) {
+        r = concat(a, r, S("// path: "));
+        r = concat(a, r, args.paths.data[i]);
+        r = concat(a, r, S("\n"));
+    }
+
+    Program program = parse_and_compile(args.expr, flags, a);
+    if (program.len) {
+        r = print_program(a, r, program);
+    } else {
+        r = concat(a, r, S("error: invalid expression\n"));
+    }
+
+    return r;
+}
+
+
+#if __wasm__
+// $ clang --target=wasm32 -std=gnu23 -O -fno-builtin
+//         -nostdlib -Wl,--no-entry -o findc.wasm findc.c
+
+static int memcmp(char *a, char *b, size_t n)
+{
+    while (n--) {
+        int r = (unsigned char)*a++ - (unsigned char)*b++;
+        if (r) {
+            return r;
+        }
+    }
+    return 0;
+}
+
+static char mem[1<<21];
+Arena arena = {mem, mem+lenof(mem)};
+
+[[clang::export_name("alloc")]]
+void *wasm_alloc(ptrdiff_t len)
+{
+    return new(&arena, len, char);
+}
+
+static Str cstr(Arena *a, char *beg, char *end)
+{
+    return concat(a, span(beg, end), S("\0"));
+}
+
+typedef struct {
+    int    argc;
+    char **argv;
+} Argv;
+
+static Argv shellsplit(Str s, Arena *a)
+{
+    Slice(Str) fields = {};
+
+    char *beg = s.data;
+    char *end = s.data + s.len;
+    char *cut = beg;
+    for (; cut < end; cut++) {
+        if (*cut <= ' ') {
+            if (cut > beg) {
+                *push(a, &fields) = cstr(a, beg, cut);
+            }
+            beg = cut + 1;
+        }
+    }
+    if (beg < end) {
+        *push(a, &fields) = cstr(a, beg, end);
+    }
+
+    Argv r = {};
+    r.argc = 1 + (int)fields.len;
+    r.argv = new(a, 1+fields.len+1, char *);
+    r.argv[0] = "findc";
+    for (int i = 0; i < r.argc; i++) {
+        r.argv[i+1] = fields.data[i].data;
+    }
+    return r;
+}
+
+[[clang::export_name("compile")]]
+Str *wasm_compile(char *buf, ptrdiff_t len, bool debug)
+{
+    Str  cmd  = {buf, len};
+    Argv argv = shellsplit(cmd, &arena);
+    Args args = splitargs(argv.argc, argv.argv, &arena);
+    Str *out  = new(&arena, 1, Str);
+
+    int flags = debug ? OPT_debug : 0;
+    *out = demo(args, flags, &arena);
+
+    arena.beg = mem;
+    arena.end = mem + lenof(mem);
+    return out;
+}
+
+
+#else
+#include <stdio.h>
+
 int main(int argc, char **argv)
 {
     static char mem[1<<21];
     Arena a = {mem, mem+lenof(mem)};
 
     Args args = splitargs(argc, argv, &a);
-    Str  out  = {};
-
-    if (args.flags) {
-        out = concat(&a, out, S("//"));
-        if (args.flags & FLAG_H) out = concat(&a, out, S(" -H"));
-        if (args.flags & FLAG_L) out = concat(&a, out, S(" -L"));
-        out = concat(&a, out, S("\n"));
-    }
-
-    for (ptrdiff_t i = 0; i < args.paths.len; i++) {
-        out = concat(&a, out, S("// path: "));
-        out = concat(&a, out, args.paths.data[i]);
-        out = concat(&a, out, S("\n"));
-    }
-
-    Program program = parse_and_compile(args.expr, &a);
-    if (program.len) {
-        out = print_program(&a, out, program);
-    } else {
-        out = concat(&a, out, S("error: invalid expression\n"));
-    }
+    Str  out  = demo(args, 0, &a);
 
     fwrite(out.data, 1, to_usize(out.len), stdout);
     fflush(stdout);
     return ferror(stdout);
 }
+
+#endif
