@@ -322,9 +322,15 @@ static bool compile(Parser *p, Token t, Arena *a)
         return true;
 
     case TOK_dash:
-        ptrdiff_t beg = p->argi - 1;
+        ptrdiff_t beg  = p->argi - 1;
+        Str       cmd  = p->args.data[beg];
+        bool      exec = equals(cmd, S("-exec")) || equals(cmd, S("-ok"));
         for (; p->argi < p->args.len; p->argi++) {
-            if (parse_token(p->args.data[p->argi]) != TOK_arg) {
+            Str arg = p->args.data[p->argi];
+            if (exec && (equals(arg, S(";")) || equals(arg, S("+")))) {
+                p->argi++;
+                break;
+            } else if (!exec && parse_token(arg) != TOK_arg) {
                 break;
             }
         }
