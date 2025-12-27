@@ -46,9 +46,7 @@ async function findc_load() {
     return function(cmd, optimize) {
         let utf = new TextEncoder().encode(cmd)
         let dst = exports.alloc(utf.length) >>> 0
-        for (let i = 0; i < utf.length; i++) {
-            memory.setUint8(dst+i, utf[i])
-        }
+        new Uint8Array(memory.buffer, dst).set(utf)
 
         let out = exports.compile(dst, utf.length, optimize)
         let buf = memory.getUint32(out+0, true)  // Str::data
