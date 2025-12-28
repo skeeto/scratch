@@ -164,7 +164,6 @@ struct IRasm {
 typedef struct {
     IRasm  *head;
     IRasm **tail;
-    IRasm  *links;  // branches to be linked to appended chain
 } IRlist;
 
 typedef Slice(Asm) Program;
@@ -275,22 +274,6 @@ static IRasm *new_ir(Arena *a, Opcode opcode)
     return r;
 }
 
-// Append tail to head, linking all open branch links to the first
-// instruction of tail.
-static IRlist append(IRlist head, IRlist tail)
-{
-    while (head.links) {
-        IRasm *next = head.links->target;
-        tail.head->refs++;
-        head.links->target = tail.head;
-        head.links = next;
-    }
-    *head.tail = tail.head;
-    head.tail = tail.tail;
-    head.links = tail.links;
-    return head;
-}
-
 static bool compile(Parser *p, Token t, Arena *a)
 {
     switch (t) {
@@ -300,7 +283,6 @@ static bool compile(Parser *p, Token t, Arena *a)
         IRlist *top = p->code_stack.data + p->code_stack.len - 1;
         *top->tail = new_ir(a, OP_not);
         top->tail = &(*top->tail)->next;
-        affirm(!top->links);
         return true;
 
     case TOK_and:
@@ -312,12 +294,14 @@ static bool compile(Parser *p, Token t, Arena *a)
 
         Opcode opcode = t==TOK_and ? OP_braf : OP_brat;
         IRasm *jmp = new_ir(a, opcode);
+        IRasm *nop = new_ir(a, OP_nop);
         jmp->next   = tail->head;
-        jmp->target = tail->links;
-        tail->head  = jmp;
-        tail->links  = jmp;
+        jmp->target = nop;
+        nop->refs++;
 
-        *head = append(*head, *tail);
+        *head->tail = jmp;
+        *tail->tail = nop;
+        head->tail = &nop->next;
         return true;
 
     case TOK_dash:
@@ -613,11 +597,7 @@ static Program parse_and_compile(Slice(Str) args, int flags, Arena *a)
     }
 
     IRlist node = *p.code_stack.data;
-    IRasm *halt = new_ir(a, OP_halt);
-    node = append(node, (IRlist){
-        .head = halt,
-        .tail = &halt->next
-    });
+    *node.tail = new_ir(a, OP_halt);
 
     OptResult opt = {.ir = node.head};
     if (!(flags & OPT_debug)) {
