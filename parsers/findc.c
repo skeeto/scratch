@@ -1,5 +1,7 @@
 // Unix "find" optimizing bytecode compiler (demo)
 // $ cc -std=gnu23 -o findc findc.c
+// $ ./findc -type f \( -executable -o -name '*.exe' \) ! -ctime 7
+// $ FINDC_DEBUG=1 ./findc ! -executable
 // Note: Requires a fairly recent C compiler (GCC 15, Clang 22).
 // Ref: https://nullprogram.com/blog/2025/12/23/
 // This is free and unencumbered software released into the public domain.
@@ -774,14 +776,20 @@ Str *wasm_compile(char *buf, ptrdiff_t len, bool debug)
 
 #else
 #include <stdio.h>
+#include <stdlib.h>
 
 int main(int argc, char **argv)
 {
     static char mem[1<<21];
     Arena a = {mem, mem+lenof(mem)};
 
+    int flags = 0;
+    if (getenv("FINDC_DEBUG")) {
+        flags |= OPT_debug;
+    }
+
     Args args = splitargs(argc, argv, &a);
-    Str  out  = demo(args, 0, &a);
+    Str  out  = demo(args, flags, &a);
 
     fwrite(out.data, 1, to_usize(out.len), stdout);
     fflush(stdout);
