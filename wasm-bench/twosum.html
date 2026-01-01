@@ -1,0 +1,72 @@
+<!doctype html>
+<script>
+function twosum_js(nums, target) {
+    let seen = new Map()
+    for (let i = 0; i < nums.length; i++) {
+        let j = seen.get(target - nums[i])
+        if (j != null) {
+            return [j, i]
+        }
+        seen.set(nums[i], i)
+    }
+}
+
+async function twosum_load() {
+    let wasm     = await(await fetch("twosum.wasm")).arrayBuffer()
+    let module   = await WebAssembly.compile(wasm)
+    let instance = await WebAssembly.instantiate(module)
+    let newarena = instance.exports.newarena
+    let alloc    = instance.exports.alloc
+    let reset    = instance.exports.reset
+    let twosum   = instance.exports.twosum
+    let arena    = newarena(1<<30)
+    let memory   = new DataView(instance.exports.memory.buffer)
+
+    function twosum_wasm(nums, target) {
+        reset(arena)
+        let numsptr = alloc(arena, nums.length, 4, 4) >>> 0
+        for (let i = 0; i < nums.length; i++) {
+            memory.setInt32(numsptr+i*4, nums[i], true)
+        }
+        let result = twosum(numsptr, nums.length, target, arena)
+        if (!result) {
+            return null
+        }
+        return [
+            memory.getInt32(result+0, true),
+            memory.getInt32(result+4, true)
+        ]
+    }
+    return twosum_wasm
+}
+
+function bench(name, twosum, nums, target) {
+    let best = 0
+    let total = -performance.now()
+    for (let i = 0; i < 1<<8; i++) {
+        let delta = -performance.now()
+        twosum(nums, target)
+        delta += performance.now()
+        best = best && best<delta ? best : delta
+    }
+    total += performance.now()
+    console.log(`total (${name})`, total)
+    console.log(`best (${name})`, best)
+}
+
+async function main() {
+    let body   = await (await fetch("nums.txt")).text()
+    let nums   = body.split(/,/).map(parseFloat)
+    let target = 1942206993
+
+    let twosum_wasm = await twosum_load()
+    bench("js",   twosum_js,   nums, target)
+    bench("wasm", twosum_wasm, nums, target)
+
+    //       Chrome-143  Firefox-146
+    // js          29ms         38ms
+    // wasm         9ms          6ms
+}
+
+main();
+</script>
