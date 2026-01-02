@@ -28,7 +28,7 @@ async function twosum_load() {
         for (let i = 0; i < nums.length; i++) {
             memory.setInt32(numsptr+i*4, nums[i], true)
         }
-        let result = twosum(numsptr, nums.length, target, arena)
+        let result = twosum(numsptr, nums.length, target, arena) >>> 0
         if (!result) {
             return null
         }
