@@ -66,9 +66,20 @@ class TwoSumWasm3():
         return struct.unpack_from("<ii", self._memory, retptr)
 
 class TwoSumWasmtime():
+    _compiled = None
+
+    @classmethod
+    def _compile(cls):
+        # NOTE: multi-threaded program requires synchronization here
+        if cls._compiled is None:
+            store  = wasmtime.Store()
+            module = wasmtime.Module.from_file(store.engine, "twosum.wasm")
+            cls._compiled = module.serialize()
+        return cls._compiled
+
     def __init__(self):
         store    = wasmtime.Store()
-        module   = wasmtime.Module.from_file(store.engine, "twosum.wasm")
+        module   = wasmtime.Module.deserialize(store.engine, self._compile())
         instance = wasmtime.Instance(store, module, ())
         exports  = instance.exports(store)
 
