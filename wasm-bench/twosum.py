@@ -4,7 +4,8 @@
 #
 # WebAssembly runs much faster than Python, but the context switch is
 # relatively expensive, copying data in and out of Wasm memory for each
-# operation. The benchmark deliberately pays this cost, with results:
+# operation. The benchmark deliberately pays this cost, with results
+# (shared instance only):
 #
 #             cpython   pypy
 #   wasm3:         3x  1.25x
@@ -16,6 +17,15 @@
 # to use batching and zero-copy buffer protocol, e.g. np.ndarray backed
 # by Wasm memory. In that case typical speed boosts are more in the
 # realm of 10x and 100x respectively (2x and 8x for pypy).
+#
+# That's straightforward single-threaded performance. Running solvers in
+# parallel requires separate instances. In the results, "shared" reuses
+# one instance between calls, and "fresh" creates a new instance on each
+# call. In this benchmark, fresh instantation adds a ~40% overhead for
+# wasmtime. So multi-threaded programs should instantate TwoSumWasmtime
+# once per thread, then re-use that instance, perhaps caching it in a
+# thread-local. This futher complicates Wasm as a transparent, drop-in
+# replacement for an existing, thread-safe Python function.
 #
 # pywasm3 is delivered only as source, and so requires a C compiler on
 # the target, which kind of defeats the purpose of doing this in Wasm.
@@ -43,43 +53,22 @@ class TwoSumPython():
                 seen[num] = i
         return None
 
-class TwoSumWasm3():
-    def __init__(self):
-        wasmenv  = wasm3.Environment()
-        wasmrt   = wasmenv.new_runtime(2**10)
-        with open("twosum.wasm", "rb") as f:
-            wasmrt.load(wasmenv.parse_module(f.read()))
-        newarena     = wasmrt.find_function("newarena")
-        self._alloc  = wasmrt.find_function("alloc")
-        self._reset  = wasmrt.find_function("reset")
-        self._twosum = wasmrt.find_function("twosum")
-        self._arena  = newarena(1<<30) & 0xffffffff
-        self._memory = wasmrt.get_memory(0)
-
-    def twosum(self, nums, target):
-        self._reset(self._arena)
-        numsptr = self._alloc(self._arena, len(nums), 4, 4) & 0xffffffff
-        struct.pack_into(f"<{len(nums)}i", self._memory, numsptr, *nums)
-        retptr = self._twosum(numsptr, len(nums), target, self._arena)
-        if retptr == 0:
-            return None
-        return struct.unpack_from("<ii", self._memory, retptr)
-
 class TwoSumWasmtime():
-    _compiled = None
+    # NOTE: lazy cache, multi-threaded programs require synchronization
+    _module = None
 
     @classmethod
-    def _compile(cls):
-        # NOTE: multi-threaded program requires synchronization here
-        if cls._compiled is None:
-            store  = wasmtime.Store()
+    def _compile(cls, store):
+        if cls._module is None:
             module = wasmtime.Module.from_file(store.engine, "twosum.wasm")
-            cls._compiled = module.serialize()
-        return cls._compiled
+            cls._module = module.serialize()  # save for later
+        else:
+            module = wasmtime.Module.deserialize(store.engine, cls._module)
+        return module
 
     def __init__(self):
         store    = wasmtime.Store()
-        module   = wasmtime.Module.deserialize(store.engine, self._compile())
+        module   = self._compile(store)
         instance = wasmtime.Instance(store, module, ())
         exports  = instance.exports(store)
 
@@ -99,7 +88,44 @@ class TwoSumWasmtime():
             return None
         return struct.unpack_from("<ii", self._memory, retptr)
 
-def bench(name, solver):
+class TwoSumWasm3():
+    # NOTE: lazy cache, multi-threaded programs require synchronization
+    _wasm = None
+
+    @classmethod
+    def _parse(cls, env):
+        if cls._wasm is None:
+            with open("twosum.wasm", "rb") as f:
+                cls._wasm = f.read()
+        return env.parse_module(cls._wasm)
+
+    def __init__(self):
+        env = wasm3.Environment()
+        rt  = env.new_runtime(2**10)
+
+        # Loading a module links it with this runtime. It cannot be
+        # linked again. To have independant instances, each instance
+        # must parse the Wasm image from scratch. That is why the
+        # "fresh" bench performs worse than plain Python.
+        rt.load(self._parse(env))
+
+        newarena     = rt.find_function("newarena")
+        self._alloc  = rt.find_function("alloc")
+        self._reset  = rt.find_function("reset")
+        self._twosum = rt.find_function("twosum")
+        self._arena  = newarena(1<<30) & 0xffffffff
+        self._memory = rt.get_memory(0)
+
+    def twosum(self, nums, target):
+        self._reset(self._arena)
+        numsptr = self._alloc(self._arena, len(nums), 4, 4) & 0xffffffff
+        struct.pack_into(f"<{len(nums)}i", self._memory, numsptr, *nums)
+        retptr = self._twosum(numsptr, len(nums), target, self._arena)
+        if retptr == 0:
+            return None
+        return struct.unpack_from("<ii", self._memory, retptr)
+
+def bench(name, twosum):
     rng    = random.Random(150)  # chosen for unique solution
     nums   = [rng.randint(-10**9, 10**9) for _ in range(500000)]
     idx    = list(range(len(nums)))
@@ -112,19 +138,22 @@ def bench(name, solver):
     except:
         pass
 
-    ri, rj = solver.twosum(nums, target)
+    ri, rj = twosum(nums, target)
     assert ri == ai and rj == aj
 
-    print(f"{name:12}", min(*timeit.repeat(
+    time = min(*timeit.repeat(
         stmt="twosum(nums, target)",
         number=10,
         globals={
-            "twosum": solver.twosum,
+            "twosum": twosum,
             "nums":   nums,
             "target": target
         },
-    )))
+    ))
+    print(f"{name:20}{time:.3g}")
 
-bench("python",   TwoSumPython())    # 1x
-bench("wasm3",    TwoSumWasm3())     # 3x to 10x
-bench("wasmtime", TwoSumWasmtime())  # 10x to 100x
+bench("python", TwoSumPython().twosum)
+bench("wasmtime-shared", TwoSumWasmtime().twosum)
+bench("wasmtime-fresh", lambda n, t: TwoSumWasmtime().twosum(n, t))
+bench("wasm3-shared", TwoSumWasm3().twosum)
+bench("wasm3-fresh", lambda n, t: TwoSumWasm3().twosum(n, t))
