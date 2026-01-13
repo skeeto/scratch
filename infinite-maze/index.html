@@ -1,0 +1,133 @@
+<!doctype html>
+<title>Infinite Maze Walker</title>
+
+<style>
+#display {
+    display: flex;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+}
+#canvas {
+    display: inline-block;
+    vertical-align: top;
+}
+#list {
+    display: inline-block;
+    overflow: hidden;
+    width: 10em;
+}
+</style>
+
+<div id="display"><canvas id="maze"></canvas><pre id="list"></pre></div>
+
+<script>
+const WIDTH  = 45
+const HEIGHT = 40
+
+async function load() {
+    let response = await fetch("maze.wasm")
+    let bytes    = await response.arrayBuffer()
+    let module   = await WebAssembly.compile(bytes)
+    let instance = new WebAssembly.Instance(module)
+    let exports  = instance.exports
+    let memory   = new DataView(exports.memory.buffer)
+
+    return {
+        init: function(width, height, seed) {
+            return exports.init(width, height, seed) >>> 0
+        },
+        step: function(ani) {
+            exports.step(ani)
+        },
+        render: function(ani) {
+            let info = exports.render(ani) >>> 0
+            let x       = memory.getInt32(info+0, true)
+            let y       = memory.getInt32(info+4, true)
+            let bearing = memory.getInt32(info+8, true)
+            let width   = memory.getInt32(info+12, true)
+            let height  = memory.getInt32(info+16, true)
+            let nops    = memory.getInt32(info+20, true)
+            let maze    = memory.getUint32(info+24, true)
+            let ops     = memory.getUint32(info+28, true)
+            return {
+                x: x,
+                y: y,
+                bearing: bearing,
+                width:   width,
+                height:  height,
+                maze:    new Uint8Array(memory.buffer, maze, width*height),
+                ops:     new Uint8Array(memory.buffer, ops, nops)
+            }
+        }
+    }
+}
+
+async function main() {
+    let wasm = await load()
+    let seed = BigInt(Math.random() * Math.pow(2, 53))
+    let ani  = wasm.init(WIDTH, HEIGHT, seed)
+    let maze = document.querySelector("#maze")
+    let list = document.querySelector("#list")
+    let info = wasm.render(ani)
+    let ctx  = maze.getContext("2d")
+    let size = 20
+
+    maze.width  = info.width * size
+    maze.height = (info.height-1) * size
+    list.style.height = maze.height + 'px'
+
+    for (;;) {
+        wasm.step(ani)
+        let info = wasm.render(ani)
+        let buf = "PROGRAM:\n=> "
+        for (let op of info.ops) {
+            buf += ["TURN_LEFT", "FORWARD", "TURN_RIGHT", "DIG_SOUTH"][op]
+            buf += "\n   "
+        }
+        list.textContent = buf
+
+        ctx.fillStyle = '#fff'
+        ctx.fillRect(0, 0, maze.width, maze.height)
+
+        ctx.strokeStyle = '#000'
+        ctx.beginPath()
+        ctx.moveTo(0, info.height*size)
+        ctx.lineTo(0, 0)
+        ctx.stroke()
+        for (let y = 0; y < info.height; y++) {
+            for (let x = 0; x < info.width; x++) {
+                let cell = info.maze[y*info.width+x]
+                if (cell&1) {
+                    ctx.beginPath()
+                    ctx.moveTo((x+1)*size, (y+0)*size-size/2)
+                    ctx.lineTo((x+1)*size, (y+1)*size-size/2)
+                    ctx.stroke()
+                }
+                if (cell&2) {
+                    ctx.beginPath()
+                    ctx.moveTo((x+0)*size, (y+1)*size-size/2)
+                    ctx.lineTo((x+1)*size, (y+1)*size-size/2)
+                    ctx.stroke()
+                }
+            }
+        }
+
+        ctx.fillStyle = '#44f'
+        ctx.beginPath();
+        ctx.arc(info.x*size+size/2, info.y*size, size/2, 0, 2*Math.PI);
+        ctx.fill();
+        ctx.strokeStyle = '#f00'
+        ctx.beginPath()
+        ctx.moveTo(info.x*size+size/2, info.y*size)
+        let x = info.x + [1, 0, -1, 0][info.bearing]*2/3
+        let y = info.y + [0, 1, 0, -1][info.bearing]*2/3
+        ctx.lineTo(x*size+size/2, y*size)
+        ctx.stroke()
+
+        await new Promise(r => setTimeout(r, 200))
+    }
+}
+
+main()
+</script>
