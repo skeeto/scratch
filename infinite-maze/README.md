@@ -1,4 +1,4 @@
-# Infintie maze walker
+# Infinite maze walker
 
 An animation of a robot traversing down an infinitely tall maze generated
 a row at a time using [Eller's Algorithm][ea]. I wrote it as a fun little
