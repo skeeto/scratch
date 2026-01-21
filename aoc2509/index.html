@@ -1,0 +1,83 @@
+<!doctype html>
+<title>Advent of Code 2025 Day 9</title>
+
+<input id="input" type="file"/>
+<pre id="output"></pre>
+seed: <input id="name" type="input"/>
+<button id="generate">generate</button>
+
+<script>
+async function load() {
+    let response = await fetch("aoc2509.wasm")
+    let bytes    = await response.arrayBuffer()
+    let module   = await WebAssembly.compile(bytes)
+    let instance = new WebAssembly.Instance(module)
+    let exports  = instance.exports
+    let capacity = 1<<22
+    let arena    = exports.memory.grow(capacity>>16) << 16
+    let memory   = new DataView(exports.memory.buffer)
+
+    return {
+        solve: function(input) {
+            new Uint8Array(memory.buffer, arena).set(input)
+            return exports.solve(arena, input.length, capacity)
+        },
+
+        generate: function(name) {
+            let seed = 0x100n
+            for (let c of new TextEncoder().encode(name)) {
+                seed ^= BigInt(c)
+                seed *= 1111111111111111111n
+                seed &= 0xffffffffffffffffn
+            }
+            let [data, len] = exports.generate(seed, arena, capacity)
+            data = data >>> 0
+
+            let r = new Uint32Array(2*len)
+            for (let i = 0; i < len; i++) {
+                r[2*i+0] = memory.getUint32(data+8*i+0, true)
+                r[2*i+1] = memory.getUint32(data+8*i+4, true)
+            }
+            return r
+        }
+    }
+}
+
+async function main() {
+    let wasm   = await load()
+
+    let input  = document.querySelector("#input")
+    let output = document.querySelector("#output")
+    input.addEventListener("change", function(e) {
+        let reader = new FileReader()
+        reader.onload = function() {
+            let input  = new Uint8Array(reader.result)
+            let result = wasm.solve(input)
+            output.textContent = [
+                `part-1: ${result[0]}`,
+                `part-2: ${result[1]}`,
+                `part-2: ${result[2]}`
+            ].join("\n")
+        }
+        reader.readAsArrayBuffer(input.files[0])
+    })
+
+    let name   = document.querySelector("#name")
+    let button = document.querySelector("#generate")
+    name.value = Math.random() * 9007199254740992
+    button.addEventListener("click", function() {
+        let nums = wasm.generate(name.value)
+        let buf = ""
+        for (let i = 0; i < nums.length; i += 2) {
+            buf += nums[i+0].toString() + "," + nums[i+1].toString() + "\n"
+        }
+        let blob = new Blob([buf], {type: "text/plain"})
+        let link = document.createElement("a")
+        link.download = "input.txt"
+        link.href = URL.createObjectURL(blob)
+        link.click()
+    })
+}
+
+main()
+</script>
