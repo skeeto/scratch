@@ -31,6 +31,7 @@ W32 c16   **CommandLineToArgvW(c16 *, i32 *);
 W32 uz      CreateFileW(c16 *, i32, i32, uz, i32, i32, uz);
 W32 void    ExitProcess(i32);
 W32 uz      FindFirstFileW(c16 *, FindData *);
+W32 i32     FindClose(uz);
 W32 i32     FindNextFileW(uz, FindData *);
 W32 c16    *GetCommandLineW();
 W32 uz      GetStdHandle(i32);
@@ -148,6 +149,50 @@ static Str16 pidname(Plt *, Arena *a, i32 pid)
     r.data = buf;
     r.len  = len;
     a->beg += r.len * (iz)sizeof(c16);
+    return r;
+}
+
+static DirList listdir(Plt *, Arena *a, c16 *path)
+{
+    DirList r = {0, -1};
+
+    // Build glob pattern: path\*
+    Str16 dir = fromcstr16(path);
+    c16 *glob = new(a, dir.len + 3, c16);
+    __builtin_memcpy(glob, dir.data, touz(dir.len * (iz)sizeof(c16)));
+    glob[dir.len] = '\\';
+    glob[dir.len + 1] = '*';
+
+    FindData fd = {};
+    uz h = FindFirstFileW(glob, &fd);
+    if (h == (uz)-1) {
+        return r;
+    }
+
+    // Collect names and flags into temporary parallel arrays
+    struct { c16 **data; iz len, cap; } names = {0};
+    struct { i32  *data; iz len, cap; } flags = {0};
+
+    do {
+        Str16 name = fromcstr16(fd.name);
+        if (name.len == 1 && name.data[0] == '.') continue;
+        if (name.len == 2 && name.data[0] == '.' && name.data[1] == '.') continue;
+
+        c16 *ncopy = new(a, name.len + 1, c16);
+        __builtin_memcpy(ncopy, name.data, touz(name.len * (iz)sizeof(c16)));
+
+        *push(a, &names) = ncopy;
+        *push(a, &flags) = !!(fd.attr & 0x10);
+    } while (FindNextFileW(h, &fd));
+
+    FindClose(h);
+
+    r.data = new(a, names.len, DirEntry);
+    r.len  = names.len;
+    for (iz i = 0; i < names.len; i++) {
+        r.data[i].name  = names.data[i];
+        r.data[i].isdir = flags.data[i];
+    }
     return r;
 }
 

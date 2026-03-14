@@ -34,12 +34,30 @@ typedef struct {
     i32  len;
 } Pids;
 
+typedef struct {
+    c16 *name;
+    i32  isdir;
+} DirEntry;
+
+typedef struct {
+    DirEntry *data;
+    iz        len;
+} DirList;
+
+typedef struct { c16  **data; iz len, cap; } Paths;
+typedef struct { i32 lo, hi; }               Range;
+typedef struct { Range *data; iz len, cap; } Ranges;
+
+typedef struct { c16 *path; i32 *pids; i32 npids; } Result;
+typedef struct { Result *data; iz len, cap; }        Results;
+
 typedef struct Plt Plt;
 
-static Str16 pidname(Plt *, Arena *, i32 pid);
-static Pids  dirpids(Plt *, Arena *, c16 *path);
-static Pids  filepids(Plt *, Arena *, c16 **paths, i32 npaths);
-static i32   write16(Plt *, i32 fd, Str16);
+static Str16   pidname(Plt *, Arena *, i32 pid);
+static Pids    dirpids(Plt *, Arena *, c16 *path);
+static Pids    filepids(Plt *, Arena *, c16 **paths, i32 npaths);
+static i32     write16(Plt *, i32 fd, Str16);
+static DirList listdir(Plt *, Arena *, c16 *path);
 
 // Application
 
@@ -59,7 +77,7 @@ static u8 *alloc(Arena *a, iz count, iz size, iz align)
     iz pad = (iz)-(uz)a->beg & (align - 1);
     affirm(count < (a->end - a->beg - pad)/size);
     u8 *r = a->beg + pad;
-    a->beg += count * size;
+    a->beg += pad + count * size;
     return __builtin_memset(r, 0, touz(count*size));
 }
 
@@ -102,33 +120,156 @@ static void print(Output *b, Str16 s)
     }
 }
 
+static void *push_(Arena *a, void *data, iz *pcap, iz size)
+{
+    iz cap = *pcap;
+    iz align = _Alignof(void *);
+    if (!data || a->beg != (u8 *)data + cap*size) {
+        u8 *copy = alloc(a, cap, size, align);
+        if (data) __builtin_memcpy(copy, data, touz(cap*size));
+        data = copy;
+    }
+    iz extend = cap ? cap : 4;
+    alloc(a, extend, size, 1);
+    *pcap = cap + extend;
+    return data;
+}
+
+#define push(a, s) \
+    ((s)->len == (s)->cap \
+    ? (s)->data = (__typeof__((s)->data))push_((a), (s)->data, \
+          &(s)->cap, (iz)sizeof(*(s)->data)), \
+      (s)->data + (s)->len++ \
+    : (s)->data + (s)->len++)
+
+static Str16 fromcstr16(c16 *s)
+{
+    Str16 r = {s, 0};
+    if (s) for (; s[r.len]; r.len++) {}
+    return r;
+}
+
+static c16 *pathcat(Arena *a, c16 *dir, c16 *name)
+{
+    iz dlen = fromcstr16(dir).len;
+    iz nlen = fromcstr16(name).len;
+    iz sep  = dlen && dir[dlen-1] != '\\' && dir[dlen-1] != '/';
+    c16 *r  = new(a, dlen + sep + nlen + 1, c16);
+    __builtin_memcpy(r, dir, touz(dlen * (iz)sizeof(c16)));
+    if (sep) r[dlen] = '\\';
+    __builtin_memcpy(r + dlen + sep, name, touz(nlen * (iz)sizeof(c16)));
+    return r;
+}
+
+static void printi(Output *b, i32 x)
+{
+    c16  buf[16];
+    c16 *end = buf + lenof(buf);
+    c16 *beg = end;
+    i32  t   = x < 0 ? x : -x;
+    do {
+        *--beg = (c16)('0' - t%10);
+    } while (t /= 10);
+    if (x < 0) *--beg = '-';
+    print(b, (Str16){beg, end - beg});
+}
+
 static i32 app(Plt *plt, i32 argc, c16 **argv, u8 *mem, iz cap)
 {
-    Arena a = {mem, mem+cap};
+    Arena perm    = {mem, mem + cap/2};
+    Arena scratch = {mem + cap/2, mem + cap};
 
-    Output *out = newoutput(plt, &a, 1);
+    Output  *out     = newoutput(plt, &perm, 1);
+    Results  results = {0};
+    Paths    files   = {0};
+    Paths    dirs    = {0};
 
-    print(out, U(u".\n"));
-
-    Pids pids = dirpids(plt, &a, u".");
-    for (i32 i = 0; i < pids.len; i++) {
-        Arena scratch = a;
-        Str16 name = pidname(plt, &scratch, pids.pids[i]);
-        print(out, U(u"\t"));
-        print(out, name);
-        print(out, U(u"\n"));
+    // Phase 1: Walk directory trees, collect dirs and files
+    for (i32 argi = 1; argi < argc; argi++) {
+        c16 *arg = argv[argi];
+        Arena temp = scratch;
+        DirList dl = listdir(plt, &temp, arg);
+        if (dl.len >= 0) {
+            *push(&perm, &dirs) = arg;
+        } else {
+            *push(&perm, &files) = arg;
+        }
     }
 
-    print(out, U(u"culprit.exe\n"));
+    // Stack-based directory traversal (no recursion)
+    for (iz di = 0; di < dirs.len; di++) {
+        c16 *dir = dirs.data[di];
 
-    c16 *paths[] = {u"culprit.exe"};
-    pids = filepids(plt, &a, paths, lenof(paths));
-    for (i32 i = 0; i < pids.len; i++) {
-        Arena scratch = a;
-        Str16 name = pidname(plt, &scratch, pids.pids[i]);
-        print(out, U(u"\t"));
-        print(out, name);
+        // Check directory for holding processes
+        {
+            Arena temp = scratch;
+            Pids dp = dirpids(plt, &temp, dir);
+            if (dp.len > 0) {
+                Result *r = push(&perm, &results);
+                r->path  = dir;
+                r->pids  = new(&perm, dp.len, i32);
+                r->npids = dp.len;
+                __builtin_memcpy(r->pids, dp.pids,
+                                 touz(dp.len * (iz)sizeof(i32)));
+            }
+        }
+
+        // List directory entries
+        Arena temp = scratch;
+        DirList dl = listdir(plt, &temp, dir);
+        for (iz i = 0; i < dl.len; i++) {
+            c16 *full = pathcat(&perm, dir, dl.data[i].name);
+            if (dl.data[i].isdir) {
+                *push(&perm, &dirs) = full;
+            } else {
+                *push(&perm, &files) = full;
+            }
+        }
+    }
+
+    // Phase 2: Binary search with filepids
+    if (files.len > 0) {
+        Ranges ranges = {0};
+        *push(&perm, &ranges) = (Range){0, trunc32(files.len)};
+
+        while (ranges.len > 0) {
+            Range rng = ranges.data[--ranges.len];
+            if (rng.lo >= rng.hi) continue;
+
+            Arena temp = scratch;
+            Pids fp = filepids(plt, &temp,
+                               files.data + rng.lo, rng.hi - rng.lo);
+            if (fp.len == 0) continue;
+
+            if (rng.hi - rng.lo == 1) {
+                Result *r = push(&perm, &results);
+                r->path  = files.data[rng.lo];
+                r->pids  = new(&perm, fp.len, i32);
+                r->npids = fp.len;
+                __builtin_memcpy(r->pids, fp.pids,
+                                 touz(fp.len * (iz)sizeof(i32)));
+            } else {
+                i32 mid = rng.lo + (rng.hi - rng.lo) / 2;
+                *push(&perm, &ranges) = (Range){rng.lo, mid};
+                *push(&perm, &ranges) = (Range){mid, rng.hi};
+            }
+        }
+    }
+
+    // Phase 3: Output results
+    for (iz i = 0; i < results.len; i++) {
+        Result *r = results.data + i;
+        print(out, fromcstr16(r->path));
         print(out, U(u"\n"));
+        for (i32 j = 0; j < r->npids; j++) {
+            Arena temp = scratch;
+            Str16 name = pidname(plt, &temp, r->pids[j]);
+            print(out, U(u"\t["));
+            printi(out, r->pids[j]);
+            print(out, U(u"] "));
+            print(out, name);
+            print(out, U(u"\n"));
+        }
     }
 
     flush(out);
