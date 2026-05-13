@@ -180,6 +180,11 @@ int main(int /*argc*/, char** /*argv*/) {
     SDL_GL_MakeCurrent(app.window, app.gl_ctx);
     SDL_GL_SetSwapInterval(1);
 
+    if (!gl_load()) {
+        std::fprintf(stderr, "Failed to load required GL function pointers\n");
+        return 1;
+    }
+
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();

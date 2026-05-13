@@ -3,11 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#ifdef __EMSCRIPTEN__
-#include <GLES3/gl3.h>
-#else
-#include <OpenGL/gl3.h>
-#endif
+#include "gl3.hpp"
 
 class Simulation;
 struct View;

@@ -54,6 +54,7 @@ add_executable(knights
     src/board.cpp
     src/simulation.cpp
     src/renderer.cpp
+    src/gl3.cpp
     src/ui.cpp)
 
 target_link_libraries(knights PRIVATE imgui_lib)
@@ -88,8 +89,5 @@ if(EMSCRIPTEN)
 else()
     find_package(OpenGL REQUIRED)
     target_link_libraries(knights PRIVATE OpenGL::GL)
-    if(APPLE)
-        target_compile_definitions(knights PRIVATE GL_SILENCE_DEPRECATION)
-    endif()
     install(TARGETS knights RUNTIME DESTINATION bin)
 endif()
