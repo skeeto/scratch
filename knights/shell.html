@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+<title>Knights</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #141416; }
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #ccc; }
+  canvas#canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    background: #141416;
+    outline: none;
+    touch-action: none;     /* let SDL handle pinch/pan, not the browser */
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+<script type="text/javascript">
+  var Module = {
+    canvas: (function() {
+      var canvas = document.getElementById('canvas');
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
+      canvas.addEventListener('webglcontextlost', function(e) {
+        e.preventDefault();
+        console.error('WebGL context lost');
+      }, false);
+      return canvas;
+    })(),
+    print:    function(t) { console.log(t); },
+    printErr: function(t) { console.error(t); }
+  };
+  (function() {
+    function resize() {
+      var c = Module.canvas;
+      if (!c) return;
+      c.width  = window.innerWidth;
+      c.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+  })();
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>
